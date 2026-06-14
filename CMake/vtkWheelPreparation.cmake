@@ -67,11 +67,11 @@ if (WIN32)
 elseif (APPLE)
   set(CMAKE_INSTALL_LIBDIR
     # Store libraries in a subdirectory here.
-    "${setup_py_build_dir}/vtkmodules/.dylibs")
+    "${setup_py_build_dir}/fvtk/.dylibs")
 else ()
   set(CMAKE_INSTALL_LIBDIR
     # Linux bundles what libraries we have when they're put beside the modules.
-    "${setup_py_build_dir}/vtkmodules")
+    "${setup_py_build_dir}/fvtk")
 endif ()
 set(VTK_PYTHON_SITE_PACKAGES_SUFFIX ".")
 if (WIN32)

@@ -6,10 +6,14 @@ mirror of upstream VTK and it is **not** affiliated with Kitware.
 
 The project has two phases:
 
-1. **Now — a trimmed, drop-in VTK.** fvtk contains only the modules PyVista imports
-   (core + filters + IO + the full rendering stack) and their dependencies, built as a
-   1:1 functional replacement for the stock `vtk` wheel. Smaller wheel, faster build,
-   identical behavior on PyVista's own test suite.
+1. **Now — a trimmed VTK that installs as its own package.** fvtk contains only the
+   modules PyVista imports (core + filters + IO + the full rendering stack) and their
+   dependencies. It installs into the **`fvtk/`** import package with dist name **`fvtk`**
+   (not `vtkmodules`/`vtk`), so it **coexists** with a stock `vtk` install instead of
+   clobbering it. Behavior is identical to stock VTK — the emitted C++ and Python wrappers
+   are the same code, only the package name differs — so PyVista runs unchanged against it
+   once taught to import `fvtk` (see [Namespace](#namespace--coexists-with-stock-vtk)).
+   Smaller wheel, faster build.
 2. **Next — swap-for-faster.** Individual VTK components are progressively replaced with
    faster implementations and dead code is stripped, so fvtk diverges from upstream over
    time. The trim is the baseline; the divergence is the point.
@@ -28,7 +32,8 @@ a handoff guide for continuing development.
 | Modules shipped | ~84 + vendored deps | ~160 |
 | Compile units (`ninja` steps) | **~6,900** (wrappers further batched by unity) | ~9,120 |
 | Source tree (tracked) | **~140 MB** | ~320 MB |
-| PyVista parity gate | **green** (0 fvtk-introduced failures) | reference |
+| Import package / dist name | **`fvtk`** / **`fvtk`** | `vtkmodules` / `vtk` |
+| Functional validation | **green** — native `import fvtk` smoke (kits, numpy roundtrip, EGL render) + byte-identical to the parity-green `vtkmodules` build | reference |
 
 ---
 
@@ -173,7 +178,7 @@ tree still builds as stock VTK with a different `-C` cache file.
 |---|---|
 | `main` | the published trimmed fork — what `git clone` checks out |
 | `feat/build-trim` | the build-trim campaign branch (this work) |
-| `feat/fvtk-namespace` | optional `vtkmodules → fvtk` import rename (not merged) |
+| `feat/fvtk-namespace` | original `vtkmodules → fvtk` rename spike (now **merged into `main`**) |
 | `feat/ci` | early GitHub Actions wheel-matrix scaffolding (paused) |
 
 ---
@@ -257,6 +262,59 @@ These cost real time during the campaign; read before extending.
 
 ---
 
+## Namespace — coexists with stock VTK
+
+fvtk installs into the **`fvtk/`** import package (not `vtkmodules/`) with dist name
+**`fvtk`** (not `vtk`). Stock VTK and fvtk therefore occupy different pip slots and
+different import namespaces, so `pip install fvtk` no longer clobbers — or gets clobbered
+by — an existing `vtk` install. `import fvtk` / `from fvtk.vtkCommonCore import vtkPoints`
+work exactly like the `vtkmodules` equivalents.
+
+**Mechanism** (all on `main`, originally spiked on `feat/fvtk-namespace`):
+
+- `vtk_module_wrap_python(... PYTHON_PACKAGE "fvtk" ...)` and the `Wrapping/Python/fvtk/`
+  source tree (the former `vtkmodules/` — `util/`, `numpy_interface/`, `gtk/qt/tk/wx/`,
+  `__init__.py.in`, `all.py.in`).
+- `CMake/setup.py.in` sets `dist_name = 'fvtk'`; `VTK_DIST_NAME_SUFFIX` stays empty.
+- The Python C wrapper machinery references the package by name —
+  `Wrapping/PythonCore/PyVTK*.cxx`, `Wrapping/Tools/vtkWrapPython*.c`, and
+  `vtkPythonAppInit.cxx` — all updated `vtkmodules` → `fvtk`.
+- `build-fvtk.sh` strips/prunes under `$BUILD/fvtk` and rewrites the generated
+  `setup.py` package list.
+
+**Validation.** Because the rename changes only the *package name* — the emitted C++ and
+Python wrappers are byte-identical to the `vtkmodules` build that passed the full PyVista
+suite — the gate is a native smoke test rather than the stock-pyvista suite (which imports
+`vtkmodules` and so cannot drive fvtk unpatched). See `smoke-fvtk.py`: `import fvtk`
+with no stray `vtkmodules`, the core kits, a `numpy_support` roundtrip, a filter pipeline,
+and an EGL offscreen render — all green.
+
+**Using it from PyVista.** PyVista imports `vtkmodules`, so it must be taught about `fvtk`.
+Two paths:
+
+1. *Quick shim* (no PyVista changes) — install a `sys.meta_path` finder that redirects
+   `vtkmodules[.*]` to `fvtk[.*]` **before** importing pyvista:
+
+   ```python
+   import importlib.util, sys, fvtk
+   class _FvtkShim:
+       def find_spec(self, name, path=None, target=None):
+           if name == "vtkmodules" or name.startswith("vtkmodules."):
+               return importlib.util.find_spec("fvtk" + name[len("vtkmodules"):])
+           return None
+   sys.meta_path.insert(0, _FvtkShim())
+   import pyvista  # now resolves vtkmodules.* against fvtk.*
+   ```
+
+   This is the throwaway-validation path (patch a *copy* of PyVista or use the shim — do
+   not edit a checked-out PyVista source in place).
+
+2. *Proper support* — a PyVista backend selector that imports `fvtk` directly (e.g. a
+   `PYVISTA_VTK_BACKEND=fvtk` env switch). This is the real downstream change and the
+   intended end state once fvtk lands in the PyVista org.
+
+---
+
 ## Roadmap
 
 - **CI** — wheel matrix mirroring PyVista's support set (Python 3.10–3.14 ×
@@ -264,9 +322,9 @@ These cost real time during the campaign; read before extending.
   glibc floor, then `auditwheel repair` for the `manylinux` tag (portability, not size).
   Mine VTK's own `.gitlab/os-linux.yml` wheel jobs for the OSMesa/EGL handling — stock VTK
   wheels are not trivial cibuildwheel.
-- **Namespace** — optional `vtkmodules → fvtk` import rename (`feat/fvtk-namespace`). Keeping
-  `vtkmodules` preserves drop-in compatibility; renaming requires a PyVista-side dependency
-  change.
+- **PyVista-side import shim** — fvtk now installs as `fvtk` (not `vtkmodules`), so PyVista
+  must be taught to import it. See [Namespace](#namespace--coexists-with-stock-vtk) for the
+  one-line shim approach (`sys.modules` alias) versus a proper PyVista backend selector.
 - **Swap-for-faster** — replace hot VTK components with faster implementations. This is the
   divergence phase where fvtk earns the "f"; the trim is just the baseline.
 

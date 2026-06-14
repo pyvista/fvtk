@@ -116,7 +116,7 @@ if [ ! -x "$WHEEL_VENV/bin/python3" ]; then
 fi
 "$WHEEL_VENV/bin/python3" -m pip install --upgrade pip setuptools wheel >/dev/null
 
-find "$BUILD" -path '*/vtkmodules/*.pyi' -delete 2>/dev/null || true
+find "$BUILD" -path '*/fvtk/*.pyi' -delete 2>/dev/null || true
 
 # Strip symbol tables from every shared object before bundling. A Release build
 # still emits the full .symtab (local + non-dynamic symbols) into each .so —
@@ -134,7 +134,7 @@ if [ "${FVTK_STRIP:-0}" = "1" ]; then
     _n=0
     while IFS= read -r _so; do
       "$STRIP_BIN" --strip-all "$_so" 2>/dev/null && _n=$((_n+1)) || true
-    done < <(find "$BUILD" \( -name '*.so' -o -name '*.so.*' \) 2>/dev/null | grep -E '/vtkmodules/[^/]*\.so(\.[0-9.]+)?$')
+    done < <(find "$BUILD" \( -name '*.so' -o -name '*.so.*' \) 2>/dev/null | grep -E '/fvtk/[^/]*\.so(\.[0-9.]+)?$')
     echo "stripped $_n shared objects ($STRIP_BIN --strip-all)"
   else
     echo "WARN: no strip binary found; wheel ships unstripped" >&2
@@ -146,10 +146,10 @@ fi
 # generated setup.py hardcodes them in packages=[...]; remove both the dirs and
 # the setup.py references so bdist_wheel doesn't fail on the missing dirs.
 for sub in gtk qt test tk wx; do
-  rm -rf "$BUILD/vtkmodules/$sub" "$BUILD"/build/lib.*/vtkmodules/$sub 2>/dev/null || true
+  rm -rf "$BUILD/fvtk/$sub" "$BUILD"/build/lib.*/fvtk/$sub 2>/dev/null || true
 done
 if [ -f "$BUILD/setup.py" ]; then
-  sed -i -E "/'vtkmodules\.(gtk|qt|tk|wx|test)',?/d" "$BUILD/setup.py"
+  sed -i -E "/'fvtk\.(gtk|qt|tk|wx|test)',?/d" "$BUILD/setup.py"
 fi
 
 echo "=== wheel ==="

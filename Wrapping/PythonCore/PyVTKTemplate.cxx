@@ -252,7 +252,7 @@ static PyObject* PyVTKTemplate_Call(PyObject*, PyObject*, PyObject*)
 // clang-format off
 PyTypeObject PyVTKTemplate_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "vtkmodules.vtkCommonCore.template", // tp_name
+  "fvtk.vtkCommonCore.template", // tp_name
   0,                        // tp_basicsize
   0,                        // tp_itemsize
   nullptr,                  // tp_dealloc

@@ -69,25 +69,25 @@ if (NOT VTK_WHEEL_BUILD)
   endif ()
 endif ()
 
-# goes in __init__.py for when vtkmodules is BUILD_STATIC
-set(_vtkmodules_static_import "_load_vtkmodules_static()")
+# goes in __init__.py for when fvtk is BUILD_STATIC
+set(_fvtk_static_import "_load_fvtk_static()")
 if (BUILD_SHARED_LIBS)
-    string(PREPEND _vtkmodules_static_import "#")
+    string(PREPEND _fvtk_static_import "#")
 endif ()
 
-set(_vtkmodules_all)
+set(_fvtk_all)
 set(_vtk_python_imports)
 set(_vtk_python_external_imports)
 foreach (_vtk_python_module IN LISTS vtk_python_wrapped_modules)
   get_property(_vtk_python_library_name
     TARGET    "${_vtk_python_module}"
     PROPERTY  "INTERFACE_vtk_module_library_name")
-  string(APPEND _vtkmodules_all
+  string(APPEND _fvtk_all
     "    \'${_vtk_python_library_name}\',\n")
   string(APPEND _vtk_python_imports
     "from .${_vtk_python_library_name} import *\n")
   string(APPEND _vtk_python_external_imports
-    "from vtkmodules.${_vtk_python_library_name} import *\n")
+    "from fvtk.${_vtk_python_library_name} import *\n")
 endforeach ()
 
 set(_vtk_python_files)
@@ -100,69 +100,68 @@ foreach (_vtk_module IN LISTS vtk_modules)
 endforeach()
 
 configure_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/vtkmodules/generate_pyi.py"
-  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/vtkmodules/generate_pyi.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/fvtk/generate_pyi.py"
+  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/generate_pyi.py"
   COPYONLY)
 list(APPEND _vtk_python_files
-  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/vtkmodules/generate_pyi.py")
+  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/generate_pyi.py")
 
 if (BUILD_SHARED_LIBS)
   install(
-    FILES       "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/vtkmodules/generate_pyi.py"
-    DESTINATION "${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/vtkmodules"
+    FILES       "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/generate_pyi.py"
+    DESTINATION "${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk"
     COMPONENT   "python")
 endif ()
 
 set(python_files
-  vtk.py.in
-  vtkmodules/__init__.py.in
-  vtkmodules/all.py.in
-  vtkmodules/gtk/GtkGLExtVTKRenderWindow.py
-  vtkmodules/gtk/GtkGLExtVTKRenderWindowInteractor.py
-  vtkmodules/gtk/GtkVTKRenderWindow.py
-  vtkmodules/gtk/GtkVTKRenderWindowInteractor.py
-  vtkmodules/gtk/__init__.py
-  vtkmodules/numpy_interface/__init__.py
-  vtkmodules/numpy_interface/algorithms.py
-  vtkmodules/numpy_interface/dataset_adapter.py
-  vtkmodules/numpy_interface/internal_algorithms.py
-  vtkmodules/numpy_interface/numpy_algorithms.py
-  vtkmodules/qt/QVTKRenderWindowInteractor.py
-  vtkmodules/qt/__init__.py
-  vtkmodules/test/BlackBox.py
-  vtkmodules/test/ErrorObserver.py
-  vtkmodules/test/Testing.py
-  vtkmodules/test/rtImageTest.py
-  vtkmodules/test/__init__.py
-  vtkmodules/tk/__init__.py
-  vtkmodules/tk/vtkLoadPythonTkWidgets.py.in
-  vtkmodules/tk/vtkTkImageViewerWidget.py
-  vtkmodules/tk/vtkTkPhotoImage.py
-  vtkmodules/tk/vtkTkRenderWidget.py
-  vtkmodules/tk/vtkTkRenderWindowInteractor.py
-  vtkmodules/util/__init__.py
-  vtkmodules/util/colors.py
-  vtkmodules/util/data_model.py
-  vtkmodules/util/execution_model.py
-  vtkmodules/util/keys.py
-  vtkmodules/util/misc.py
-  vtkmodules/util/numpy_support.py
-  vtkmodules/util/xarray_support.py
-  vtkmodules/util/pickle_support.py
-  vtkmodules/util/vtkAlgorithm.py
-  vtkmodules/util/vtkConstants.py
-  vtkmodules/util/vtkImageExportToArray.py
-  vtkmodules/util/vtkImageImportFromArray.py
-  vtkmodules/util/vtkMethodParser.py
-  vtkmodules/util/vtkVariant.py
-  vtkmodules/wx/__init__.py
-  vtkmodules/wx/wxVTKRenderWindow.py
-  vtkmodules/wx/wxVTKRenderWindowInteractor.py)
+  fvtk/__init__.py.in
+  fvtk/all.py.in
+  fvtk/gtk/GtkGLExtVTKRenderWindow.py
+  fvtk/gtk/GtkGLExtVTKRenderWindowInteractor.py
+  fvtk/gtk/GtkVTKRenderWindow.py
+  fvtk/gtk/GtkVTKRenderWindowInteractor.py
+  fvtk/gtk/__init__.py
+  fvtk/numpy_interface/__init__.py
+  fvtk/numpy_interface/algorithms.py
+  fvtk/numpy_interface/dataset_adapter.py
+  fvtk/numpy_interface/internal_algorithms.py
+  fvtk/numpy_interface/numpy_algorithms.py
+  fvtk/qt/QVTKRenderWindowInteractor.py
+  fvtk/qt/__init__.py
+  fvtk/test/BlackBox.py
+  fvtk/test/ErrorObserver.py
+  fvtk/test/Testing.py
+  fvtk/test/rtImageTest.py
+  fvtk/test/__init__.py
+  fvtk/tk/__init__.py
+  fvtk/tk/vtkLoadPythonTkWidgets.py.in
+  fvtk/tk/vtkTkImageViewerWidget.py
+  fvtk/tk/vtkTkPhotoImage.py
+  fvtk/tk/vtkTkRenderWidget.py
+  fvtk/tk/vtkTkRenderWindowInteractor.py
+  fvtk/util/__init__.py
+  fvtk/util/colors.py
+  fvtk/util/data_model.py
+  fvtk/util/execution_model.py
+  fvtk/util/keys.py
+  fvtk/util/misc.py
+  fvtk/util/numpy_support.py
+  fvtk/util/xarray_support.py
+  fvtk/util/pickle_support.py
+  fvtk/util/vtkAlgorithm.py
+  fvtk/util/vtkConstants.py
+  fvtk/util/vtkImageExportToArray.py
+  fvtk/util/vtkImageImportFromArray.py
+  fvtk/util/vtkMethodParser.py
+  fvtk/util/vtkVariant.py
+  fvtk/wx/__init__.py
+  fvtk/wx/wxVTKRenderWindow.py
+  fvtk/wx/wxVTKRenderWindowInteractor.py)
 
 foreach (python_file IN LISTS python_files)
-  # add submodules that don't begin with "_" to _vtkmodules_all
-  if (python_file MATCHES "^vtkmodules\/([A-Za-z][A-Za-z0-9_]*)(\/__init__)?[.]py")
-    string(APPEND _vtkmodules_all "    \'${CMAKE_MATCH_1}\',\n")
+  # add submodules that don't begin with "_" to _fvtk_all
+  if (python_file MATCHES "^fvtk\/([A-Za-z][A-Za-z0-9_]*)(\/__init__)?[.]py")
+    string(APPEND _fvtk_all "    \'${CMAKE_MATCH_1}\',\n")
   endif ()
 endforeach ()
 
@@ -210,7 +209,7 @@ foreach (python_file IN LISTS python_files)
 endforeach ()
 
 set(vtk_build_paths_module
-  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/vtkmodules/_build_paths.py")
+  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/_build_paths.py")
 if (WIN32 AND VTK_DLL_PATHS)
   set(vtk_dll_paths_python)
   foreach (vtk_dll_path IN LISTS VTK_DLL_PATHS)

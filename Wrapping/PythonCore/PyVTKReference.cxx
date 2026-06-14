@@ -734,7 +734,7 @@ static PyObject* PyVTKReference_New(PyTypeObject*, PyObject* args, PyObject* kwd
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "vtkmodules.vtkCommonCore.reference", // tp_name
+  "fvtk.vtkCommonCore.reference", // tp_name
   sizeof(PyVTKReference), // tp_basicsize
   0,                      // tp_itemsize
   PyVTKReference_Delete,  // tp_dealloc
@@ -787,7 +787,7 @@ PyTypeObject PyVTKReference_Type = {
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKNumberReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "vtkmodules.vtkCommonCore.number_reference", // tp_name
+  "fvtk.vtkCommonCore.number_reference", // tp_name
   sizeof(PyVTKReference),   // tp_basicsize
   0,                        // tp_itemsize
   PyVTKReference_Delete,    // tp_dealloc
@@ -840,7 +840,7 @@ PyTypeObject PyVTKNumberReference_Type = {
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKStringReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "vtkmodules.vtkCommonCore.string_reference", // tp_name
+  "fvtk.vtkCommonCore.string_reference", // tp_name
   sizeof(PyVTKReference),         // tp_basicsize
   0,                              // tp_itemsize
   PyVTKReference_Delete,          // tp_dealloc
@@ -893,7 +893,7 @@ PyTypeObject PyVTKStringReference_Type = {
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKTupleReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "vtkmodules.vtkCommonCore.tuple_reference", // tp_name
+  "fvtk.vtkCommonCore.tuple_reference", // tp_name
   sizeof(PyVTKReference),     // tp_basicsize
   0,                          // tp_itemsize
   PyVTKReference_Delete,      // tp_dealloc

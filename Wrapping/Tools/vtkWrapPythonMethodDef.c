@@ -1309,7 +1309,7 @@ static void vtkWrapPython_AlgorithmMethods(FILE* fp, const char* classname, cons
       "  PyObject *output = nullptr;\n"
       "  if (ap.CheckArgCount(0))\n"
       "  {\n"
-      "    PyObject *moduleName = PyUnicode_DecodeFSDefault(\"vtkmodules.util.execution_model\");\n"
+      "    PyObject *moduleName = PyUnicode_DecodeFSDefault(\"fvtk.util.execution_model\");\n"
       "    PyObject *internalModule = PyImport_Import(moduleName);\n"
       "    Py_DECREF(moduleName);\n"
       "    if (internalModule != nullptr)\n"

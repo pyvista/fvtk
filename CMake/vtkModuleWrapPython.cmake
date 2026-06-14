@@ -1270,7 +1270,7 @@ static void ${_vtk_python_TARGET_NAME}_load() {\n")
       add_custom_command(
         OUTPUT    ${_vtk_python_pyi_files}
         COMMAND   ${_vtk_python_exe} # Do not quote; may contain arguments.
-                  -m vtkmodules.generate_pyi
+                  -m fvtk.generate_pyi
                   -p "${_vtk_python_PYTHON_PACKAGE}"
                   ${_generate_pyi_static_importer_arg}
                   -o "${CMAKE_BINARY_DIR}/${_vtk_python_MODULE_DESTINATION}/${_vtk_python_package_dir}"

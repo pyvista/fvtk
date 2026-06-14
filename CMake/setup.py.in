@@ -76,7 +76,7 @@ features.update(vtk_features.FEATURES)
 
 extra_packages = []
 if 'web' in vtk_features.FEATURES:
-    extra_packages.append('vtkmodules.web')
+    extra_packages.append('fvtk.web')
     # Read from requirements_web.txt
     features['web'] = read_requirements(os.path.join(BUILD_DIR, 'requirements_web.txt'))
 
@@ -151,8 +151,8 @@ if 'GITLAB_CI' in os.environ:
         version = f'{version_base}.{version_suffix}+mr{os.environ["CI_MERGE_REQUEST_ID"]}'
 
 
-# Allow modifications to distribution name (e.g., `vtk_osmesa`)
-dist_name = 'vtk'
+# Allow modifications to distribution name (e.g., `fvtk_osmesa`)
+dist_name = 'fvtk'
 dist_suffix = '@VTK_DIST_NAME_SUFFIX@'.strip(' -_')
 if dist_suffix:
     dist_name = f"{dist_name}_{dist_suffix}"
@@ -162,26 +162,23 @@ setup(
     version=version,
     author='VTK developers',
     packages=[
-        'vtkmodules',
-        'vtkmodules.gtk',
-        'vtkmodules.numpy_interface',
-        'vtkmodules.qt',
-        'vtkmodules.test',
-        'vtkmodules.tk',
-        'vtkmodules.util',
-        'vtkmodules.wx',
+        'fvtk',
+        'fvtk.gtk',
+        'fvtk.numpy_interface',
+        'fvtk.qt',
+        'fvtk.test',
+        'fvtk.tk',
+        'fvtk.util',
+        'fvtk.wx',
     ] + extra_packages,
-    py_modules=[
-        'vtk',
-    ],
-    ext_package='vtkmodules',
+    ext_package='fvtk',
     ext_modules=[
         # https://gitlab.kitware.com/cmake/cmake/-/issues/19145
-        #ConfiguredCMakeExtension('vtkmodules', target='vtkpythonmodules'),
+        #ConfiguredCMakeExtension('fvtk', target='vtkpythonmodules'),
         ConfiguredCMakeExtension('vtkCommonCorePython', target='vtkCommonCorePython'),
     ],
     package_data={
-        'vtkmodules': [
+        'fvtk': [
             # Linux modules.
             '*-linux-gnu.so',
             # Unix shared libraries.

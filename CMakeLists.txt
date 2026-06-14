@@ -713,7 +713,7 @@ if (VTK_WRAP_PYTHON)
   vtk_module_wrap_python(
     MODULES         ${vtk_modules}
     INSTALL_EXPORT  VTKPython
-    PYTHON_PACKAGE  "vtkmodules"
+    PYTHON_PACKAGE  "fvtk"
     LIBRARY_DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     MODULE_DESTINATION  "${VTK_PYTHON_SITE_PACKAGES_SUFFIX}"
     CMAKE_DESTINATION   "${vtk_cmake_destination}"

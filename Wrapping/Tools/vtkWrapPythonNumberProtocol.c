@@ -37,7 +37,7 @@ int vtkWrapPython_GenerateNumberProtocolDefintions(FILE* fp, const ClassInfo* cl
     "    }\n"
     "  }\n"
     "  // Import the module\n"
-    "  PyObject* moduleName = PyUnicode_DecodeFSDefault(\"vtkmodules.util.execution_model\");\n"
+    "  PyObject* moduleName = PyUnicode_DecodeFSDefault(\"fvtk.util.execution_model\");\n"
     "  PyObject* internalModule = PyImport_Import(moduleName);\n"
     "  Py_DECREF(moduleName);\n"
     "  PyObject* pipeline = nullptr;\n"

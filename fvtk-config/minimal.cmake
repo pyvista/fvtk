@@ -84,5 +84,8 @@ set(VTK_OPENGL_HAS_OSMESA True CACHE BOOL "")
 set(VTK_USE_COCOA False CACHE BOOL "")
 set(VTK_USE_X True CACHE BOOL "")
 
-# Drop-in for the stock `vtk` wheel: keep the import namespace, no dist suffix.
+# Independent `fvtk` distribution: the Python package installs as `fvtk/` (not
+# `vtkmodules/`) and the wheel's dist name is `fvtk` (set in setup.py.in), so it
+# coexists with a stock `vtk`/`vtkmodules` install instead of clobbering it.
+# No dist suffix on top of that.
 set(VTK_DIST_NAME_SUFFIX "" CACHE STRING "")
