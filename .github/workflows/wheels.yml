@@ -1,0 +1,289 @@
+name: wheels
+
+# Build fvtk (trimmed VTK 9.6.2) Python wheels across PyVista's support matrix:
+#   Python 3.10 - 3.14  x  {Linux x86_64, macOS arm64, Windows x86_64} = 15 wheels.
+# Each wheel is built, repaired/bundled, installed into a clean venv, and
+# smoke-tested with an offscreen render (xvfb on Linux).
+
+on:
+  push:
+    branches: [main, feat/ci]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # TODO(namespace): flip to "fvtk" once branch feat/fvtk-namespace merges.
+  FVTK_IMPORT_NAME: vtkmodules
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux x86_64 — built inside the manylinux_2_28 container (same image family
+  # VTK's own wheel CI uses for the EGL/x11 wheels). System GL/EGL/OSMesa/X11
+  # deps come from dnf; the wheel is repaired with auditwheel.
+  # ---------------------------------------------------------------------------
+  linux:
+    name: linux-cp${{ matrix.python }}
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["310", "311", "312", "313", "314"]
+    env:
+      PYBIN: /opt/python/cp${{ matrix.python }}-cp${{ matrix.python }}/bin
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - name: Install system build + rendering dependencies
+        run: |
+          set -euxo pipefail
+          dnf install -y --setopt=install_weak_deps=False \
+            ninja-build \
+            libX11-devel libXcursor-devel libXt-devel libXext-devel \
+            mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel \
+            mesa-libGLU-devel libglvnd-devel \
+            git git-lfs
+          # cmake from pip (manylinux pythons all ship pip); pin a modern one.
+          "$PYBIN/python" -m pip install --upgrade pip
+          "$PYBIN/python" -m pip install "cmake>=3.22,<4.2" "setuptools<81" wheel auditwheel
+
+      - uses: actions/checkout@v4
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Configure
+        run: |
+          set -euxo pipefail
+          export PATH="$PYBIN:$PATH"
+          cmake -S . -B build -G Ninja \
+            -C ci/cmake/linux.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DPython3_EXECUTABLE="$PYBIN/python" \
+            -DPython3_FIND_STRATEGY=LOCATION
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          export PATH="$PYBIN:$PATH"
+          cmake --build build --parallel
+          sccache --show-stats || true
+
+      - name: Wheel (bdist_wheel + auditwheel repair)
+        run: |
+          set -euxo pipefail
+          export PATH="$PYBIN:$PATH"
+          python ci/prune_setup_py.py "$PWD/build"
+          ( cd build && python setup.py bdist_wheel )
+          ls -la build/dist/*.whl
+          auditwheel show build/dist/*.whl
+          auditwheel repair --plat manylinux_2_28_x86_64 -w wheelhouse build/dist/*.whl
+          ls -la wheelhouse/*.whl
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fvtk-linux-cp${{ matrix.python }}-x86_64
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  # Separate test job so a render failure is distinguishable from a build
+  # failure, and so the smoke test runs in a clean container with X11/mesa
+  # runtime (not the build container).
+  linux-test:
+    name: linux-test-cp${{ matrix.python }}
+    needs: linux
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["310", "311", "312", "313", "314"]
+    env:
+      PYBIN: /opt/python/cp${{ matrix.python }}-cp${{ matrix.python }}/bin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install runtime rendering deps + xvfb
+        run: |
+          set -euxo pipefail
+          dnf install -y --setopt=install_weak_deps=False \
+            mesa-dri-drivers mesa-libGL libglvnd-egl mesa-libOSMesa \
+            libX11 libXcursor libXt libXext xorg-x11-server-Xvfb
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: fvtk-linux-cp${{ matrix.python }}-x86_64
+          path: wheelhouse
+
+      - name: Install wheel + offscreen smoke test (xvfb)
+        run: |
+          set -euxo pipefail
+          "$PYBIN/python" -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          pip install --upgrade pip
+          pip install wheelhouse/*.whl
+          # Headless: run under xvfb so the X/GLX render-window path works on a
+          # GPU-less runner (llvmpipe software GL).
+          xvfb-run -a -s "-screen 0 1280x1024x24" \
+            python ci/smoke_test.py
+
+  # ---------------------------------------------------------------------------
+  # macOS arm64 (Apple Silicon) — runner macos-15. System Cocoa + OpenGL.
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macos-cp${{ matrix.python }}-arm64
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      _PYTHON_HOST_PLATFORM: macosx-11.0-arm64
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+
+      - name: Install build tools
+        run: |
+          set -euxo pipefail
+          brew install ninja || true
+          python -m pip install --upgrade pip
+          python -m pip install "cmake>=3.22,<4.2" "setuptools<81" wheel
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Configure
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build -G Ninja \
+            -C ci/cmake/macos.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DPython3_EXECUTABLE="$(which python)" \
+            -DPython3_FIND_STRATEGY=LOCATION
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          cmake --build build --parallel
+          sccache --show-stats || true
+
+      - name: Wheel
+        run: |
+          set -euxo pipefail
+          python ci/prune_setup_py.py "$PWD/build"
+          ( cd build && python setup.py bdist_wheel )
+          ls -la build/dist/*.whl
+          # universal2 wheels are not produced; platform detection must be arm64.
+          if ls build/dist/*universal2*.whl >/dev/null 2>&1; then
+            echo "ERROR: unexpected universal2 wheel" >&2; exit 1
+          fi
+
+      - name: Smoke test (offscreen)
+        run: |
+          set -euxo pipefail
+          python -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          pip install --upgrade pip
+          pip install build/dist/*.whl
+          python ci/smoke_test.py
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fvtk-macos-cp${{ matrix.python }}-arm64
+          path: build/dist/*.whl
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Windows x86_64 — runner windows-latest, MSVC toolchain.
+  # ---------------------------------------------------------------------------
+  windows:
+    name: windows-cp${{ matrix.python }}-x86_64
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "cmake>=3.22,<4.2" ninja "setuptools<81" wheel
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Enable MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build -G Ninja \
+            -C ci/cmake/windows.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DPython3_EXECUTABLE="$(which python)" \
+            -DPython3_FIND_STRATEGY=LOCATION
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build --parallel
+          sccache --show-stats || true
+
+      - name: Wheel
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python ci/prune_setup_py.py "$PWD/build"
+          ( cd build && python setup.py bdist_wheel )
+          ls -la build/dist/*.whl
+
+      - name: Smoke test (offscreen)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m venv venv
+          ./venv/Scripts/python -m pip install --upgrade pip
+          ./venv/Scripts/python -m pip install build/dist/*.whl
+          ./venv/Scripts/python ci/smoke_test.py
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fvtk-windows-cp${{ matrix.python }}-x86_64
+          path: build/dist/*.whl
+          if-no-files-found: error
