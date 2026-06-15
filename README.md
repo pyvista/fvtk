@@ -28,7 +28,7 @@ a handoff guide for continuing development.
 | | fvtk (trimmed) | stock `vtk` 9.6.2 |
 |---|---|---|
 | Fork point | VTK `v9.6.2` (`f49a1dbafa`) | 9.6.2 |
-| Wheel size (stripped) | **44 MB** (42 MiB), ICF on | ~120 MB |
+| Wheel size (stripped) | **40 MB** (38 MiB), full lever stack | ~120 MB |
 | Modules shipped | ~84 + vendored deps | ~160 |
 | Compile units (`ninja` steps) | **~6,900** (wrappers further batched by unity) | ~9,120 |
 | Source tree (tracked) | **~140 MB** | ~320 MB |
@@ -117,6 +117,28 @@ green (9,731 passed / 8 pre-existing env-fails / 0 introduced).
    Disable with `FVTK_ICF=0 ./build-fvtk.sh` for an A/B baseline (gold `--icf=safe` is the
    strictly-weaker fallback). Linux/gold only; needs `binutils` (in `shell.nix`).
 
+10. **Wrapper TU size-opt (`FVTK_WRAP_OPTSIZE`, on by default).** The generated `*Python.cxx`
+    wrappers are argument-marshalling shims, not hot code, yet they inherit the project `-O3`.
+    A hook in `CMake/vtkModuleWrapPython.cmake` appends `-Oz` to the wrapper (unity) TUs only —
+    last `-O` wins, so it overrides `-O3` for those TUs and nothing else. **~1.2 MiB off the
+    wheel** at zero runtime cost (cold code). `FVTK_WRAP_OPTSIZE=0` to disable.
+
+11. **Array-dispatch value-type trim (`FVTK_DISPATCH_MINIMAL`, on by default).** VTK's default
+    `vtkArrayDispatch` typelist is ~14 value types; PyVista's `numpy_to_vtk` only ever yields
+    float/double/int/uint8/int64. A hook in `Common/Core/vtkCreateArrayDispatchArrayList.cmake`
+    trims the AOS + StructuredPoint dispatch lists to those 6, so `Dispatch`/`Dispatch2`/`Dispatch3`
+    instantiate far fewer workers in the Filters/Common kits. **Correctness-preserving:** an
+    excluded value type still works via the virtual `vtkDataArray` fallback (same mechanism as the
+    SOA-off lever) — only the fast path is dropped, never a result. `FVTK_DISPATCH_MINIMAL=0`
+    restores the full list. (Note: this trims the *dispatch* typelist only — the per-type array
+    *classes* and their bulk instantiations stay, because CommonCore's own array machinery
+    references the SOA/implicit backends regardless of the dispatch switches.)
+
+Levers 9–11 plus a strip-coverage fix (the kit `libvtkCommon.so` was shipping unstripped — its
+26 MB `.symtab` is now removed via a wheel re-strip+repack) take the stripped wheel **49 → 38 MiB**.
+Validated parity-green: differential PyVista core+plotting (2,104 tests), byte-identical outcomes,
+0 regressions.
+
 ### Wheel-size lever
 
 6. **Symbol strip (`FVTK_STRIP=1`).** `strip --strip-all` on every shipped `.so` removes
@@ -157,6 +179,8 @@ Knobs (environment variables):
 | `FAST` | `1` | `0` enables LTO (production) |
 | `FVTK_STRIP` | `0` | `1` strips shipped `.so` symbol tables |
 | `FVTK_ICF` | `1` | `0` disables gold ICF (link-time identical-code folding); minimal profile only |
+| `FVTK_WRAP_OPTSIZE` | `1` | `0` disables `-Oz` on the Python wrapper TUs |
+| `FVTK_DISPATCH_MINIMAL` | `1` | `0` restores the full ~14-type array-dispatch list (vs PyVista's 6) |
 | `BUILD` | `./build-fvtk` | build directory |
 | `BUILD_JOBS` | `8` | parallel compile jobs |
 | `USE_CCACHE` | `1` | compiler launcher via `ccache` |

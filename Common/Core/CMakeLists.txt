@@ -229,6 +229,13 @@ foreach (INSTANTIATION_VALUE_TYPE IN LISTS vtk_numeric_types)
     vtkStructuredPointArrayInstantiate
     vtkTypedDataArrayInstantiate)
 
+  # NOTE: do NOT try to drop the dispatch-disabled SOA/ScaledSOA (or implicit)
+  # backend instantiations from this list to save size — they are referenced
+  # directly by CommonCore's own array machinery (e.g. vtkDataArrayPrivate.txx
+  # GetValueRange) regardless of the VTK_DISPATCH_*_ARRAYS switches, so removing
+  # them is an incomplete-type COMPILE error, not just a link drop. (Validated
+  # the hard way: removing SOA/ScaledSOA broke vtkDataArrayPrivate.txx.)
+
   # see comments in vtkGenericDataArray.h for explanation
   if (INSTANTIATION_VALUE_TYPE MATCHES "(^| )long( |$)")
     list(APPEND _list "vtkGenericDataArrayValueRangeInstantiate")

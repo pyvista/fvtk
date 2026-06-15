@@ -151,8 +151,25 @@ macro(vtkArrayDispatch_default_array_setup)
     endif ()
   endmacro()
 
+  # fvtk: aggressively trim the array-dispatch value-type list to the types
+  # PyVista actually constructs (numpy_to_vtk -> float/double, uint8 colors, int,
+  # int64/ids). VTK's default ~14-type list instantiates every Dispatch* worker
+  # across all of them (and Dispatch2/3 multiply it N^2/N^3); restricting the
+  # default `Arrays` list to ~6 types is a large binary cut in the Filters/Common
+  # kits. Correctness-preserving: an array whose value type is no longer in the
+  # list still works — Dispatch returns false and the call site falls back to the
+  # virtual vtkDataArray path (same mechanism the SOA-off lever relies on); only
+  # the fast path is dropped, never a result. Gated by env FVTK_DISPATCH_MINIMAL.
+  # vtkTypeList::Unique folds vtkIdType into long long where they coincide.
+  # Default ON (validated parity-green); set FVTK_DISPATCH_MINIMAL=0 to restore
+  # the full ~14-type dispatch list.
+  set(_fvtk_disp_types "${vtk_numeric_types}")
+  if (NOT "$ENV{FVTK_DISPATCH_MINIMAL}" STREQUAL "0")
+    set(_fvtk_disp_types "float;double;int;unsigned char;long long;vtkIdType")
+  endif ()
+
   # Set up regular arrays
-  _vtkCreateArrayDispatch(VTK_DISPATCH_AOS_ARRAYS "vtkAOSDataArrayTemplate" "${vtk_numeric_types}")
+  _vtkCreateArrayDispatch(VTK_DISPATCH_AOS_ARRAYS "vtkAOSDataArrayTemplate" "${_fvtk_disp_types}")
   _vtkCreateArrayDispatch(VTK_DISPATCH_SOA_ARRAYS "vtkSOADataArrayTemplate" "${vtk_numeric_types}")
   _vtkCreateArrayDispatch(VTK_DISPATCH_SCALED_SOA_ARRAYS "vtkScaledSOADataArrayTemplate" "${vtk_numeric_types}")
 
@@ -170,7 +187,7 @@ macro(vtkArrayDispatch_default_array_setup)
   _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_CONSTANT_ARRAYS "vtkConstantArray" "${vtk_numeric_types}")
   _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STD_FUNCTION_ARRAYS "vtkStdFunctionArray" "${vtk_numeric_types}")
   _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STRIDED_ARRAYS "vtkStridedArray" "${vtk_numeric_types}")
-  _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STRUCTURED_POINT_ARRAYS "vtkStructuredPointArray" "${vtk_numeric_types}")
+  _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STRUCTURED_POINT_ARRAYS "vtkStructuredPointArray" "${_fvtk_disp_types}")
 
 endmacro()
 

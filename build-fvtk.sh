@@ -26,7 +26,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # CMAKE_PREFIX_PATH. Re-exec inside it (once) so the rendering deps resolve.
 # Set FVTK_IN_NIX_SHELL=1 to skip (already provisioned).
 if [ "${FVTK_IN_NIX_SHELL:-0}" != "1" ]; then
-  exec nix-shell "$REPO/shell.nix" --run "FVTK_IN_NIX_SHELL=1 PROFILE=${PROFILE:-minimal} FAST=${FAST:-1} USE_CCACHE=${USE_CCACHE:-1} FVTK_ICF=${FVTK_ICF:-1} FVTK_STRIP=${FVTK_STRIP:-0} bash '${BASH_SOURCE[0]}'"
+  exec nix-shell "$REPO/shell.nix" --run "FVTK_IN_NIX_SHELL=1 PROFILE=${PROFILE:-minimal} FAST=${FAST:-1} USE_CCACHE=${USE_CCACHE:-1} FVTK_ICF=${FVTK_ICF:-1} FVTK_STRIP=${FVTK_STRIP:-0} FVTK_WRAP_OPTSIZE=${FVTK_WRAP_OPTSIZE:-1} FVTK_DISPATCH_MINIMAL=${FVTK_DISPATCH_MINIMAL:-1} bash '${BASH_SOURCE[0]}'"
 fi
 
 BUILD="${BUILD:-$REPO/build-fvtk}"
@@ -167,4 +167,26 @@ fi
 
 echo "=== wheel ==="
 ( cd "$BUILD" && "$WHEEL_VENV/bin/python3" setup.py bdist_wheel )
+
+# Re-strip inside the finished wheel. The pre-bdist strip above only sees the
+# cmake-staged Python wrappers under "$BUILD/fvtk"; the KIT libraries
+# (libvtkCommon.so, libvtkFilters.so, ...) are copied into the wheel package by
+# bdist_wheel AFTER that strip, so some ship unstripped — notably libvtkCommon.so,
+# which carried a ~26 MB .symtab (~1.7 MiB off the compressed wheel). Unpack,
+# strip every .so, and repack; `wheel pack` regenerates RECORD so the wheel stays
+# install-valid.
+if [ "${FVTK_STRIP:-0}" = "1" ] && [ -n "${STRIP_BIN:-}" ] && [ -x "${STRIP_BIN:-/nonexistent}" ]; then
+  _whl="$(ls "$BUILD"/dist/*.whl)"
+  _unp="$BUILD/_whlrestrip"; rm -rf "$_unp"; mkdir -p "$_unp"
+  "$WHEEL_VENV/bin/python3" -m wheel unpack "$_whl" -d "$_unp"
+  _n=0
+  while IFS= read -r _so; do
+    "$STRIP_BIN" --strip-all "$_so" 2>/dev/null && _n=$((_n+1)) || true
+  done < <(find "$_unp" \( -name '*.so' -o -name '*.so.*' \))
+  _pkgdir="$(find "$_unp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  rm -f "$_whl"
+  "$WHEEL_VENV/bin/python3" -m wheel pack "$_pkgdir" -d "$BUILD/dist"
+  rm -rf "$_unp"
+  echo "re-stripped $_n shared objects inside the wheel and repacked"
+fi
 ls -la "$BUILD"/dist/*.whl

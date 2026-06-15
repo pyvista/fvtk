@@ -321,6 +321,20 @@ $<$<BOOL:${_vtk_python_hierarchy_files}>:\n--types \'$<JOIN:${_vtk_python_hierar
     endif ()
   endif ()
 
+  # --- fvtk wrapper size-opt: compile the (cold) Python wrapper TUs for size ---
+  # The generated *Python.cxx are argument-marshalling shims, not hot code, yet
+  # they inherit the project -O3 like everything else. Recompiling ONLY them at
+  # -Oz trades ~nothing in runtime for real wrapper-.so size. Appended after the
+  # inherited flags, and the last -O wins, so this overrides -O3 for these TUs
+  # only. Applies to the unity TUs when FVTK_WRAP_UNITY is on, else the per-class
+  # wrappers. Gated by env FVTK_WRAP_OPTSIZE (matches the FVTK_ICF/FVTK_STRIP
+  # idiom). gcc>=12/clang accept -Oz.
+  # Default ON (validated parity-green); set FVTK_WRAP_OPTSIZE=0 to disable.
+  if (_vtk_python_sources AND NOT "$ENV{FVTK_WRAP_OPTSIZE}" STREQUAL "0")
+    set_source_files_properties(${_vtk_python_sources} PROPERTIES
+      COMPILE_OPTIONS "-Oz")
+  endif ()
+
   set("${sources}"
     "${_vtk_python_sources}"
     PARENT_SCOPE)
