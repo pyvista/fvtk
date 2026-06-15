@@ -104,6 +104,36 @@ if (NOT "$ENV{FVTK_LTO}" STREQUAL "0")
   unset(_fvtk_lto_link)
 endif ()
 
+# Speed-3: Profile-Guided Optimization (FVTK_PGO=gen | use). Two-phase: an
+# instrumented build (gen) records real branch/call frequencies while a training
+# workload (PyVista's own test suite + the perf benchmark) runs against it, then
+# the final build (use) recompiles guided by that profile — better inlining, hot/
+# cold splitting and branch layout than static heuristics. Drives the same build
+# dir twice: gen writes .gcda next to each .o (default location); use reads them
+# in place, so the object paths MUST match (same BUILD dir for both phases).
+#   gen: instrument. -fprofile-update=atomic because VTK's SMPTools run threaded;
+#        without atomic the shared counters race and corrupt the profile. Run this
+#        phase with FVTK_LTO=0 FVTK_ICF=0 (instrument cleanly; ICF would fold
+#        distinct counters together) and unstripped.
+#   use: consume. -fprofile-correction tolerates the threaded-profile residue;
+#        -Wno-coverage-mismatch keeps stale-counter warnings non-fatal. Stack with
+#        FVTK_LTO=1 FVTK_ICF=1 for the shipped wheel (profile guides LTO inlining).
+if ("$ENV{FVTK_PGO}" STREQUAL "gen")
+  set(_fvtk_pgo "-fprofile-generate -fprofile-update=atomic")
+  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} ${_fvtk_pgo}" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_fvtk_pgo}" CACHE STRING "" FORCE)
+  # link needs -fprofile-generate too so libgcov is pulled in.
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fprofile-generate" CACHE STRING "" FORCE)
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fprofile-generate" CACHE STRING "" FORCE)
+  set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -fprofile-generate" CACHE STRING "" FORCE)
+  unset(_fvtk_pgo)
+elseif ("$ENV{FVTK_PGO}" STREQUAL "use")
+  set(_fvtk_pgo "-fprofile-use -fprofile-correction -Wno-coverage-mismatch")
+  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} ${_fvtk_pgo}" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_fvtk_pgo}" CACHE STRING "" FORCE)
+  unset(_fvtk_pgo)
+endif ()
+
 # Identical Code Folding (gold --icf=all). Folds byte-for-byte identical
 # functions and ships a single copy: VTK's heavy template instantiation and the
 # generated Python-wrapper boilerplate emit a lot of these. Complements

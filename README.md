@@ -28,8 +28,8 @@ a handoff guide for continuing development.
 | | fvtk (trimmed) | stock `vtk` 9.6.2 |
 |---|---|---|
 | Fork point | VTK `v9.6.2` (`f49a1dbafa`) | 9.6.2 |
-| Wheel size (stripped) | **~37 MB** (36.9 MiB), full lever stack incl. LTO | ~120 MB |
-| Runtime (PyVista filter/render bench) | **~2 % faster** than untuned `-O3` (LTO + no-semantic-interposition) | reference |
+| Wheel size (stripped) | **~30 MB** (28.5 MiB) PGO release · ~37 MB LTO-only | ~120 MB |
+| Runtime (PyVista filter bench) | **~26 % faster** than untuned `-O3` (PGO release) · ~2 % LTO-only | reference |
 | Modules shipped | ~84 + vendored deps | ~160 |
 | Compile units (`ninja` steps) | **~6,900** (wrappers further batched by unity) | ~9,120 |
 | Source tree (tracked) | **~140 MB** | ~320 MB |
@@ -163,7 +163,22 @@ maximum wheel portability.
     the compiler inline within each `.so` — a win for VTK's virtual-dispatch + template hot
     paths (CPython itself ships this way). Free: no portability or build-time cost.
 
-Levers 12–13 are validated parity-green: differential PyVista core+plotting (**4,088 tests**),
+14. **Profile-Guided Optimization (`FVTK_PGO=gen|use`, release builds).** The campaign's
+    biggest lever. A three-phase build (`ci/pgo-build.sh`): (1) **instrument** —
+    `-fprofile-generate` (atomic counters; VTK's SMPTools run threaded); (2) **train** —
+    run `tools/pgo-train.py` (a balanced, representative sweep of the PyVista filter hot
+    paths) against the instrumented wheel so real branch/call frequencies land in `.gcda`;
+    (3) **rebuild** — `-fprofile-use` + LTO + ICF, now guiding inlining, hot/cold splitting
+    and branch layout from the measured profile. gen and use share the build dir (`.gcda`
+    are keyed to object paths); `CMakeCache.txt` is dropped between phases so the use-config
+    starts from clean flags. The training is deliberately **GL-free** — every PGO win is in
+    CPU-bound filters, and a render segfault on a headless box would bypass gcov's atexit dump
+    and lose the whole profile. **Measured +26% on the PyVista filter benchmark vs untuned
+    `-O3`** (`slice` 2.9×, `clip` 2.2×, `threshold` 1.9×; contour neutral; GL-bound render
+    flat) **and −25% wheel** (28.5 MiB — PGO splits cold paths out and treats them for size).
+    ~3× build time on top of LTO, so it runs only in the release job, not per-push.
+
+Levers 12–14 are validated parity-green: differential PyVista core+plotting (**4,088 tests**),
 **0 regressions** vs the untuned `-O3` build (identical pass/fail/skip outcomes).
 
 ### Wheel-size lever
@@ -192,11 +207,16 @@ The build self-execs into a `nix-shell` (`shell.nix`) that provides the GL/EGL/O
 stack, pins `cmake` 4.1.2, and uses Python 3.13 + `ccache`.
 
 ```bash
-# Lightest parity wheel (default PROFILE=minimal, LTO off, stripped):
+# Fast iteration wheel (LTO off, stripped) — the per-push smoke build:
+FVTK_LTO=0 FVTK_STRIP=1 ./build-fvtk.sh
+
+# Default wheel (LTO + ICF + strip):
 FVTK_STRIP=1 ./build-fvtk.sh
 
-# Production wheel (LTO on, stripped):
-FAST=0 FVTK_STRIP=1 ./build-fvtk.sh
+# Release wheel — full profile-guided build (instrument → train → rebuild),
+# ~26% faster + ~25% smaller, ~3× build time. Trains on PyVista's filter hot
+# paths; clones pyvista automatically (or set PYVISTA_DIR to an existing checkout):
+./ci/pgo-build.sh
 ```
 
 Knobs (environment variables):
@@ -211,6 +231,7 @@ Knobs (environment variables):
 | `FVTK_DISPATCH_MINIMAL` | `1` | `0` restores the full ~14-type array-dispatch list (vs PyVista's 6) |
 | `FVTK_LTO` | `1` | `0` disables LTO (`-flto=auto`); minimal profile. Off ≈ ~13 min cold vs ~3× with LTO |
 | `FVTK_SEMINTERP` | `1` | `0` restores default semantic interposition (disables intra-`.so` inlining) |
+| `FVTK_PGO` | _(unset)_ | `gen`/`use` phases of profile-guided optimization; orchestrated by `ci/pgo-build.sh` |
 | `BUILD` | `./build-fvtk` | build directory |
 | `BUILD_JOBS` | `8` | parallel compile jobs |
 | `USE_CCACHE` | `1` | compiler launcher via `ccache` |
