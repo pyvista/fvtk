@@ -28,7 +28,8 @@ a handoff guide for continuing development.
 | | fvtk (trimmed) | stock `vtk` 9.6.2 |
 |---|---|---|
 | Fork point | VTK `v9.6.2` (`f49a1dbafa`) | 9.6.2 |
-| Wheel size (stripped) | **40 MB** (38 MiB), full lever stack | ~120 MB |
+| Wheel size (stripped) | **~37 MB** (36.9 MiB), full lever stack incl. LTO | ~120 MB |
+| Runtime (PyVista filter/render bench) | **~2 % faster** than untuned `-O3` (LTO + no-semantic-interposition) | reference |
 | Modules shipped | ~84 + vendored deps | ~160 |
 | Compile units (`ninja` steps) | **~6,900** (wrappers further batched by unity) | ~9,120 |
 | Source tree (tracked) | **~140 MB** | ~320 MB |
@@ -139,6 +140,32 @@ Levers 9–11 plus a strip-coverage fix (the kit `libvtkCommon.so` was shipping 
 Validated parity-green: differential PyVista core+plotting (2,104 tests), byte-identical outcomes,
 0 regressions.
 
+### Runtime-speed levers (compiled C++)
+
+The campaign's second axis: make everything PyVista *calls* fast, without dropping or
+slowing any module. These never trade runtime for size — they make the code faster, and
+LTO shrinks it as a side effect. ISA floor is left at **baseline x86-64** (no `-march`) for
+maximum wheel portability.
+
+12. **LTO (`FVTK_LTO`, on by default).** `-flto=auto` (GCC parallel-WPA — the GCC analogue of
+    Clang ThinLTO; streams whole-program analysis across cores so it's ~30–40 min cold, not
+    serial-LTO hours). Cross-TU inlining + devirtualization; the link-line carries `-O3` so LTO
+    optimizes for speed. Composes with gold `--icf=all` (ICF folds the post-LTO objects) and
+    `--gc-sections`. **Measured +~2 % overall on the PyVista filter/render benchmark** (4–5 % on
+    compute-bound kernels — clip/glyph/smooth/contour; flat on GL-render and bandwidth-bound
+    paths that `-O3` already saturates) **and −3 % wheel** as a side effect. `FVTK_LTO=0` for
+    fast iteration builds (~13 min cold).
+
+13. **`-fno-semantic-interposition` (`FVTK_SEMINTERP`, on by default).** By default a shared
+    library must assume any exported symbol could be interposed at load time (`LD_PRELOAD`), so
+    GCC routes those calls through the PLT and can't inline/devirtualize across them. A
+    self-contained viz wheel is never interposed in its own internals, so this is safe and lets
+    the compiler inline within each `.so` — a win for VTK's virtual-dispatch + template hot
+    paths (CPython itself ships this way). Free: no portability or build-time cost.
+
+Levers 12–13 are validated parity-green: differential PyVista core+plotting (**4,088 tests**),
+**0 regressions** vs the untuned `-O3` build (identical pass/fail/skip outcomes).
+
 ### Wheel-size lever
 
 6. **Symbol strip (`FVTK_STRIP=1`).** `strip --strip-all` on every shipped `.so` removes
@@ -153,8 +180,9 @@ Validated parity-green: differential PyVista core+plotting (2,104 tests), byte-i
 > measured `repair` on our wheel was +620 bytes (it only retags `linux_x86_64` →
 > `manylinux_2_39_x86_64`; VTK `dlopen`s GL so there's nothing to vendor). It will be needed
 > at the CI/distribution stage to produce a PyPI-acceptable `manylinux` tag, but it does not
-> shrink the wheel. LTO is a *runtime* lever (production profile `FAST=0`), not a size lever,
-> and costs 2–3× build time.
+> shrink the wheel. (LTO — lever 12 — is primarily a *runtime* lever, but cross-TU dead-code
+> elimination also shrinks the wheel ~3 %; it costs ~3× build time, so `FVTK_LTO=0` for fast
+> iteration.)
 
 ---
 
@@ -181,6 +209,8 @@ Knobs (environment variables):
 | `FVTK_ICF` | `1` | `0` disables gold ICF (link-time identical-code folding); minimal profile only |
 | `FVTK_WRAP_OPTSIZE` | `1` | `0` disables `-Oz` on the Python wrapper TUs |
 | `FVTK_DISPATCH_MINIMAL` | `1` | `0` restores the full ~14-type array-dispatch list (vs PyVista's 6) |
+| `FVTK_LTO` | `1` | `0` disables LTO (`-flto=auto`); minimal profile. Off ≈ ~13 min cold vs ~3× with LTO |
+| `FVTK_SEMINTERP` | `1` | `0` restores default semantic interposition (disables intra-`.so` inlining) |
 | `BUILD` | `./build-fvtk` | build directory |
 | `BUILD_JOBS` | `8` | parallel compile jobs |
 | `USE_CCACHE` | `1` | compiler launcher via `ccache` |

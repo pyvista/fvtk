@@ -34,7 +34,9 @@ set(VTK_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(VTK_DEBUG_LEAKS OFF CACHE BOOL "")
 set(VTK_ENABLE_REMOTE_MODULES OFF CACHE BOOL "")
 
-# LTO OFF for fast validation builds. Production: set ON (~2-3x slower build).
+# LTO is handled manually below via -flto=auto (parallel WPA) so we control the
+# job count and keep it composing with the gold/ICF link flags; leave CMake's
+# IPO module off to avoid double-injecting -flto.
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
 
 # --- production rendering / runtime flags (from CoDim _base.cmake) -----------
@@ -57,9 +59,50 @@ set(VTK_DISPATCH_SOA_ARRAYS OFF CACHE BOOL "")
 # stacks with --strip-all. Applies to SHARED (kits) and MODULE (Python wrappers).
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gc-sections" CACHE STRING "" FORCE)
-set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--gc-sections" CACHE STRING "" FORCE)
-set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections" CACHE STRING "" FORCE)
+# Lever D: --hash-style=gnu emits only the modern .gnu.hash symbol table and
+# drops the legacy SysV .hash section (stock VTK ships BOTH across ~140 .so).
+# Free and universally safe on glibc (the only fvtk target); ~0.27 MiB measured.
+set(_fvtk_ldflags "-Wl,--gc-sections -Wl,--hash-style=gnu")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_ldflags}" CACHE STRING "" FORCE)
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_ldflags}" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_ldflags}" CACHE STRING "" FORCE)
+unset(_fvtk_ldflags)
+
+# === SPEED levers (campaign pivot 2026-06-15: make everything PyVista calls fast) ===
+# These never drop or slow any module; they make the compiled code faster (and,
+# as a side effect, LTO also makes it smaller). ISA floor is left at baseline
+# x86-64 (no -march) for maximum wheel portability — chosen deliberately.
+#
+# Speed-1: -fno-semantic-interposition. By default a shared lib must assume any
+# exported (default-visibility) symbol could be interposed at load time (LD_PRELOAD),
+# so GCC can't inline or devirtualize across those calls and routes them through
+# the PLT. A self-contained viz wheel is never interposed in its own internals,
+# so this is safe and lets the compiler inline/devirtualize within each .so —
+# a real win for VTK's virtual-dispatch + template-heavy hot paths. Free: no
+# portability or build-time cost (CPython itself ships with this). Toggle with
+# FVTK_SEMINTERP=0.
+if (NOT "$ENV{FVTK_SEMINTERP}" STREQUAL "0")
+  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -fno-semantic-interposition" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-semantic-interposition" CACHE STRING "" FORCE)
+endif ()
+
+# Speed-2: LTO (GCC's parallel-WPA analogue of ThinLTO). -flto=auto streams the
+# whole-program analysis across nproc jobs so cross-TU inlining + devirtualization
+# happens without the serial-LTO time blowup (~30-40 min cold here vs ~13). The
+# optimization level that drives LTO's inlining is the one on the LINK line, so we
+# add -O3 there too. Composes with gold/--icf=all (ICF folds the post-LTO objects)
+# and --gc-sections. LTO also supersedes the per-TU wrapper -Oz size lever (link-
+# time -O3 governs), which is fine under a speed-first mandate. Toggle FVTK_LTO=0
+# for fast iteration builds.
+if (NOT "$ENV{FVTK_LTO}" STREQUAL "0")
+  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -flto=auto -fno-fat-lto-objects" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=auto -fno-fat-lto-objects" CACHE STRING "" FORCE)
+  set(_fvtk_lto_link "-flto=auto -O3 -fno-semantic-interposition")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+  set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+  unset(_fvtk_lto_link)
+endif ()
 
 # Identical Code Folding (gold --icf=all). Folds byte-for-byte identical
 # functions and ships a single copy: VTK's heavy template instantiation and the
