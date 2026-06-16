@@ -1,0 +1,191 @@
+name: wheels-macos-arm64
+
+# Build fvtk (trimmed VTK 9.6.2) Python wheels for macOS arm64 (Apple Silicon),
+# CPython 3.9 - 3.13, on GitHub Actions `macos-14` (ARM). ARM ONLY: no x86_64,
+# no universal2 (macosx_11_0_arm64 tag). Toolchain is AppleClang + cmake + ninja
+# (NOT nix / NOT GCC) — the repo's nix/GCC build-fvtk.sh + shell.nix path is
+# bypassed entirely here. The MSVC/Apple toolchain split lives in
+# fvtk-config/minimal.cmake's 3-way _FVTK_TOOLCHAIN gate, which ci/cmake/macos.cmake
+# routes to the "apple" branch (ThinLTO + -Wl,-dead_strip + Cocoa GL).
+
+on:
+  # Release-gated: a full cp39-cp313 matrix is too heavy for every push/PR. Runs
+  # only on tags (release wheels) and manual dispatch — same gating as
+  # wheels-manylinux217 / release-wheel-lto. Push a tag or use the Actions
+  # "Run workflow" button to smoke a WIP.
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+concurrency:
+  group: wheels-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The fork ships vtkmodules renamed to the top-level `fvtk` package.
+  FVTK_IMPORT_NAME: fvtk
+  SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+
+jobs:
+  macos:
+    name: macos-cp${{ matrix.python }}-arm64
+    runs-on: macos-14            # Apple Silicon (arm64) runner
+    strategy:
+      fail-fast: false
+      matrix:
+        # cp39 - cp313, Apple Silicon only.
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      # Force the wheel platform tag to arm64 + the 11.0 floor. setuptools'
+      # bdist_wheel reads _PYTHON_HOST_PLATFORM for the plat tag; combined with
+      # CMAKE_OSX_* in ci/cmake/macos.cmake this yields macosx_11_0_arm64.
+      _PYTHON_HOST_PLATFORM: macosx-11.0-arm64
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      # Belt-and-suspenders: make the apple branch of minimal.cmake's
+      # _FVTK_TOOLCHAIN gate fire even if CMAKE_HOST_APPLE is ever unreliable in a
+      # `-C` init-cache.
+      FVTK_TARGET_OS: macos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # VTK derives version/provenance from the root commit; keep history.
+          fetch-depth: 0
+
+      # actions/setup-python on macos-14 provides native arm64 CPython for each
+      # version. VTK's CMake superbuild emits its own setup.py (configure_file
+      # CMake/setup.py.in), so we build with cmake directly and call bdist_wheel —
+      # the same flow as build-fvtk.sh, minus nix. The interpreter picked here
+      # drives VTK's wrapper ABI suffix (SOABI), so it MUST be the matrix
+      # interpreter (setup-python puts exactly one python3 on PATH).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+
+      - name: Show toolchain
+        run: |
+          set -euxo pipefail
+          clang --version
+          xcrun --show-sdk-path
+          python --version
+          python -c "import sysconfig; print(sysconfig.get_config_var('SOABI'))"
+          python -c "import platform; print(platform.machine())"   # expect arm64
+
+      - name: Install build tools
+        run: |
+          set -euxo pipefail
+          brew install ninja || true
+          python -m pip install --upgrade pip
+          # cmake <4.2 to match the repo's known-good pin (4.2.x regressed nested
+          # try_compile); setuptools <81 keeps the legacy bdist_wheel entrypoint
+          # VTK's generated setup.py relies on.
+          python -m pip install "cmake>=3.22,<4.2" "setuptools<81" wheel
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Probe sccache (disable if backend unavailable)
+        shell: bash
+        run: |
+          set -uxo pipefail
+          if sccache --start-server && sccache --show-stats; then
+            echo "SCCACHE_LAUNCHER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "sccache backend unavailable; building without compiler cache"
+            echo "SCCACHE_LAUNCHER=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure (AppleClang + ci/cmake/macos.cmake)
+        run: |
+          set -euxo pipefail
+          # Explicit AppleClang. /usr/bin/{clang,clang++} is the Xcode toolchain on
+          # the runner; do NOT let CMake pick up a Homebrew gcc.
+          cmake -S . -B build -G Ninja \
+            -C ci/cmake/macos.cmake \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER="${SCCACHE_LAUNCHER}" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="${SCCACHE_LAUNCHER}" \
+            -DPython3_EXECUTABLE="$(which python)" \
+            -DPython3_FIND_STRATEGY=LOCATION
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          cmake --build build --parallel
+          sccache --show-stats || true
+
+      - name: Wheel (bdist_wheel)
+        run: |
+          set -euxo pipefail
+          python ci/prune_setup_py.py "$PWD/build"
+          ( cd build && python setup.py bdist_wheel )
+          ls -la build/dist/*.whl
+          # Guard: ARM-ONLY. Fail loudly if an x86_64 or universal2 wheel slipped
+          # through (would mean CMAKE_OSX_ARCHITECTURES / _PYTHON_HOST_PLATFORM
+          # didn't take). The expected tag is macosx_11_0_arm64.
+          if ls build/dist/*universal2*.whl >/dev/null 2>&1; then
+            echo "ERROR: unexpected universal2 wheel" >&2; exit 1
+          fi
+          if ls build/dist/*x86_64*.whl >/dev/null 2>&1; then
+            echo "ERROR: unexpected x86_64 wheel" >&2; exit 1
+          fi
+          if ! ls build/dist/*arm64*.whl >/dev/null 2>&1; then
+            echo "ERROR: no arm64 wheel produced" >&2; exit 1
+          fi
+
+      # Strip symbol tables (ld64 keeps full symtab in a Release .dylib). macOS
+      # `strip -x` removes non-global symbols but keeps the dynamic-link symbols,
+      # the Mach-O analogue of GNU `strip --strip-all` on a .so. Strip in place
+      # inside the unpacked wheel, then repack so RECORD is regenerated.
+      - name: Strip + repack wheel (strip -x)
+        run: |
+          set -euxo pipefail
+          whl="$(ls build/dist/*.whl)"
+          unp="build/_whlrestrip"; rm -rf "$unp"; mkdir -p "$unp"
+          python -m wheel unpack "$whl" -d "$unp"
+          n=0
+          while IFS= read -r so; do
+            # -x: remove non-global (local) symbols; safe for a loadable .so/.dylib.
+            strip -x "$so" 2>/dev/null && n=$((n+1)) || true
+          done < <(find "$unp" \( -name '*.so' -o -name '*.dylib' \))
+          echo "stripped $n shared objects"
+          pkgdir="$(find "$unp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          rm -f "$whl"
+          python -m wheel pack "$pkgdir" -d build/dist
+          rm -rf "$unp"
+          ls -la build/dist/*.whl
+
+      # delocate is the macOS analogue of auditwheel: it bundles any non-system
+      # dylib dependencies into the wheel and rewrites the load paths. VTK vendors
+      # nearly all ThirdParty deps statically (or as bundled .dylibs already inside
+      # the package), so this is mostly a no-op / sanity check, but it catches a
+      # stray Homebrew dylib leaking in.
+      - name: delocate (bundle stray dylibs)
+        run: |
+          set -euxo pipefail
+          python -m pip install delocate
+          whl="$(ls build/dist/*.whl)"
+          mkdir -p wheelhouse
+          # --require-archs arm64 fails the build if any Mach-O slice is non-arm64.
+          delocate-wheel --require-archs arm64 -w wheelhouse -v "$whl"
+          ls -la wheelhouse/*.whl
+
+      - name: Smoke test (offscreen Cocoa GL)
+        run: |
+          set -euxo pipefail
+          python -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          pip install --upgrade pip numpy
+          pip install wheelhouse/*.whl
+          # No xvfb on macOS: Cocoa offscreen rendering uses an NSOpenGL FBO and
+          # needs no window server. The fork imports as the `fvtk` package.
+          FVTK_IMPORT_NAME="${FVTK_IMPORT_NAME}" python ci/smoke_test.py
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fvtk-macos-cp${{ matrix.python }}-arm64
+          path: wheelhouse/*.whl
+          if-no-files-found: error

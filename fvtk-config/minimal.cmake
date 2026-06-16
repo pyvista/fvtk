@@ -53,16 +53,64 @@ set(VTK_OPENGL_ENABLE_STREAM_ANNOTATIONS OFF CACHE BOOL "")
 set(VTK_DISPATCH_SCALED_SOA_ARRAYS OFF CACHE BOOL "")
 set(VTK_DISPATCH_SOA_ARRAYS OFF CACHE BOOL "")
 
+# === 3-way toolchain gate for the compiler/linker levers below ================
+# All the levers from here through the ICF block are GNU-toolchain + ELF/gold
+# specific (-flto=auto/-fno-fat-lto-objects, -ffunction-sections + --gc-sections,
+# -fno-semantic-interposition, --hash-style=gnu, -fuse-ld=gold --icf=all, GCC PGO
+# via .gcda). They are rejected (or silently ignored) by MSVC `cl`/`link` and by
+# AppleClang/ld64. We pick ONE of three toolchain profiles and each lever block
+# below substitutes the right spelling:
+#   gnu   = GCC + gold on Linux (the shipped wheel) — today's exact flags.
+#   apple = AppleClang + ld64 on macOS — ThinLTO (-flto=thin), -Wl,-dead_strip,
+#           no gold/--icf/--hash-style/--gc-sections (Mach-O, not ELF).
+#   msvc  = MSVC `cl`/`link` on Windows — /GL+/LTCG, /Gy /Gw, /OPT:REF,ICF.
+#
+# IMPORTANT — the default MUST be "gnu", and we flip away from it only on a
+# *positive* MSVC or Apple detection. A `-C` init-cache file is read BEFORE
+# project()/the compiler probe, so on the first pass WIN32, MSVC and
+# CMAKE_CXX_COMPILER_ID are all empty/unset. If we instead keyed "gnu" off a
+# positive GNU match (e.g. CMAKE_CXX_COMPILER_ID MATCHES "GNU") it would evaluate
+# false on that first pass *even on Linux* and silently drop every lever from the
+# production build. So: assume gnu, switch to msvc/apple only when we positively
+# know otherwise. ci/cmake/windows.cmake sets -DFVTK_FORCE_MSVC=ON and
+# ci/cmake/macos.cmake sets FVTK_TARGET_OS=macos / runs on an APPLE host so the
+# first-pass detection still fires; the MSVC/WIN32/compiler-id checks catch the
+# post-project() re-read as belt-and-suspenders.
+set(_FVTK_TOOLCHAIN "gnu")
+if (FVTK_FORCE_MSVC OR MSVC OR WIN32 OR CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  set(_FVTK_TOOLCHAIN "msvc")
+elseif (CMAKE_HOST_APPLE OR "$ENV{FVTK_TARGET_OS}" STREQUAL "macos")
+  set(_FVTK_TOOLCHAIN "apple")
+endif ()
+
 # Link-time dead-code elimination: emit per-function/data sections and let the linker drop
 # unreachable ones. Safe with VTK's -fvisibility=hidden (only exported symbols are GC roots;
 # factory/virtual/wrapper paths all go through exported symbols). Removes real code and
 # stacks with --strip-all. Applies to SHARED (kits) and MODULE (Python wrappers).
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
+# -ffunction-sections/-fdata-sections are understood by BOTH gcc and clang, so
+# they are unconditional on gnu+apple; the MSVC analogue is /Gy /Gw, emitted in
+# the msvc lever block below.
+if (NOT _FVTK_TOOLCHAIN STREQUAL "msvc")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
+endif ()
 # Lever D: --hash-style=gnu emits only the modern .gnu.hash symbol table and
 # drops the legacy SysV .hash section (stock VTK ships BOTH across ~140 .so).
 # Free and universally safe on glibc (the only fvtk target); ~0.27 MiB measured.
-set(_fvtk_ldflags "-Wl,--gc-sections -Wl,--hash-style=gnu")
+# GNU-ld only: ld64 (macOS) has no .hash/.gnu.hash sections (Mach-O) and PE/COFF
+# (Windows) has no ELF symbol hash either, so each gets its own dead-strip below.
+if (_FVTK_TOOLCHAIN STREQUAL "gnu")
+  set(_fvtk_ldflags "-Wl,--gc-sections -Wl,--hash-style=gnu")
+elseif (_FVTK_TOOLCHAIN STREQUAL "apple")
+  # macOS / ld64: -dead_strip is the GNU --gc-sections analogue (keys off the
+  # per-function/data sections clang emits); --gc-sections/--hash-style are
+  # GNU-ld-only and would error under ld64.
+  set(_fvtk_ldflags "-Wl,-dead_strip")
+else ()
+  # msvc: section GC + COMDAT folding is /OPT:REF,ICF on the link line, emitted in
+  # the msvc lever block below (it is not a -Wl, flag, so nothing here).
+  set(_fvtk_ldflags "")
+endif ()
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_ldflags}" CACHE STRING "" FORCE)
 set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_ldflags}" CACHE STRING "" FORCE)
 set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_ldflags}" CACHE STRING "" FORCE)
@@ -80,8 +128,10 @@ unset(_fvtk_ldflags)
 # so this is safe and lets the compiler inline/devirtualize within each .so —
 # a real win for VTK's virtual-dispatch + template-heavy hot paths. Free: no
 # portability or build-time cost (CPython itself ships with this). Toggle with
-# FVTK_SEMINTERP=0.
-if (NOT "$ENV{FVTK_SEMINTERP}" STREQUAL "0")
+# FVTK_SEMINTERP=0. clang accepts -fno-semantic-interposition too, so gnu+apple
+# both take it; MSVC has no symbol interposition on PE/COFF (cross-TU inlining is
+# already the default) so the flag has no analogue and is skipped there.
+if (NOT _FVTK_TOOLCHAIN STREQUAL "msvc" AND NOT "$ENV{FVTK_SEMINTERP}" STREQUAL "0")
   set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -fno-semantic-interposition" CACHE STRING "" FORCE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-semantic-interposition" CACHE STRING "" FORCE)
 endif ()
@@ -95,13 +145,40 @@ endif ()
 # time -O3 governs), which is fine under a speed-first mandate. Toggle FVTK_LTO=0
 # for fast iteration builds.
 if (NOT "$ENV{FVTK_LTO}" STREQUAL "0")
-  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -flto=auto -fno-fat-lto-objects" CACHE STRING "" FORCE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=auto -fno-fat-lto-objects" CACHE STRING "" FORCE)
-  set(_fvtk_lto_link "-flto=auto -O3 -fno-semantic-interposition")
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
-  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
-  set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
-  unset(_fvtk_lto_link)
+  if (_FVTK_TOOLCHAIN STREQUAL "gnu")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -flto=auto -fno-fat-lto-objects" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=auto -fno-fat-lto-objects" CACHE STRING "" FORCE)
+    set(_fvtk_lto_link "-flto=auto -O3 -fno-semantic-interposition")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+    unset(_fvtk_lto_link)
+  elseif (_FVTK_TOOLCHAIN STREQUAL "apple")
+    # AppleClang: ThinLTO. `-flto=thin` is clang's parallel cross-TU LTO (per-TU
+    # summary + parallel backend), the direct analogue of GCC's -flto=auto. clang
+    # has no -fno-fat-lto-objects (its LTO objects are bitcode by default) and
+    # ThinLTO's optimization level is the per-TU -O (already -O3 from Release), so
+    # the link line only needs -flto=thin. -fno-semantic-interposition is appended
+    # by the seminterp block above (compile-only under ld64).
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -flto=thin" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=thin" CACHE STRING "" FORCE)
+    set(_fvtk_lto_link "-flto=thin")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_lto_link}" CACHE STRING "" FORCE)
+    unset(_fvtk_lto_link)
+  else ()
+    # MSVC: /GL (whole-program optimization, the LTO analogue) on compile + /LTCG
+    # (link-time code generation) on link. /GL objects also need /LTCG passed to
+    # lib.exe for any static archives. The Release -O drives the inlining (no
+    # separate -O3-on-link knob as on GCC).
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} /GL" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL" CACHE STRING "" FORCE)
+    set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
+  endif ()
 endif ()
 
 # Speed-3: Profile-Guided Optimization (FVTK_PGO=gen | use). Two-phase: an
@@ -118,7 +195,13 @@ endif ()
 #   use: consume. -fprofile-correction tolerates the threaded-profile residue;
 #        -Wno-coverage-mismatch keeps stale-counter warnings non-fatal. Stack with
 #        FVTK_LTO=1 FVTK_ICF=1 for the shipped wheel (profile guides LTO inlining).
-if ("$ENV{FVTK_PGO}" STREQUAL "gen")
+if (NOT _FVTK_TOOLCHAIN STREQUAL "gnu" AND NOT "$ENV{FVTK_PGO}" STREQUAL "")
+  # PGO here is GCC's .gcda flow (-fprofile-generate/-use). clang's PGO
+  # (-fprofile-instr-generate / llvm-profdata / -fprofile-instr-use) and MSVC's
+  # (/GENPROFILE + /USEPROFILE + pgort) are different toolchains entirely and are
+  # out of scope for the first macOS/Windows wheels (built with FVTK_PGO unset).
+  message(WARNING "FVTK_PGO is GCC-only; ignored on the ${_FVTK_TOOLCHAIN} build.")
+elseif ("$ENV{FVTK_PGO}" STREQUAL "gen")
   set(_fvtk_pgo "-fprofile-generate -fprofile-update=atomic")
   set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} ${_fvtk_pgo}" CACHE STRING "" FORCE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_fvtk_pgo}" CACHE STRING "" FORCE)
@@ -152,13 +235,38 @@ endif ()
 # -DFVTK_ICF=OFF cache var would be too late to gate the append below (and
 # CMAKE_SYSTEM_NAME isn't set yet either). $ENV{} is available now and matches
 # the repo's env-knob idiom (FVTK_STRIP, FAST). Default ON when unset.
-if(NOT DEFINED ENV{FVTK_ICF} OR NOT "$ENV{FVTK_ICF}" STREQUAL "0")
+# gold (-fuse-ld=gold) and gold's --icf both exist only on the GNU/ELF toolchain:
+# ld64 (macOS) has no --icf (lld's --icf=all would, but the default macOS linker
+# is ld64) and MSVC folds via /OPT:ICF in its own block below. So this lever is
+# gated to gnu. On apple, ICF is held OFF for the first arm64 wheel (correctness-
+# first, no function-pointer-identity risk; -dead_strip already recovers the bulk
+# of the size win) — a future macOS ICF can opt into -fuse-ld=lld --icf=all once
+# lld is provisioned and validated.
+if(_FVTK_TOOLCHAIN STREQUAL "gnu" AND (NOT DEFINED ENV{FVTK_ICF} OR NOT "$ENV{FVTK_ICF}" STREQUAL "0"))
   set(_fvtk_icf "-fuse-ld=gold -Wl,--icf=all")
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_icf}" CACHE STRING "" FORCE)
   set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_icf}" CACHE STRING "" FORCE)
   set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_icf}" CACHE STRING "" FORCE)
   unset(_fvtk_icf)
 endif()
+
+# === MSVC section-GC + COMDAT folding (Windows) ==============================
+# The gnu/apple section-GC (-ffunction-sections + --gc-sections/-dead_strip) and
+# gold ICF map to MSVC's /Gy /Gw (function+data COMDATs on compile) + /OPT:REF
+# (drop unreferenced COMDATs) + /OPT:ICF (fold identical COMDATs) on link. /Gy /Gw
+# are cheap and required for /OPT:REF,ICF to have COMDATs to fold, so they apply
+# whenever the toolchain is msvc (the LTO /GL+/LTCG above already honoured
+# FVTK_LTO=0 separately). No PGO/--hash-style/-fno-semantic-interposition analogue
+# on PE/COFF (see the comments on those levers above).
+if (_FVTK_TOOLCHAIN STREQUAL "msvc")
+  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} /Gy /Gw" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Gy /Gw" CACHE STRING "" FORCE)
+  set(_fvtk_msvc_link "/OPT:REF /OPT:ICF")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_msvc_link}" CACHE STRING "" FORCE)
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_msvc_link}" CACHE STRING "" FORCE)
+  set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_msvc_link}" CACHE STRING "" FORCE)
+  unset(_fvtk_msvc_link)
+endif ()
 
 set(VTK_PYTHON_FULL_THREADSAFE ON CACHE BOOL "")
 set(VTK_NO_PYTHON_THREADS OFF CACHE BOOL "")
@@ -177,12 +285,34 @@ set(VTK_RELOCATABLE_INSTALL ON CACHE BOOL "")
 # them and configure fails. (Same fix as fast.cmake.)
 set(VTK_WRAP_SERIALIZATION OFF CACHE BOOL "")
 
-# --- rendering backends: X/GLX + EGL + OSMesa, matching the stock pyvista wheel
+# --- rendering backends -------------------------------------------------------
+# Linux: X/GLX + EGL + OSMesa, matching the stock pyvista wheel.
+# macOS: native GL is Cocoa-bound; EGL/OSMesa/X are NOT available and VTK hard
+#   errors at configure if VTK_OPENGL_HAS_EGL is ON on APPLE
+#   (CMake/vtkOpenGLOptions.cmake FATAL_ERROR). Cocoa + system OpenGL, matching
+#   the stock pyvista macOS wheel.
+# Windows: native Win32 WGL backend (the default the stock pyvista Windows wheel
+#   ships) — no EGL/OSMesa/X.
+# These vars are non-FORCE, so a `-C ci/cmake/{macos,windows}.cmake` init-cache
+# that sets them BEFORE this include wins; the per-toolchain guard here keeps a
+# direct `-C minimal.cmake` configure correct on each platform too.
 set(VTK_DEFAULT_RENDER_WINDOW_HEADLESS False CACHE BOOL "")
-set(VTK_OPENGL_HAS_EGL True CACHE BOOL "")
-set(VTK_OPENGL_HAS_OSMESA True CACHE BOOL "")
-set(VTK_USE_COCOA False CACHE BOOL "")
-set(VTK_USE_X True CACHE BOOL "")
+if (_FVTK_TOOLCHAIN STREQUAL "apple")
+  set(VTK_OPENGL_HAS_EGL    False CACHE BOOL "")
+  set(VTK_OPENGL_HAS_OSMESA False CACHE BOOL "")
+  set(VTK_USE_COCOA         True  CACHE BOOL "")
+  set(VTK_USE_X             False CACHE BOOL "")
+elseif (_FVTK_TOOLCHAIN STREQUAL "msvc")
+  set(VTK_OPENGL_HAS_EGL    False CACHE BOOL "")
+  set(VTK_OPENGL_HAS_OSMESA False CACHE BOOL "")
+  set(VTK_USE_COCOA         False CACHE BOOL "")
+  set(VTK_USE_X             False CACHE BOOL "")
+else ()
+  set(VTK_OPENGL_HAS_EGL True CACHE BOOL "")
+  set(VTK_OPENGL_HAS_OSMESA True CACHE BOOL "")
+  set(VTK_USE_COCOA False CACHE BOOL "")
+  set(VTK_USE_X True CACHE BOOL "")
+endif ()
 
 # Independent `fvtk` distribution: the Python package installs as `fvtk/` (not
 # `vtkmodules/`) and the wheel's dist name is `fvtk` (set in setup.py.in), so it
