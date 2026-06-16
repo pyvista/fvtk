@@ -42,8 +42,8 @@ jobs:
 
       - name: Build minimal wheel (smoke gate — LTO off for fast feedback)
         run: |
-          # Per-push/PR gate: validate the build + smoke quickly. LTO/PGO are
-          # release levers (see release-wheel-pgo job), too slow for every push.
+          # Per-push/PR gate: validate the build + smoke quickly. LTO is a
+          # release lever (see release-wheel-lto job), too slow for every push.
           FVTK_LTO=0 FVTK_STRIP=1 BUILD_JOBS="$(nproc)" ./build-fvtk.sh
           WHEEL="$(ls "$PWD"/build-fvtk/dist/*.whl)"
           echo "WHEEL=$WHEEL" >> "$GITHUB_ENV"
@@ -100,11 +100,14 @@ jobs:
           path: build-fvtk/dist/*.whl
           if-no-files-found: error
 
-  # Profile-guided release wheel: instrument -> train on PyVista's hot paths ->
-  # rebuild. ~+15% runtime and -24% size vs untuned -O3, but ~3x build time, so
-  # it runs only on tags / manual dispatch, not every push.
-  release-wheel-pgo:
-    name: PGO release wheel (ubuntu-latest)
+  # LTO release wheel: full -O3 + -flto=auto + -fno-semantic-interposition + ICF
+  # + strip. ~+2% runtime and ~-3% size vs untuned -O3, ~3x build time, so it
+  # runs only on tags / manual dispatch, not every push. PGO is intentionally
+  # OFF for the shipped wheel (see ci/pgo-build.sh — kept for opt-in re-enable):
+  # PGO's +26%/-25% is concentrated on a curated filter-training workload and
+  # ships cold code at -Os, which we don't want as the default release.
+  release-wheel-lto:
+    name: LTO release wheel (ubuntu-latest)
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -121,43 +124,44 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/fvtk-ccache
-          key: fvtk-ccache-pgo-${{ runner.os }}-${{ github.sha }}
+          key: fvtk-ccache-lto-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
-            fvtk-ccache-pgo-${{ runner.os }}-
+            fvtk-ccache-lto-${{ runner.os }}-
 
-      - name: PGO build (instrument → train → rebuild)
+      - name: LTO build (no PGO)
         run: |
-          JOBS="$(nproc)" ./ci/pgo-build.sh
-          WHEEL="$(ls "$PWD"/build-fvtk-pgo/dist/*.whl)"
+          FVTK_LTO=1 FVTK_ICF=1 FVTK_STRIP=1 BUILD="$PWD/build-fvtk-lto" \
+            BUILD_JOBS="$(nproc)" ./build-fvtk.sh
+          WHEEL="$(ls "$PWD"/build-fvtk-lto/dist/*.whl)"
           echo "WHEEL=$WHEEL" >> "$GITHUB_ENV"
           ls -la "$WHEEL"
 
-      - name: Smoke — import + compute (PGO wheel)
+      - name: Smoke — import + compute (LTO wheel)
         run: |
-          cat > /tmp/smoke_pgo.py <<'PY'
+          cat > /tmp/smoke_lto.py <<'PY'
           import numpy as np, fvtk
           from fvtk.vtkCommonCore import vtkVersion
           print("VTK", vtkVersion.GetVTKVersion())
           from fvtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
           a = np.arange(30, dtype=np.float64).reshape(10, 3)
           assert np.allclose(a, vtk_to_numpy(numpy_to_vtk(a))), "numpy roundtrip"
-          from fvtk.vtkFiltersCore import vtkContourFilter  # the PGO-tuned path
+          from fvtk.vtkFiltersCore import vtkContourFilter  # noqa: F401
           from fvtk.vtkImagingCore import vtkImageData  # noqa: F401
-          print("PGO wheel import + compute OK")
+          print("LTO wheel import + compute OK")
           PY
           nix-shell shell.nix --run '
             for p in $buildInputs; do LD_LIBRARY_PATH="$p/lib:$LD_LIBRARY_PATH"; done
             LD_LIBRARY_PATH="$(dirname "$(g++ -print-file-name=libstdc++.so.6)"):$LD_LIBRARY_PATH"
             export LD_LIBRARY_PATH
-            python3.13 -m venv /tmp/sv-pgo
-            /tmp/sv-pgo/bin/python -m pip -q install --upgrade pip numpy
-            /tmp/sv-pgo/bin/python -m pip -q install "$WHEEL"
-            /tmp/sv-pgo/bin/python /tmp/smoke_pgo.py
+            python3.13 -m venv /tmp/sv-lto
+            /tmp/sv-lto/bin/python -m pip -q install --upgrade pip numpy
+            /tmp/sv-lto/bin/python -m pip -q install "$WHEEL"
+            /tmp/sv-lto/bin/python /tmp/smoke_lto.py
           '
 
-      - name: Upload PGO wheel
+      - name: Upload LTO wheel
         uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheel-pgo-ubuntu-latest
-          path: build-fvtk-pgo/dist/*.whl
+          name: fvtk-wheel-lto-ubuntu-latest
+          path: build-fvtk-lto/dist/*.whl
           if-no-files-found: error

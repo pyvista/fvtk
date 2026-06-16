@@ -28,8 +28,8 @@ a handoff guide for continuing development.
 | | fvtk (trimmed) | stock `vtk` 9.6.2 |
 |---|---|---|
 | Fork point | VTK `v9.6.2` (`f49a1dbafa`) | 9.6.2 |
-| Wheel size (stripped) | **~30 MB** (28.5 MiB) PGO release · ~37 MB LTO-only | ~120 MB |
-| Runtime (PyVista filter bench) | **~26 % faster** than untuned `-O3` (PGO release) · ~2 % LTO-only | reference |
+| Wheel size (stripped) | **~37 MB** (36.9 MiB) LTO release · ~30 MB with opt-in PGO | ~120 MB |
+| Runtime (PyVista filter bench) | **~2 % faster** than untuned `-O3` (LTO release) · ~26 % with opt-in PGO | reference |
 | Modules shipped | ~84 + vendored deps | ~160 |
 | Compile units (`ninja` steps) | **~6,900** (wrappers further batched by unity) | ~9,120 |
 | Source tree (tracked) | **~140 MB** | ~320 MB |
@@ -163,8 +163,13 @@ maximum wheel portability.
     the compiler inline within each `.so` — a win for VTK's virtual-dispatch + template hot
     paths (CPython itself ships this way). Free: no portability or build-time cost.
 
-14. **Profile-Guided Optimization (`FVTK_PGO=gen|use`, release builds).** The campaign's
-    biggest lever. A three-phase build (`ci/pgo-build.sh`): (1) **instrument** —
+14. **Profile-Guided Optimization (`FVTK_PGO=gen|use`, opt-in — NOT the default release).**
+    The campaign's biggest *raw* lever, but **off for the shipped wheel**: its +26%/−25% is
+    concentrated on a curated filter-training workload (`tools/pgo-train.py`) and it ships the
+    ~96 %-cold remainder at `-Os`, so untrained workloads see little gain and a bigger-than-`-O3`
+    penalty on cold paths. The shipped release is **LTO-only** (lever 12); PGO is kept as an
+    opt-in build (`ci/pgo-build.sh`) for users who want to re-tune it to their own workload.
+    A three-phase build (`ci/pgo-build.sh`): (1) **instrument** —
     `-fprofile-generate` (atomic counters; VTK's SMPTools run threaded); (2) **train** —
     run `tools/pgo-train.py` (a balanced, representative sweep of the PyVista filter hot
     paths) against the instrumented wheel so real branch/call frequencies land in `.gcda`;
@@ -210,12 +215,12 @@ stack, pins `cmake` 4.1.2, and uses Python 3.13 + `ccache`.
 # Fast iteration wheel (LTO off, stripped) — the per-push smoke build:
 FVTK_LTO=0 FVTK_STRIP=1 ./build-fvtk.sh
 
-# Default wheel (LTO + ICF + strip):
-FVTK_STRIP=1 ./build-fvtk.sh
+# Release wheel (LTO + ICF + strip) — the shipped default, ~+2% / ~37 MiB:
+FVTK_LTO=1 FVTK_ICF=1 FVTK_STRIP=1 ./build-fvtk.sh
 
-# Release wheel — full profile-guided build (instrument → train → rebuild),
-# ~26% faster + ~25% smaller, ~3× build time. Trains on PyVista's filter hot
-# paths; clones pyvista automatically (or set PYVISTA_DIR to an existing checkout):
+# Opt-in: profile-guided build (instrument → train → rebuild), ~26% faster +
+# ~25% smaller but ~3× build time and tuned to a curated filter workload. NOT the
+# shipped default; clones pyvista automatically (or set PYVISTA_DIR to a checkout):
 ./ci/pgo-build.sh
 ```
 
