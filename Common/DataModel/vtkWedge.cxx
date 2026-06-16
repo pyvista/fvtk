@@ -558,21 +558,30 @@ void vtkWedge::Contour(double value, vtkDataArray* cellScalars, vtkIncrementalPo
       vert = edges[edge[i]];
 
       // calculate a preferred interpolation direction
-      deltaScalar = (cellScalars->GetComponent(vert[1], 0) - cellScalars->GetComponent(vert[0], 0));
+      // Cache the two endpoint scalars; the value reused below for the
+      // interpolation parameter is exactly one of these (the v1 endpoint),
+      // so this avoids a redundant virtual GetComponent call per edge while
+      // keeping the floating-point operations bit-for-bit identical.
+      double s0 = cellScalars->GetComponent(vert[0], 0);
+      double s1 = cellScalars->GetComponent(vert[1], 0);
+      deltaScalar = (s1 - s0);
+      double v1Scalar;
       if (deltaScalar > 0)
       {
         v1 = vert[0];
         v2 = vert[1];
+        v1Scalar = s0;
       }
       else
       {
         v1 = vert[1];
         v2 = vert[0];
         deltaScalar = -deltaScalar;
+        v1Scalar = s1;
       }
 
       // linear interpolation
-      t = (deltaScalar == 0.0 ? 0.0 : (value - cellScalars->GetComponent(v1, 0)) / deltaScalar);
+      t = (deltaScalar == 0.0 ? 0.0 : (value - v1Scalar) / deltaScalar);
 
       this->Points->GetPoint(v1, x1);
       this->Points->GetPoint(v2, x2);

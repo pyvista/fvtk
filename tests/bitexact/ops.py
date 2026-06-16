@@ -281,6 +281,45 @@ def make_tet_ugrid(n=8, dtype=np.float64):
     return t.GetOutput()
 
 
+def make_wedge_pyramid_ugrid(nrep=3, dtype=np.float64):
+    """A vtkUnstructuredGrid of explicit WEDGE + PYRAMID cells with a per-point
+    z-coordinate scalar (integer/half-integer coords -> deterministic, no trig).
+    Lets vtkContourGrid drive vtkWedge::Contour / vtkPyramid::Contour per cell."""
+    from vtkmodules.vtkCommonDataModel import VTK_WEDGE, VTK_PYRAMID
+
+    pts = []
+    cells = []  # (celltype, [point ids])
+
+    def add(coords):
+        base = len(pts)
+        pts.extend(coords)
+        return base
+
+    for r in range(nrep):
+        z = 2.0 * r
+        b = add([(0, 0, z), (2, 0, z), (0, 2, z),
+                 (0, 0, z + 1), (2, 0, z + 1), (0, 2, z + 1)])
+        cells.append((VTK_WEDGE, [b, b + 1, b + 2, b + 3, b + 4, b + 5]))
+        b2 = add([(3, 0, z), (5, 0, z), (5, 2, z), (3, 2, z), (4, 1, z + 1.5)])
+        cells.append((VTK_PYRAMID, [b2, b2 + 1, b2 + 2, b2 + 3, b2 + 4]))
+
+    arr = np.array(pts, dtype=dtype)
+    vp = vtkPoints()
+    vp.SetData(numpy_to_vtk(np.ascontiguousarray(arr), deep=1))
+    ug = vtkUnstructuredGrid()
+    ug.SetPoints(vp)
+    ug.Allocate(len(cells))
+    for ctype, ids in cells:
+        idl = vtkIdList()
+        for i in ids:
+            idl.InsertNextId(i)
+        ug.InsertNextCell(ctype, idl)
+    scal = numpy_to_vtk(np.ascontiguousarray(arr[:, 2].copy()), deep=1)  # z as scalar
+    scal.SetName("v")
+    ug.GetPointData().SetScalars(scal)
+    return ug
+
+
 def build_inputs_digest(dtype=np.float64):
     """Hash every constructed input array. Used by the harness to PROVE the two
     backends start from byte-identical inputs before attributing any output
@@ -637,6 +676,40 @@ def op_probe(dtype, size):
     return pr.GetOutput()
 
 
+def op_contour_wedgepyr(dtype, size):
+    # vtkContourGrid on an explicit WEDGE+PYRAMID ugrid -> per-cell
+    # vtkWedge::Contour / vtkPyramid::Contour (cached-endpoint-scalar opt).
+    cg = vtkContourGrid()
+    cg.SetInputData(make_wedge_pyramid_ugrid(size, dtype))
+    # z-scalar in [0,1] for the first wedge and [0,1.5] for the first pyramid;
+    # 0.5 cuts straight through both cell types' edges.
+    cg.SetValue(0, 0.5)
+    cg.Update()
+    return cg.GetOutput()
+
+
+def op_clip_multicomp(dtype, size):
+    # vtkClipDataSet on a volume carrying a 3-component point array -> the new
+    # edge points interpolate that array via vtkGenericDataArray::InterpolateTuple
+    # with numComps=3 (the loop-interchange optimization's multi-component path).
+    vol = make_volume(size, dtype)
+    npts = vol.GetNumberOfPoints()
+    idx = np.arange(npts, dtype=np.int64)
+    vec = np.stack([idx % 7, (idx * 2) % 11, (idx * 3) % 13], axis=1).astype(dtype)
+    va = numpy_to_vtk(np.ascontiguousarray(vec), deep=1)
+    va.SetName("vec")
+    vol.GetPointData().AddArray(va)
+    p = vtkPlane()
+    c = (size - 1) / 2.0
+    p.SetOrigin(c, c, c)
+    p.SetNormal(1, 1, 0)
+    cl = vtkClipDataSet()
+    cl.SetInputData(vol)
+    cl.SetClipFunction(p)
+    cl.Update()
+    return cl.GetOutput()
+
+
 def op_locator_celllocator(dtype, size):
     # vtkCellLocator FindClosestPoint / FindCell / IntersectWithLine over a tet
     # grid -> the devirtualized GetCellBoundsFast / InsideCellBoundsFast bucket
@@ -987,6 +1060,8 @@ OPS = {
     "contour_tetug": dict(fn=op_contour_tetug, group="filter", dtypes=["float64"], sizes=[6, 10]),
     "append": dict(fn=op_append, group="filter", dtypes=["float64"], sizes=[16, 28]),
     "probe": dict(fn=op_probe, group="filter", dtypes=["float32", "float64"], sizes=[10, 16]),
+    "contour_wedgepyr": dict(fn=op_contour_wedgepyr, group="filter", dtypes=["float32", "float64"], sizes=[2, 4]),
+    "clip_multicomp": dict(fn=op_clip_multicomp, group="filter", dtypes=["float32", "float64"], sizes=[12, 18]),
     "locator_celllocator": dict(fn=op_locator_celllocator, group="common", dtypes=["float64"], sizes=[6, 10]),
     # --- vtkCommon ops (explicitly requested) ---
     "common_dataarray": dict(fn=op_common_dataarray, group="common", dtypes=["float32", "float64"], sizes=[8, 16]),

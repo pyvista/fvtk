@@ -78,6 +78,40 @@ void vtkGenericDataArray<DerivedT, ValueTypeT, ArrayType>::InterpolateTuple(
   vtkIdType numIds = ptIndices->GetNumberOfIds();
   vtkIdType* ids = ptIndices->GetPointer(0);
 
+  // Loop interchange (id-outer / component-inner) for the common, small
+  // component counts. This reads each id and weight once instead of once per
+  // component, and computes the source base offset once per id. For any fixed
+  // component c the per-id accumulation order is unchanged
+  // (weights[0]*v(id0,c) + weights[1]*v(id1,c) + ...), so the floating-point
+  // result is bit-for-bit identical to the component-outer loop below. The
+  // accumulators live on the stack (no member state) to remain safe under the
+  // SMP filters that call this concurrently on a shared destination array.
+  constexpr int InterpAccStackComps = 32;
+  if (numComps <= InterpAccStackComps)
+  {
+    double acc[InterpAccStackComps];
+    for (int c = 0; c < numComps; ++c)
+    {
+      acc[c] = 0.;
+    }
+    for (vtkIdType tupleId = 0; tupleId < numIds; ++tupleId)
+    {
+      const vtkIdType t = ids[tupleId];
+      const double weight = weights[tupleId];
+      for (int c = 0; c < numComps; ++c)
+      {
+        acc[c] += weight * static_cast<double>(other->GetTypedComponent(t, c));
+      }
+    }
+    for (int c = 0; c < numComps; ++c)
+    {
+      ValueType valT;
+      vtkMath::RoundDoubleToIntegralIfNecessary(acc[c], &valT);
+      this->InsertTypedComponent(dstTupleIdx, c, valT);
+    }
+    return;
+  }
+
   for (int c = 0; c < numComps; ++c)
   {
     double val = 0.;
