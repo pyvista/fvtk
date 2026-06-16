@@ -370,7 +370,11 @@ set(FVTK_NOCOMPILE_CLASSES
   vtkInvoker
   vtkISIReader
   vtkIVExporter
-  vtkJavaScriptDataWriter
+  # vtkJavaScriptDataWriter: restored to compilation -- VTK::WebGLExporter
+  # (pulled in by the restored VTK::WebCore module) references its ::New() and
+  # ::SetOutputStream(). It stays in _nowrap_classes (no Python binding needed;
+  # used only from C++ inside WebGLExporter), so only the C++ object is added
+  # back to the IOCore kit, resolving the dlopen-time undefined symbol.
   vtkJoinTables
   vtkJSONDataSetWriter
   vtkJSONImageWriter
