@@ -1648,14 +1648,18 @@ struct GetCellAtIdImpl : public vtkCellArray::DispatchUtilities
     const auto& beginOffset = offsetsRange[cellId];
     const auto& endOffset = offsetsRange[cellId + 1];
     const vtkIdType cellSize = static_cast<vtkIdType>(endOffset - beginOffset);
-    const auto cellConnectivity = GetRange(conn).begin() + beginOffset;
+    // Index the connectivity range with operator[] rather than materializing a
+    // base pointer via begin(). For AOS arrays operator[] inlines to a direct
+    // buffer access, whereas begin() lowers to an out-of-line vtkDataArray
+    // GetPointer() call (a per-cell PLT call across the shared library).
+    auto connRange = GetRange(conn);
 
     // ValueType differs from vtkIdType, so we have to copy into a temporary buffer:
     ids->SetNumberOfIds(cellSize);
     vtkIdType* idPtr = ids->GetPointer(0);
     for (vtkIdType i = 0; i < cellSize; ++i)
     {
-      idPtr[i] = static_cast<vtkIdType>(cellConnectivity[i]);
+      idPtr[i] = static_cast<vtkIdType>(connRange[beginOffset + i]);
     }
   }
 
@@ -1667,12 +1671,13 @@ struct GetCellAtIdImpl : public vtkCellArray::DispatchUtilities
     const auto& beginOffset = offsetsRange[cellId];
     const auto& endOffset = offsetsRange[cellId + 1];
     cellSize = static_cast<vtkIdType>(endOffset - beginOffset);
-    const auto cellConnectivity = GetRange(conn).begin() + beginOffset;
+    // See note above: operator[] inlines for AOS arrays, begin() does not.
+    auto connRange = GetRange(conn);
 
     // ValueType differs from vtkIdType, so we have to copy into a temporary buffer:
     for (vtkIdType i = 0; i < cellSize; ++i)
     {
-      cellPoints[i] = static_cast<vtkIdType>(cellConnectivity[i]);
+      cellPoints[i] = static_cast<vtkIdType>(connRange[beginOffset + i]);
     }
   }
 
@@ -1706,13 +1711,15 @@ struct GetCellAtIdImpl : public vtkCellArray::DispatchUtilities
     const auto& beginOffset = offsetsRange[cellId];
     const auto& endOffset = offsetsRange[cellId + 1];
     cellSize = static_cast<vtkIdType>(endOffset - beginOffset);
-    const auto cellConnectivity = GetRange(conn).begin() + beginOffset;
+    // See note in the vtkIdList* overload: operator[] inlines for AOS arrays,
+    // begin() lowers to an out-of-line GetPointer() call.
+    auto connRange = GetRange(conn);
 
     temp->SetNumberOfIds(cellSize);
     vtkIdType* tempPtr = temp->GetPointer(0);
     for (vtkIdType i = 0; i < cellSize; ++i)
     {
-      tempPtr[i] = static_cast<vtkIdType>(cellConnectivity[i]);
+      tempPtr[i] = static_cast<vtkIdType>(connRange[beginOffset + i]);
     }
 
     cellPoints = tempPtr;

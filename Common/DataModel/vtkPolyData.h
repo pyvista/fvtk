@@ -851,18 +851,16 @@ inline void vtkPolyData::ResizeCellList(vtkIdType ptId, int size)
 //------------------------------------------------------------------------------
 inline vtkCellArray* vtkPolyData::GetCellArrayInternal(vtkPolyData::TaggedCellId tag)
 {
-  switch (tag.GetTarget())
-  {
-    case vtkPolyData_detail::Target::Verts:
-      return this->Verts;
-    case vtkPolyData_detail::Target::Lines:
-      return this->Lines;
-    case vtkPolyData_detail::Target::Polys:
-      return this->Polys;
-    case vtkPolyData_detail::Target::Strips:
-      return this->Strips;
-  }
-  return nullptr; // unreachable
+  // tag.GetTargetIndex() is the two-bit TARGET field, always 0..3 mapping
+  // (Verts, Lines, Polys, Strips) in the same order as the (now removed)
+  // switch. Indexing a local table is branchless and equivalent for every
+  // possible tag: the previous switch was exhaustive over the four Target
+  // values (the trailing "return nullptr" was unreachable dead code), so this
+  // returns the identical pointer the switch did. This runs on essentially
+  // every per-cell connectivity read (GetCell/GetCellPoints/GetCellSize/...),
+  // so removing the per-call branch multiplies broadly.
+  vtkCellArray* const targets[4] = { this->Verts, this->Lines, this->Polys, this->Strips };
+  return targets[tag.GetTargetIndex()];
 }
 
 //------------------------------------------------------------------------------

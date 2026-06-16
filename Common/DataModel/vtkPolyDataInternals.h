@@ -157,6 +157,16 @@ struct VTKCOMMONDATAMODEL_EXPORT TaggedCellId
   // store this cell.
   Target GetTarget() const noexcept { return static_cast<Target>(this->Value & TARGET_MASK); }
 
+  // Get the target as a dense index in [0, 3] matching the Target enum order
+  // (Verts=0, Lines=1, Polys=2, Strips=3). The TARGET_MASK is exactly two bits
+  // (62..63), so this is always in range and needs no bounds check. Lets the
+  // hot cell-array selection in vtkPolyData index a table branchlessly instead
+  // of running a switch on every per-cell access.
+  std::size_t GetTargetIndex() const noexcept
+  {
+    return static_cast<std::size_t>((this->Value & TARGET_MASK) >> 62);
+  }
+
   // Get the VTK cell type value (eg. VTK_TRIANGLE) as a single byte.
   unsigned char GetCellType() const noexcept { return TypeTable[this->GetTypeIndex()]; }
 

@@ -676,6 +676,16 @@ def op_probe(dtype, size):
     return pr.GetOutput()
 
 
+def op_geometry_ugrid(dtype, size):
+    # vtkGeometryFilter over an unstructured hex grid densely iterates every cell
+    # via vtkUnstructuredGrid::GetCellPoints -> vtkCellArray::GetCellAtId (the
+    # inline operator[] connectivity-read optimization in vtkCellArray.h).
+    g = vtkGeometryFilter()
+    g.SetInputData(make_hex_ugrid(size, dtype))
+    g.Update()
+    return g.GetOutput()
+
+
 def op_contour_wedgepyr(dtype, size):
     # vtkContourGrid on an explicit WEDGE+PYRAMID ugrid -> per-cell
     # vtkWedge::Contour / vtkPyramid::Contour (cached-endpoint-scalar opt).
@@ -708,6 +718,52 @@ def op_clip_multicomp(dtype, size):
     cl.SetClipFunction(p)
     cl.Update()
     return cl.GetOutput()
+
+
+def op_polydata_celltypes(dtype, size):
+    # Build a vtkPolyData carrying ALL FOUR cell-array targets (verts, lines,
+    # polys, strips) and read every cell back via GetCellPoints. This exercises
+    # vtkPolyData::GetCellArrayInternal across its full 2-bit TARGET domain (the
+    # switch->table-lookup optimization); a wrong Target->array mapping would
+    # return the wrong points for some cell -> byte divergence.
+    n = max(6, size)
+    coords = np.empty((n, 3), dtype=dtype)
+    idx = np.arange(n, dtype=np.int64)
+    coords[:, 0] = (idx % 4).astype(dtype)
+    coords[:, 1] = (idx // 4).astype(dtype)
+    coords[:, 2] = (idx % 3).astype(dtype)
+    pd = vtkPolyData()
+    vp = vtkPoints()
+    vp.SetData(numpy_to_vtk(np.ascontiguousarray(coords), deep=1))
+    pd.SetPoints(vp)
+
+    def _ca(cells):
+        ca = vtkCellArray()
+        for ids in cells:
+            idl = vtkIdList()
+            for i in ids:
+                idl.InsertNextId(int(i % n))
+            ca.InsertNextCell(idl)
+        return ca
+
+    pd.SetVerts(_ca([[0], [1]]))
+    pd.SetLines(_ca([[0, 1, 2], [3, 4]]))
+    pd.SetPolys(_ca([[0, 1, 2], [1, 2, 3, 4]]))
+    pd.SetStrips(_ca([[0, 1, 2, 3], [2, 3, 4, 5]]))
+    pd.BuildCells()
+    cp_flat, sizes, ctypes = [], [], []
+    ids = vtkIdList()
+    for c in range(pd.GetNumberOfCells()):
+        pd.GetCellPoints(c, ids)
+        sizes.append(ids.GetNumberOfIds())
+        ctypes.append(pd.GetCellType(c))
+        for j in range(ids.GetNumberOfIds()):
+            cp_flat.append(ids.GetId(j))
+    return {
+        "cp_flat": np.asarray(cp_flat, dtype=np.int64),
+        "sizes": np.asarray(sizes, dtype=np.int64),
+        "celltypes": np.asarray(ctypes, dtype=np.int64),
+    }
 
 
 def op_locator_celllocator(dtype, size):
@@ -1060,9 +1116,11 @@ OPS = {
     "contour_tetug": dict(fn=op_contour_tetug, group="filter", dtypes=["float64"], sizes=[6, 10]),
     "append": dict(fn=op_append, group="filter", dtypes=["float64"], sizes=[16, 28]),
     "probe": dict(fn=op_probe, group="filter", dtypes=["float32", "float64"], sizes=[10, 16]),
+    "geometry_ugrid": dict(fn=op_geometry_ugrid, group="filter", dtypes=["float64"], sizes=[8, 14]),
     "contour_wedgepyr": dict(fn=op_contour_wedgepyr, group="filter", dtypes=["float32", "float64"], sizes=[2, 4]),
     "clip_multicomp": dict(fn=op_clip_multicomp, group="filter", dtypes=["float32", "float64"], sizes=[12, 18]),
     "locator_celllocator": dict(fn=op_locator_celllocator, group="common", dtypes=["float64"], sizes=[6, 10]),
+    "polydata_celltypes": dict(fn=op_polydata_celltypes, group="common", dtypes=["float64"], sizes=[6, 12]),
     # --- vtkCommon ops (explicitly requested) ---
     "common_dataarray": dict(fn=op_common_dataarray, group="common", dtypes=["float32", "float64"], sizes=[8, 16]),
     "common_points": dict(fn=op_common_points, group="common", dtypes=["float32", "float64"], sizes=[8, 16]),
