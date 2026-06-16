@@ -171,7 +171,13 @@ jobs:
           a = np.arange(30, dtype=np.float64).reshape(10, 3)
           assert np.allclose(a, vtk_to_numpy(numpy_to_vtk(a))), "numpy roundtrip"
           from fvtk.vtkFiltersCore import vtkContourFilter  # noqa: F401
-          from fvtk.vtkImagingCore import vtkImageData  # noqa: F401
+          # vtkImageData is a CommonDataModel data object; vtkImagingCore holds
+          # imaging *filters* (e.g. vtkImageDifference). Import each from its real
+          # module and exercise the imaging data path so the smoke has signal.
+          from fvtk.vtkCommonDataModel import vtkImageData
+          from fvtk.vtkImagingCore import vtkImageDifference  # noqa: F401
+          img = vtkImageData(); img.SetDimensions(4, 4, 2)
+          assert img.GetNumberOfPoints() == 32, "vtkImageData dims"
           print("LTO wheel import + compute OK")
           PY
           nix-shell shell.nix --run '
