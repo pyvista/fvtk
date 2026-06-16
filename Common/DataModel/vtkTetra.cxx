@@ -396,21 +396,29 @@ void vtkTetra::Contour(double value, vtkDataArray* cellScalars, vtkIncrementalPo
       vert = edges[edge[i]];
 
       // calculate a preferred interpolation direction
-      deltaScalar = (cellScalars->GetComponent(vert[1], 0) - cellScalars->GetComponent(vert[0], 0));
+      // Cache the two edge-endpoint scalars so the value used for 't' below is
+      // the identical double already fetched here (eliminates a redundant
+      // virtual GetComponent() call without altering any FP operation).
+      double s0 = cellScalars->GetComponent(vert[0], 0);
+      double s1 = cellScalars->GetComponent(vert[1], 0);
+      double sv1;
+      deltaScalar = (s1 - s0);
       if (deltaScalar > 0)
       {
         v1 = vert[0];
         v2 = vert[1];
+        sv1 = s0;
       }
       else
       {
         v1 = vert[1];
         v2 = vert[0];
+        sv1 = s1;
         deltaScalar = -deltaScalar;
       }
 
       // linear interpolation across edge
-      t = (deltaScalar == 0.0 ? 0.0 : (value - cellScalars->GetComponent(v1, 0)) / deltaScalar);
+      t = (deltaScalar == 0.0 ? 0.0 : (value - sv1) / deltaScalar);
 
       this->Points->GetPoint(v1, x1);
       this->Points->GetPoint(v2, x2);
@@ -1082,22 +1090,29 @@ void vtkTetra::Clip(double value, vtkDataArray* cellScalars, vtkIncrementalPoint
       vert = edges[edge[i]];
 
       // calculate a preferred interpolation direction
-      double deltaScalar =
-        (cellScalars->GetComponent(vert[1], 0) - cellScalars->GetComponent(vert[0], 0));
+      // Cache the two edge-endpoint scalars so the value used for 't' below is
+      // the identical double already fetched here (eliminates a redundant
+      // virtual GetComponent() call without altering any FP operation).
+      double s0 = cellScalars->GetComponent(vert[0], 0);
+      double s1 = cellScalars->GetComponent(vert[1], 0);
+      double sv1;
+      double deltaScalar = (s1 - s0);
       if (deltaScalar > 0)
       {
         v1 = vert[0];
         v2 = vert[1];
+        sv1 = s0;
       }
       else
       {
         v1 = vert[1];
         v2 = vert[0];
+        sv1 = s1;
         deltaScalar = -deltaScalar;
       }
 
       // linear interpolation across edge
-      t = (deltaScalar == 0.0 ? 0.0 : (value - cellScalars->GetComponent(v1, 0)) / deltaScalar);
+      t = (deltaScalar == 0.0 ? 0.0 : (value - sv1) / deltaScalar);
 
       this->Points->GetPoint(v1, x1);
       this->Points->GetPoint(v2, x2);

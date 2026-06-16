@@ -42,6 +42,7 @@ import numpy as np
 # called without VTK present, it fails loudly via _require_vtk().
 try:
     from vtkmodules.vtkCommonCore import (
+        reference,
         vtkDoubleArray,
         vtkFloatArray,
         vtkIdList,
@@ -50,6 +51,8 @@ try:
     )
     from vtkmodules.vtkCommonDataModel import (
         vtkCellArray,
+        vtkCellLocator,
+        vtkGenericCell,
         vtkImageData,
         vtkMergePoints,
         vtkPlane,
@@ -70,15 +73,19 @@ try:
         vtkStripper,
         vtkThreshold,
         vtkTriangleFilter,
+        vtkAppendFilter,
         vtkCleanPolyData,
         vtkConnectivityFilter,
+        vtkContourGrid,
         vtkCutter,
         vtkDecimatePro,
         vtkElevationFilter,
+        vtkProbeFilter,
         vtkTubeFilter,
     )
     from vtkmodules.vtkFiltersGeneral import (
         vtkClipDataSet,
+        vtkDataSetTriangleFilter,
         vtkGradientFilter,
         vtkShrinkFilter,
         vtkVertexGlyphFilter,
@@ -262,6 +269,16 @@ def make_hex_ugrid(n=10, dtype=np.float64):
     arr.SetName("v")
     ug.GetPointData().SetScalars(arr)
     return ug
+
+
+def make_tet_ugrid(n=8, dtype=np.float64):
+    """Tetrahedralize the hex grid deterministically (vtkDataSetTriangleFilter)
+    so clip/contour exercise vtkTetra::Clip / vtkTetra::Contour. The tessellation
+    runs in the C++ backend identically on both sides, so it is a fair input."""
+    t = vtkDataSetTriangleFilter()
+    t.SetInputData(make_hex_ugrid(n, dtype))
+    t.Update()
+    return t.GetOutput()
 
 
 def build_inputs_digest(dtype=np.float64):
@@ -562,6 +579,113 @@ def op_gradient(dtype, size):
     return g.GetOutput()
 
 
+def op_clip_tets(dtype, size):
+    # vtkClipDataSet on a tetrahedral ugrid -> per-cell vtkTetra::Clip (the
+    # cached-endpoint-scalar optimization in Common/DataModel/vtkTetra.cxx).
+    p = vtkPlane()
+    c = (size - 1) / 2.0
+    p.SetOrigin(c, c, c)
+    p.SetNormal(1, 1, 1)
+    cl = vtkClipDataSet()
+    cl.SetInputData(make_tet_ugrid(size, dtype))
+    cl.SetClipFunction(p)
+    cl.Update()
+    return cl.GetOutput()
+
+
+def op_contour_hexug(dtype, size):
+    # vtkContourGrid on a hex ugrid -> per-cell vtkHexahedron::Contour (the
+    # cached-endpoint-scalar optimization). vtkContourGrid reaches the cell
+    # method (vtkContourFilter would bypass it via the linear-grid fast path).
+    cg = vtkContourGrid()
+    cg.SetInputData(make_hex_ugrid(size, dtype))
+    cg.SetValue(0, 0.25 * (size ** 2))
+    cg.Update()
+    return cg.GetOutput()
+
+
+def op_contour_tetug(dtype, size):
+    # vtkContourGrid on a tet ugrid -> per-cell vtkTetra::Contour.
+    cg = vtkContourGrid()
+    cg.SetInputData(make_tet_ugrid(size, dtype))
+    cg.SetValue(0, 0.25 * (size ** 2))
+    cg.Update()
+    return cg.GetOutput()
+
+
+def op_append(dtype, size):
+    # vtkAppendFilter merging POLYDATA inputs -> the vtkPolyData branch's per-cell
+    # cell-type copy loop (the cached base-pointer optimization in
+    # Filters/Core/vtkAppendFilter.cxx lives in that branch, not the UG branch).
+    a = vtkAppendFilter()
+    a.AddInputData(make_sphere(size, size))
+    a.AddInputData(make_sphere(size + 4, size + 4))
+    a.MergePointsOn()
+    a.Update()
+    return a.GetOutput()
+
+
+def op_probe(dtype, size):
+    # vtkProbeFilter probing an image-data input against an unstructured tet
+    # source -> ProbeImagePointsInCell (the devirtualized ComputePointId path in
+    # Filters/Core/vtkProbeFilter.cxx). Image + tet grid share the [0,size-1]^3
+    # extent so points fall inside source cells.
+    pr = vtkProbeFilter()
+    pr.SetInputData(make_volume(size, dtype))
+    pr.SetSourceData(make_tet_ugrid(size, dtype))
+    pr.Update()
+    return pr.GetOutput()
+
+
+def op_locator_celllocator(dtype, size):
+    # vtkCellLocator FindClosestPoint / FindCell / IntersectWithLine over a tet
+    # grid -> the devirtualized GetCellBoundsFast / InsideCellBoundsFast bucket
+    # walk in Common/DataModel/vtkCellLocator.cxx. Captures the closest points,
+    # cell ids, squared distances and line intersections as raw arrays so any
+    # byte drift from the devirtualization is caught.
+    ug = make_tet_ugrid(size, dtype)
+    loc = vtkCellLocator()
+    loc.SetDataSet(ug)
+    loc.BuildLocator()
+    gc = vtkGenericCell()
+    lin = np.linspace(0.0, float(size - 1), 5)
+    cps, cids, d2s, fcells = [], [], [], []
+    for x in lin:
+        for y in lin:
+            for z in lin:
+                p = [float(x), float(y), float(z)]
+                cp = [0.0, 0.0, 0.0]
+                cellId = reference(0)
+                subId = reference(0)
+                d2 = reference(0.0)
+                loc.FindClosestPoint(p, cp, gc, cellId, subId, d2)
+                cps.append(list(cp))
+                cids.append(int(cellId))
+                d2s.append(float(d2))
+                fcells.append(int(loc.FindCell(p)))
+    isect_t, isect_x = [], []
+    for y in lin:
+        for z in lin:
+            t = reference(0.0)
+            xx = [0.0, 0.0, 0.0]
+            pc = [0.0, 0.0, 0.0]
+            sub = reference(0)
+            hit = loc.IntersectWithLine(
+                [-1.0, float(y), float(z)], [float(size), float(y), float(z)],
+                1e-6, t, xx, pc, sub,
+            )
+            isect_t.append(float(t) if hit else -1.0)
+            isect_x.append(list(xx) if hit else [0.0, 0.0, 0.0])
+    return {
+        "closest": np.array(cps, dtype=np.float64),
+        "cellids": np.array(cids, dtype=np.int64),
+        "d2": np.array(d2s, dtype=np.float64),
+        "findcell": np.array(fcells, dtype=np.int64),
+        "isect_t": np.array(isect_t, dtype=np.float64),
+        "isect_x": np.array(isect_x, dtype=np.float64),
+    }
+
+
 def op_cutter(dtype, size):
     # Unstructured hex grid + plane cut with triangle generation OFF -> drives
     # UnstructuredGridCutter -> vtkContourHelper::Contour 3D-cell merge path
@@ -858,6 +982,12 @@ OPS = {
     "tube": dict(fn=op_tube, group="filter", dtypes=["float32", "float64"], sizes=[16, 32]),
     "gradient": dict(fn=op_gradient, group="filter", dtypes=["float32", "float64"], sizes=[16, 24]),
     "cutter": dict(fn=op_cutter, group="filter", dtypes=["float64"], sizes=[8, 12]),
+    "clip_tets": dict(fn=op_clip_tets, group="filter", dtypes=["float32", "float64"], sizes=[6, 10]),
+    "contour_hexug": dict(fn=op_contour_hexug, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
+    "contour_tetug": dict(fn=op_contour_tetug, group="filter", dtypes=["float64"], sizes=[6, 10]),
+    "append": dict(fn=op_append, group="filter", dtypes=["float64"], sizes=[16, 28]),
+    "probe": dict(fn=op_probe, group="filter", dtypes=["float32", "float64"], sizes=[10, 16]),
+    "locator_celllocator": dict(fn=op_locator_celllocator, group="common", dtypes=["float64"], sizes=[6, 10]),
     # --- vtkCommon ops (explicitly requested) ---
     "common_dataarray": dict(fn=op_common_dataarray, group="common", dtypes=["float32", "float64"], sizes=[8, 16]),
     "common_points": dict(fn=op_common_points, group="common", dtypes=["float32", "float64"], sizes=[8, 16]),

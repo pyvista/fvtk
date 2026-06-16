@@ -5,6 +5,7 @@
 
 #include "vtkBox.h"
 #include "vtkCellArray.h"
+#include "vtkDataSet.h"
 #include "vtkGenericCell.h"
 #include "vtkMath.h"
 #include "vtkObjectFactory.h"
@@ -17,6 +18,36 @@
 VTK_ABI_NAMESPACE_BEGIN
 //------------------------------------------------------------------------------
 vtkStandardNewMacro(vtkCellLocator);
+
+//------------------------------------------------------------------------------
+// Non-virtual, inlinable equivalents of the virtual GetCellBounds()/
+// InsideCellBounds(). Bit-for-bit identical to the base-class virtual methods;
+// they only remove the per-candidate-cell virtual dispatch in the bucket-walk.
+void vtkCellLocator::GetCellBoundsFast(vtkIdType cellId, double*& cellBoundsPtr)
+{
+  if (this->CacheCellBounds)
+  {
+    cellBoundsPtr = &this->CellBounds[cellId * 6];
+  }
+  else
+  {
+    this->DataSet->GetCellBounds(cellId, cellBoundsPtr);
+  }
+}
+
+//------------------------------------------------------------------------------
+bool vtkCellLocator::InsideCellBoundsFast(double x[3], vtkIdType cellId, double cellBounds[6])
+{
+  if (this->CacheCellBounds)
+  {
+    return vtkAbstractCellLocator::IsInBounds(&this->CellBounds[cellId * 6], x);
+  }
+  else
+  {
+    this->DataSet->GetCellBounds(cellId, cellBounds);
+    return vtkAbstractCellLocator::IsInBounds(cellBounds, x);
+  }
+}
 
 //------------------------------------------------------------------------------
 vtkCellLocator::vtkNeighborCells::vtkNeighborCells(const int size)
@@ -209,7 +240,7 @@ int vtkCellLocator::IntersectWithLine(const double p1[3], const double p2[3], do
 
           // check whether we intersect the cell bounds
           cellBoundsPtr = cellBounds;
-          this->GetCellBounds(cId, cellBoundsPtr);
+          this->GetCellBoundsFast(cId, cellBoundsPtr);
           hitCellBounds =
             vtkBox::IntersectBox(cellBoundsPtr, p1, rayDir, hitCellBoundsPosition, tHitCell, tol);
 
@@ -382,7 +413,7 @@ vtkIdType vtkCellLocator::FindClosestPointWithinRadius(double x[3], double radiu
       cellHasBeenVisited[cellId] = true;
 
       // check whether we could be close enough to the cell by
-      this->GetCellBounds(cellId, cellBoundsPtr);
+      this->GetCellBoundsFast(cellId, cellBoundsPtr);
       // testing the cell bounds
       distance2ToCellBounds = this->Distance2ToBounds(x, cellBoundsPtr);
 
@@ -496,7 +527,7 @@ vtkIdType vtkCellLocator::FindClosestPointWithinRadius(double x[3], double radiu
             cellHasBeenVisited[cellId] = true;
 
             // check whether we could be close enough to the cell by
-            this->GetCellBounds(cellId, cellBoundsPtr);
+            this->GetCellBoundsFast(cellId, cellBoundsPtr);
             // testing the cell bounds
             distance2ToCellBounds = this->Distance2ToBounds(x, cellBoundsPtr);
 
@@ -1090,6 +1121,7 @@ vtkIdType vtkCellLocator::FindCell(double x[3], double vtkNotUsed(tol2), vtkGene
   vtkIdList* cellIds;
   int ijk[3];
   double dist2;
+  double cellBounds[6];
   vtkIdType idx, cellId;
 
   int leafStart = this->NumberOfOctants -
@@ -1109,7 +1141,7 @@ vtkIdType vtkCellLocator::FindCell(double x[3], double vtkNotUsed(tol2), vtkGene
       cellId = cellIds->GetId(idx);
       // check whether we could be close enough to the cell by
       // testing the cell bounds
-      if (this->InsideCellBounds(x, cellId))
+      if (this->InsideCellBoundsFast(x, cellId, cellBounds))
       {
         this->DataSet->GetCell(cellId, cell);
         if (cell->EvaluatePosition(x, nullptr, subId, pcoords, dist2, weights) == 1)
@@ -1280,7 +1312,7 @@ int vtkCellLocator::IntersectWithLine(const double p1[3], const double p2[3], do
           cellHasBeenVisited[cId] = true;
 
           // check whether we intersect the cell bounds
-          this->GetCellBounds(cId, cellBoundsPtr);
+          this->GetCellBoundsFast(cId, cellBoundsPtr);
           hitCellBounds =
             vtkBox::IntersectBox(cellBoundsPtr, p1, rayDir, hitCellBoundsPosition, tHitCell, tol);
 

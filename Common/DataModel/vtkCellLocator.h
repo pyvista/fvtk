@@ -210,6 +210,15 @@ protected:
   double Distance2ToBucket(const double x[3], int nei[3]);
   double Distance2ToBounds(const double x[3], double bounds[6]);
 
+  // Non-virtual equivalents of GetCellBounds()/InsideCellBounds() used in the
+  // per-candidate-cell bucket-walk inner loops. Defined in the .cxx (where
+  // vtkDataSet is complete) so they inline within that translation unit. They
+  // reproduce exactly the behavior of the virtual base-class methods (same
+  // branch on CacheCellBounds, same pointer, same IsInBounds call), so results
+  // are bit-for-bit identical; they only remove the per-cell virtual dispatch.
+  void GetCellBoundsFast(vtkIdType cellId, double*& cellBoundsPtr);
+  bool InsideCellBoundsFast(double x[3], vtkIdType cellId, double cellBounds[6]);
+
   int NumberOfOctants;   // number of octants in tree
   double Bounds[6];      // bounding box root octant
   double H[3];           // width of leaf octant in x-y-z directions

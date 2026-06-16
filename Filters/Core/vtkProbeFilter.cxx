@@ -25,6 +25,7 @@
 #include "vtkSMPTools.h"
 #include "vtkSmartPointer.h"
 #include "vtkStreamingDemandDrivenPipeline.h"
+#include "vtkStructuredData.h"
 #include "vtkUnstructuredGrid.h"
 
 #include <algorithm>
@@ -838,7 +839,11 @@ void vtkProbeFilter::ProbeImagePointsInCell(vtkGenericCell* cell, vtkIdType cell
       for (ijk[0] = idxBounds[0]; ijk[0] <= idxBounds[1]; ijk[0]++)
       {
         // skip processed points
-        const vtkIdType ptId = input->ComputePointId(ijk);
+        // Devirtualized equivalent of input->ComputePointId(ijk): vtkImageData::ComputePointId
+        // is a virtual wrapper around vtkStructuredData::ComputePointIdForExtent(GetExtent(), ijk).
+        // inputExtent is input->GetExtent() (cached above), so this is the identical integer
+        // index computation with no virtual dispatch in this innermost loop.
+        const vtkIdType ptId = vtkStructuredData::ComputePointIdForExtent(inputExtent, ijk);
         if (maskArray[ptId] == 1)
         {
           continue;

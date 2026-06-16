@@ -521,10 +521,15 @@ int vtkAppendFilter::RequestData(vtkInformation* vtkNotUsed(request),
         else if (auto pd = vtkPolyData::SafeDownCast(dataset)) // vtkPolyData
         {
           // copy cell types
+          // Cache the output base pointer so the store target is provably
+          // disjoint from 'pd'; this lets the compiler keep pd's cell-type
+          // structure hoisted across the loop instead of reloading the array
+          // buffer every iteration. Writes are identical to SetValue() for this
+          // concrete AOS array.
+          unsigned char* outCellTypes = cellTypesArray->GetPointer(cellOffset);
           for (vtkIdType i = 0; i < numberOfCells; i++)
           {
-            cellTypesArray->SetValue(
-              cellOffset + i, static_cast<unsigned char>(pd->GetCellType(i)));
+            outCellTypes[i] = static_cast<unsigned char>(pd->GetCellType(i));
           }
           if (havePolyhedronFaces)
           {
