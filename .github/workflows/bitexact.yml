@@ -1,27 +1,15 @@
+# DRAFT — nix-free replacement for bitexact.yml. Marked .draft.
+#
+# Asserts fvtk compute output is BYTE-FOR-BYTE identical to stock VTK 9.6.2.
+# Build the cp313 wheel in the manylinux2014 container (LTO off), then run the
+# bit-exact suite with BOTH backends self-contained:
+#   * stock: pip install vtk==9.6.2 (self-contained manylinux wheel)
+#   * fvtk : the auditwheel-repaired container wheel (self-contained) + the
+#            vtkmodules->fvtk shim
+# NO nix, NO LD_LIBRARY_PATH: both wheels carry their own runtime libs.
 name: bit-exact regression
 
-# Asserts that fvtk's compute output is BYTE-FOR-BYTE identical to stock
-# VTK 9.6.2 across the 9 modified filters + a broad set of other filters +
-# vtkCommon operations. Any nonzero ULP on any output array fails the job.
-#
-# Strategy: the same driver (tests/bitexact/run_ops.py) is run twice via the
-# vtkmodules API —
-#   * a stock-VTK venv  (pip install vtk==9.6.2)         -> vtkmodules = stock
-#   * an fvtk venv       (the built wheel + _fvtk_shim)   -> vtkmodules = fvtk
-# numpy is pinned to the SAME version (2.4.6) on both so the deterministically
-# built inputs are bit-identical; the driver records an inputs digest the
-# comparison verifies before attributing any diff to fvtk.
-#
-# On a hosted ubuntu runner stock vtk + numpy are self-contained. The fvtk wheel
-# is built under nix and needs the nix runtime libs (libstdc++, libz) on its
-# loader path — the same LD_LIBRARY_PATH derivation the smoke job in ci.yml uses.
-
 on:
-  # PR-only for feature branches (no push: feat/**): a push to a PR branch
-  # otherwise fires TWO runs -- the push- and pull_request-triggered pair land in
-  # different concurrency groups (refs/heads/... vs refs/pull/N/merge) and never
-  # cancel each other (same rationale as ci.yml, commit c5bb744). push:[main]
-  # stays so the suite re-runs post-merge on main.
   push:
     branches: [main]
   pull_request:
@@ -33,35 +21,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Reuse the wheel produced by the CI build instead of rebuilding here. We mirror
-  # the smoke build (LTO off, fast) so this job is self-contained and does not
-  # depend on cross-workflow artifacts.
   build-wheel:
-    name: build fvtk wheel
+    name: build fvtk wheel (manylinux2014, no nix)
     runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux2014_x86_64
+    env:
+      PYBIN: /opt/python/cp313-cp313/bin
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: "20G"
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          nix_path: nixpkgs=channel:nixos-25.05
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install build deps
+        run: |
+          set -euxo pipefail
+          yum install -y \
+            mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel \
+            mesa-libGLU-devel libglvnd-devel \
+            libX11-devel libXcursor-devel libXt-devel libXext-devel ccache git
+          "$PYBIN/python" -m pip install --upgrade pip
+          "$PYBIN/python" -m pip install "cmake>=3.22,<4.2" "ninja>=1.11" "setuptools<81" wheel auditwheel
       - name: Restore ccache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/fvtk-ccache
-          key: fvtk-ccache-bitexact-${{ runner.os }}-${{ github.sha }}
+          path: ${{ github.workspace }}/.ccache
+          key: fvtk-ccache-bitexact-${{ github.sha }}
           restore-keys: |
-            fvtk-ccache-bitexact-${{ runner.os }}-
-            fvtk-ccache-${{ runner.os }}-
-      - name: Build wheel (LTO off for speed)
+            fvtk-ccache-bitexact-
+            fvtk-ccache-m217-
+      - name: Build wheel (LTO off)
         run: |
-          FVTK_LTO=0 FVTK_STRIP=1 BUILD_JOBS="$(nproc)" ./build-fvtk.sh
+          set -euxo pipefail
+          export PATH="$PYBIN:$PATH"
+          FVTK_LTO=0 cmake -S . -B build -G Ninja -C ci/cmake/linux.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DPython3_EXECUTABLE="$PYBIN/python" -DPython3_FIND_STRATEGY=LOCATION
+          FVTK_LTO=0 cmake --build build --parallel "$(nproc)"
+          python ci/prune_setup_py.py "$PWD/build"
+          ( cd build && python setup.py bdist_wheel )
           mkdir -p dist-out
-          cp "$(ls "$PWD"/build-fvtk/dist/*.whl)" dist-out/
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
+          auditwheel repair --plat manylinux_2_17_x86_64 -w dist-out build/dist/*.whl
+      - uses: actions/upload-artifact@v4
         with:
           name: fvtk-wheel-bitexact
           path: dist-out/*.whl
@@ -71,79 +74,51 @@ jobs:
     name: fvtk == stock VTK 9.6.2 (bit-exact)
     needs: build-wheel
     runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux2014_x86_64
+    env:
+      PYBIN: /opt/python/cp313-cp313/bin
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          nix_path: nixpkgs=channel:nixos-25.05
-
-      - name: Download fvtk wheel
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: fvtk-wheel-bitexact
           path: dist-out
 
-      # --- Stock-VTK venv: self-contained on a manylinux/ubuntu runner. ---
+      # Both backends self-contained in the container -> no LD_LIBRARY_PATH.
       - name: Create stock-VTK venv (vtk==9.6.2, numpy==2.4.6)
         run: |
-          python3 -m venv /tmp/stock
-          /tmp/stock/bin/python -m pip -q install --upgrade pip
-          /tmp/stock/bin/python -m pip -q install "numpy==2.4.6" "vtk==9.6.2"
+          set -euxo pipefail
+          "$PYBIN/python" -m venv /tmp/stock
+          /tmp/stock/bin/pip -q install --upgrade pip
+          /tmp/stock/bin/pip -q install "numpy==2.4.6" "vtk==9.6.2"
           /tmp/stock/bin/python -c "import vtk; print('stock VTK', vtk.vtkVersion.GetVTKVersion())"
 
-      # --- fvtk venv: wheel + the vtkmodules->fvtk shim + matching numpy. ---
-      # The shim is installed via a .pth so it runs at interpreter startup, before
-      # anything imports vtkmodules, redirecting vtkmodules.* -> fvtk.* . Stock
-      # vtk is NOT installed here, so any missed redirect fails loudly.
       - name: Create fvtk venv (wheel + shim + numpy==2.4.6)
         run: |
-          nix-shell shell.nix --run '
-            # Derive the nix runtime libs the wheel needs (mesa, zlib, ...) plus
-            # gcc libstdc++. Same derivation as the ci.yml smoke job: $buildInputs
-            # are the *-dev* outputs (zlib-...-dev), which carry the linker .so
-            # symlink but NOT the runtime soname (libz.so.1 lives in the separate
-            # "out" output), so each buildInput is expanded via nix-store
-            # --references to pull in those out outputs and resolve runtime sonames.
-            FVTK_LDLP="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
-            for p in $buildInputs; do
-              FVTK_LDLP="$p/lib:$FVTK_LDLP"
-              for r in $(nix-store -q --references "$p" 2>/dev/null); do FVTK_LDLP="$r/lib:$FVTK_LDLP"; done
-            done
-            echo "FVTK_LDLP=$FVTK_LDLP" >> "$GITHUB_ENV"
+          set -euxo pipefail
+          "$PYBIN/python" -m venv /tmp/fvtk
+          /tmp/fvtk/bin/pip -q install --upgrade pip
+          /tmp/fvtk/bin/pip -q install "numpy==2.4.6"
+          /tmp/fvtk/bin/pip -q install "$(ls dist-out/*.whl)"
+          SP="$(/tmp/fvtk/bin/python -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')"
+          cp tools/fvtk_shim.py "$SP/_fvtk_shim.py"
+          echo "import _fvtk_shim" > "$SP/_fvtk_shim.pth"
+          /tmp/fvtk/bin/python -c "from vtkmodules.vtkCommonCore import vtkVersion; print('fvtk VTK', vtkVersion.GetVTKVersion())"
 
-            python3.13 -m venv /tmp/fvtk
-            export LD_LIBRARY_PATH="$FVTK_LDLP:$LD_LIBRARY_PATH"
-            /tmp/fvtk/bin/python -m pip -q install --upgrade pip
-            /tmp/fvtk/bin/python -m pip -q install "numpy==2.4.6"
-            /tmp/fvtk/bin/python -m pip -q install "$(ls dist-out/*.whl)"
-
-            # Install the vtkmodules->fvtk redirect shim as a .pth so it loads at
-            # startup. tools/fvtk_shim.py is the canonical shim in the repo.
-            SP="$(/tmp/fvtk/bin/python -c "import sysconfig; print(sysconfig.get_paths()[\"purelib\"])")"
-            cp tools/fvtk_shim.py "$SP/_fvtk_shim.py"
-            echo "import _fvtk_shim" > "$SP/_fvtk_shim.pth"
-            /tmp/fvtk/bin/python -c "from vtkmodules.vtkCommonCore import vtkVersion; print(\"fvtk VTK\", vtkVersion.GetVTKVersion())"
-          '
-
-      # --- Runner venv: orchestrates the two subprocess runs + comparison.
-      # Only needs numpy + pytest (no VTK).
       - name: Create runner venv (pytest + numpy==2.4.6)
         run: |
-          python3 -m venv /tmp/runner
-          /tmp/runner/bin/python -m pip -q install --upgrade pip
-          /tmp/runner/bin/python -m pip -q install "numpy==2.4.6" pytest
+          "$PYBIN/python" -m venv /tmp/runner
+          /tmp/runner/bin/pip -q install --upgrade pip "numpy==2.4.6" pytest
 
       - name: Run bit-exact suite (fvtk vs stock VTK 9.6.2)
         env:
           BITEXACT_STOCK_PY: /tmp/stock/bin/python
           BITEXACT_FVTK_PY: /tmp/fvtk/bin/python
-          # Stock vtk+numpy are self-contained -> no LDLP. fvtk wheel needs nix libs.
           BITEXACT_STOCK_LDLP: ""
-          BITEXACT_FVTK_LDLP: ${{ env.FVTK_LDLP }}
+          BITEXACT_FVTK_LDLP: ""
           BITEXACT_OUTDIR: /tmp/bitexact-out
         run: |
           cd tests/bitexact

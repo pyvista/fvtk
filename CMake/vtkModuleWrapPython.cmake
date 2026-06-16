@@ -268,7 +268,30 @@ $<$<BOOL:${_vtk_python_hierarchy_files}>:\n--types \'$<JOIN:${_vtk_python_hierar
   # -j cores. The per-class .cxx are still generated (custom_command outputs) and pulled
   # in via OBJECT_DEPENDS; only the compiled translation units change, never the emitted
   # code -> API/symbols are byte-identical. INERT unless FVTK_WRAP_UNITY is ON.
-  if (FVTK_WRAP_UNITY AND _vtk_python_sources)
+  #
+  # GCC<12 GUARD: concatenating wrappers changes the order in which template
+  # instantiations are first seen within one TU. devtoolset-10 GCC 10.2.1 (the
+  # manylinux2014 wheel container) then EAGERLY instantiates vtkConstantArray<int>
+  # = vtkImplicitArray<vtkConstantImplicitBackend<int>,13> before its backend
+  # header is complete, so implicit_array_traits<...>::rtype resolves to `void`
+  # and the "mandatory read trait" static_assert + a cascade of "ValueType {aka
+  # void}" errors fire (seen first in vtkStructuredGridPython.cxx batched into a
+  # CommonDataModel unity TU). The SAME wrapper compiles clean STANDALONE on GCC
+  # 10 (verified) and the whole unity scheme compiles clean on the local GCC 14,
+  # so this is purely a GCC<12 + concatenation ordering interaction. Disable the
+  # unity batching there (fall back to per-class wrappers — slower to compile but
+  # correct); GCC>=12 / clang keep the speed lever. Set FVTK_WRAP_UNITY=0 to force
+  # off everywhere.
+  set(_fvtk_unity_ok "${FVTK_WRAP_UNITY}")
+  if (_fvtk_unity_ok AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+      CMAKE_CXX_COMPILER_VERSION VERSION_LESS "12")
+    message(STATUS
+      "fvtk: GCC ${CMAKE_CXX_COMPILER_VERSION} (<12) — disabling wrapper-unity "
+      "batching (vtkImplicitArray eager-instantiation incompatibility); using "
+      "per-class Python wrappers.")
+    set(_fvtk_unity_ok OFF)
+  endif ()
+  if (_fvtk_unity_ok AND _vtk_python_sources)
     # The module headers list can contain duplicate entries (CMake auto-dedups
     # target_sources, but our #include-based unity does not), which would emit a
     # wrapper's PyVTKAddFile_/symbols into two chunks -> multiple-definition at link.
@@ -324,15 +347,27 @@ $<$<BOOL:${_vtk_python_hierarchy_files}>:\n--types \'$<JOIN:${_vtk_python_hierar
   # --- fvtk wrapper size-opt: compile the (cold) Python wrapper TUs for size ---
   # The generated *Python.cxx are argument-marshalling shims, not hot code, yet
   # they inherit the project -O3 like everything else. Recompiling ONLY them at
-  # -Oz trades ~nothing in runtime for real wrapper-.so size. Appended after the
-  # inherited flags, and the last -O wins, so this overrides -O3 for these TUs
+  # -Oz/-Os trades ~nothing in runtime for real wrapper-.so size. Appended after
+  # the inherited flags, and the last -O wins, so this overrides -O3 for these TUs
   # only. Applies to the unity TUs when FVTK_WRAP_UNITY is on, else the per-class
   # wrappers. Gated by env FVTK_WRAP_OPTSIZE (matches the FVTK_ICF/FVTK_STRIP
-  # idiom). gcc>=12/clang accept -Oz.
-  # Default ON (validated parity-green); set FVTK_WRAP_OPTSIZE=0 to disable.
+  # idiom). Default ON (validated parity-green); set FVTK_WRAP_OPTSIZE=0 to disable.
+  #
+  # Flag spelling is compiler-aware: -Oz exists only on clang and GCC>=12. The
+  # local nix toolchain is GCC 14 (-Oz fine), but the manylinux2014 wheel
+  # container ships devtoolset-10 GCC 10.2.1, where `cc1plus` hard-errors
+  # "argument to '-O' should be ... 'g','s' or 'fast'" on -Oz. Fall back to -Os
+  # there (GCC's size-opt; the practical delta vs -Oz on these marshalling shims
+  # is negligible, and under LTO the link-time -O3 governs anyway).
   if (_vtk_python_sources AND NOT "$ENV{FVTK_WRAP_OPTSIZE}" STREQUAL "0")
+    set(_fvtk_wrap_optsize "-Oz")
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+        CMAKE_CXX_COMPILER_VERSION VERSION_LESS "12")
+      set(_fvtk_wrap_optsize "-Os")
+    endif ()
     set_source_files_properties(${_vtk_python_sources} PROPERTIES
-      COMPILE_OPTIONS "-Oz")
+      COMPILE_OPTIONS "${_fvtk_wrap_optsize}")
+    unset(_fvtk_wrap_optsize)
   endif ()
 
   set("${sources}"

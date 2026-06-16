@@ -1,0 +1,66 @@
+# DRAFT — proposed replacement for wheels-manylinux217.yml (+ wheels-macos.yml +
+# wheels-windows.yml) using cibuildwheel. Marked .draft; reconcile before merge.
+#
+# One workflow, three OSes, one config (pyproject.toml [tool.cibuildwheel]).
+# cibuildwheel drives, per platform:
+#   linux   : manylinux2014 container, el7 yum mesa (CIBW_BEFORE_ALL), GCC 10.2.1
+#             + gold, ci/cmake/linux.cmake, auditwheel repair -> manylinux_2_17.
+#   macos   : ci/cmake/macos.cmake (Cocoa GL, ThinLTO), delocate.
+#   windows : ci/cmake/windows.cmake (WGL, /GL /LTCG), delvewheel.
+#
+# The C++ kit build is shared across the cp matrix on each OS via ccache
+# (linux/macos) / the build tree (windows). Release-gated like the originals.
+name: wheels-cibuildwheel
+
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+concurrency:
+  group: wheels-cibw-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: wheels-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # VTK derives version/provenance from full history
+
+      # OPTIONAL cross-RUN ccache persistence. WITHIN a run, cibuildwheel's
+      # in-container /ccache already shares the C++ across the cp matrix (measured
+      # ~63% hit on the 2nd leg). To also persist across runs on Linux, restore a
+      # host dir here and add the matching `container-engine` create-args mount in
+      # pyproject ([tool.cibuildwheel.linux.environment]); see the commented block
+      # there. macOS ccache lives in the host dir directly; Windows uses the
+      # per-tree build cache.
+      - name: Restore ccache (optional cross-run)
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: /tmp/fvtk-cibw-ccache
+          key: fvtk-cibw-ccache-${{ matrix.os }}-${{ github.sha }}
+          restore-keys: fvtk-cibw-ccache-${{ matrix.os }}-
+      - name: Make ccache dir world-writable (container build user differs)
+        if: runner.os == 'Linux'
+        run: mkdir -p /tmp/fvtk-cibw-ccache && chmod 0777 /tmp/fvtk-cibw-ccache
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.1.4
+        # All config lives in pyproject.toml [tool.cibuildwheel]; per-OS
+        # init-cache + repair tools are selected there. No env needed here for
+        # linux. macOS/windows env (FVTK_CMAKE_INIT, MACOSX_DEPLOYMENT_TARGET)
+        # set in the [tool.cibuildwheel.macos|windows] tables.
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fvtk-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error

@@ -1,0 +1,111 @@
+# Root build adapter so `pip wheel .` / cibuildwheel can build the fvtk wheel.
+#
+# fvtk is a hard-fork of VTK 9.6.2 and is NOT a normal PEP-517 project: VTK only
+# emits a setup.py INSIDE the cmake build tree (VTK_WHEEL_BUILD), after a full C++
+# configure+build. The in-tree backend ci/cibw/fvtk_backend.py bridges that:
+# build_wheel() runs cmake configure (-C ci/cmake/linux.cmake) -> cmake --build ->
+# the generated build-tree `setup.py bdist_wheel`, then hands the wheel to pip.
+#
+# This file exists ONLY to drive wheel builds (CI / cibuildwheel). There is no
+# `pip install .` source-dist path (build_sdist raises) — that is intentional.
+
+[build-system]
+requires = ["setuptools<81", "wheel"]
+# cmake + ninja must already be on PATH (CIBW_BEFORE_ALL installs them); they are
+# NOT listed here because pip would then try to build them into the isolated
+# build env, and we want the system/CIBW-provided ones that match the toolchain.
+build-backend = "fvtk_backend"
+backend-path = ["ci/cibw"]
+
+[project]
+name = "fvtk"
+# VTK's generated setup.py computes the real version (9.6.2[.devN]) from the
+# build tree; this static value only satisfies pip's pre-build metadata peek and
+# is overwritten by the wheel the backend actually produces.
+version = "9.6.2"
+description = "fvtk — trimmed PyVista-parity hard-fork of VTK 9.6.2 (vtkmodules renamed to top-level fvtk)"
+requires-python = ">=3.9"
+
+# ===========================================================================
+# cibuildwheel — Linux manylinux_2_17 (glibc 2.17), the same platform tag as the
+# stock vtk==9.6.2 wheels. One C++ build is shared across the cp matrix via ccache.
+# ===========================================================================
+[tool.cibuildwheel]
+build-frontend = "pip"
+# cp39..cp313 on CPython only (VTK has no PyPy/free-threading wrappers here).
+build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+skip = "*-musllinux_*"
+test-command = "FVTK_IMPORT_NAME=fvtk xvfb-run -a -s '-screen 0 1280x1024x24' python {project}/ci/smoke_test.py"
+# auditwheel repair runs by default; stamp the 2_17 tag explicitly to match the
+# raw-docker recipe (manylinux2014 == manylinux_2_17_x86_64).
+repair-wheel-command = "auditwheel repair --plat manylinux_2_17_x86_64 -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.linux]
+# manylinux2014 == glibc 2.17 == devtoolset-10 GCC 10.2.1 + gold 2.35 on PATH.
+manylinux-x86_64-image = "quay.io/pypa/manylinux2014_x86_64"
+archs = ["x86_64"]
+# CIBW_BEFORE_ALL runs ONCE in the build container before the cp matrix: install
+# the el7 rendering stack (system mesa = GL backend) + ccache + ninja + xvfb.
+before-all = [
+  "yum install -y mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel mesa-libGLU-devel libglvnd-devel libX11-devel libXcursor-devel libXt-devel libXext-devel mesa-dri-drivers xorg-x11-server-Xvfb ccache git",
+  # before-all runs as root; the build runs as a non-root user, so make the
+  # in-container ccache dir world-writable up front.
+  "mkdir -p /ccache && chmod 0777 /ccache",
+]
+# Per-leg: pip provides cmake>=3.22 + ninja>=1.11 (el7 ninja 1.10 can't do VTK's
+# multiple-output wrapping edges). Installed before each `pip wheel` so they are
+# on PATH for the backend's cmake calls.
+before-build = "{project}/ci/cibw/before-build.sh"
+
+[tool.cibuildwheel.linux.environment]
+# ccache shared across EVERY cp leg: cibuildwheel keeps ONE container alive for
+# the whole linux matrix, so an in-container CCACHE_DIR persists across legs
+# automatically. This is the crux — VTK's C++ is python-independent, so legs 2..N
+# hit the cache and only recompile the per-python wrappers. (/output is a
+# cibuildwheel-managed in-container dir that survives the matrix; we use a plain
+# /tmp path the build user owns to avoid host-mount uid/permission friction.)
+CCACHE_DIR = "/ccache"
+CCACHE_MAXSIZE = "30G"
+CMAKE_C_COMPILER_LAUNCHER = "ccache"
+CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
+FVTK_BUILD_JOBS = "16"
+
+# OPTIONAL cross-RUN persistence: mount a host dir at /ccache. NOT enabled by
+# default because cibuildwheel runs the build as a non-root user whose uid differs
+# from the host dir owner, so a host-owned dir trips "Permission denied" on
+# ccache's mkdir. To persist across runs on CI, create a world-writable dir and add:
+#   container-engine = { name = "docker", create-args = ["-v", "/tmp/fvtk-cibw-ccache:/ccache"] }
+# (chmod 0777 it first). Within a SINGLE run the in-container /ccache already gives
+# the cross-cp matrix sharing that matters; cross-run is a CI cache-action nicety.
+
+# ===========================================================================
+# macOS arm64 — AppleClang + ThinLTO + Cocoa GL (ci/cmake/macos.cmake). The SAME
+# fvtk_backend + minimal.cmake 3-way toolchain gate; only the init-cache + repair
+# tool + env differ. delocate is cibuildwheel's default macOS repair tool.
+# ===========================================================================
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
+before-build = "python -m pip install 'cmake>=3.22,<4.2' 'ninja>=1.11' 'setuptools<81' wheel ccache"
+repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+
+[tool.cibuildwheel.macos.environment]
+FVTK_CMAKE_INIT = "{project}/ci/cmake/macos.cmake"
+FVTK_TARGET_OS = "macos"
+MACOSX_DEPLOYMENT_TARGET = "11.0"
+_PYTHON_HOST_PLATFORM = "macosx-11.0-arm64"
+CMAKE_C_COMPILER_LAUNCHER = "ccache"
+CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
+
+# ===========================================================================
+# Windows x86_64 — MSVC /GL+/LTCG (ci/cmake/windows.cmake). delvewheel repair.
+# vcvars must be on PATH (set up in the workflow via ilammy/msvc-dev-cmd before
+# cibuildwheel, or rely on cibuildwheel's MSVC autodetection).
+# ===========================================================================
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+before-build = "pip install delvewheel \"cmake>=3.22,<4.2\" \"ninja>=1.11\" \"setuptools<81\" wheel"
+repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.windows.environment]
+FVTK_CMAKE_INIT = "{project}/ci/cmake/windows.cmake"
+FVTK_FORCE_MSVC = "ON"
