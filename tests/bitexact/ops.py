@@ -92,7 +92,10 @@ try:
         vtkWarpScalar,
         vtkWarpVector,
     )
-    from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
+    from vtkmodules.vtkFiltersGeometry import (
+        vtkDataSetSurfaceFilter,
+        vtkGeometryFilter,
+    )
     from vtkmodules.vtkFiltersSources import (
         vtkArrowSource,
         vtkConeSource,
@@ -699,6 +702,16 @@ def op_geometry_ugrid(dtype, size):
     return g.GetOutput()
 
 
+def op_datasetsurface_ugrid(dtype, size):
+    # vtkDataSetSurfaceFilter (NOT vtkGeometryFilter — it has its own UG path)
+    # directly over a hex UG drives UnstructuredGridExecuteInternal, whose dense
+    # per-cell GetCellType/GetCellPoints are devirtualized for the concrete UG.
+    s = vtkDataSetSurfaceFilter()
+    s.SetInputData(make_hex_ugrid(size, dtype))
+    s.Update()
+    return s.GetOutput()
+
+
 def op_contour_wedgepyr(dtype, size):
     # vtkContourGrid on an explicit WEDGE+PYRAMID ugrid -> per-cell
     # vtkWedge::Contour / vtkPyramid::Contour (cached-endpoint-scalar opt).
@@ -1131,6 +1144,7 @@ OPS = {
     "probe": dict(fn=op_probe, group="filter", dtypes=["float32", "float64"], sizes=[10, 16]),
     "geometry_ugrid": dict(fn=op_geometry_ugrid, group="filter", dtypes=["float64"], sizes=[8, 14]),
     "threshold_ugrid": dict(fn=op_threshold_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
+    "datasetsurface_ugrid": dict(fn=op_datasetsurface_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "contour_wedgepyr": dict(fn=op_contour_wedgepyr, group="filter", dtypes=["float32", "float64"], sizes=[2, 4]),
     "clip_multicomp": dict(fn=op_clip_multicomp, group="filter", dtypes=["float32", "float64"], sizes=[12, 18]),
     "locator_celllocator": dict(fn=op_locator_celllocator, group="common", dtypes=["float64"], sizes=[6, 10]),
