@@ -563,6 +563,30 @@ def op_point2cell(dtype, size):
     return f.GetOutput()
 
 
+def op_point2cell_ugrid(dtype, size):
+    # vtkPointDataToCellData over a vtkUnstructuredGrid of hexahedra. Unlike
+    # op_point2cell (vtkImageData), a UG input drives the devirtualized
+    # GetCellPoints fast path in PointDataToCellDataFunctor (cached
+    # vtkCellArray::GetCellAtId rather than the virtual vtkDataSet::GetCellPoints).
+    # A multi-component point-data array (in addition to the radial scalar 'v')
+    # makes the per-cell ArrayList.Average non-trivial across more than one array.
+    ug = make_hex_ugrid(size, dtype)
+    pts = vtk_to_numpy(ug.GetPoints().GetData())
+    vec = np.ascontiguousarray(
+        np.stack(
+            [pts[:, 0] * 2.0, pts[:, 1] - pts[:, 2], pts[:, 0] + pts[:, 1] + pts[:, 2]],
+            axis=1,
+        )
+    ).astype(dtype)
+    va = numpy_to_vtk(vec, deep=1)
+    va.SetName("vec3")
+    ug.GetPointData().AddArray(va)
+    f = vtkPointDataToCellData()
+    f.SetInputData(ug)
+    f.Update()
+    return f.GetOutput()
+
+
 def op_elevation(dtype, size):
     f = vtkElevationFilter()
     f.SetInputData(make_sphere(size, size))
@@ -1203,6 +1227,7 @@ OPS = {
     "cell2point": dict(fn=op_cell2point, group="modified", dtypes=["float32", "float64"], sizes=[20, 32]),
     # --- broader filter coverage ---
     "point2cell": dict(fn=op_point2cell, group="filter", dtypes=["float32", "float64"], sizes=[20, 28]),
+    "point2cell_ugrid": dict(fn=op_point2cell_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "elevation": dict(fn=op_elevation, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "warpvector": dict(fn=op_warpvector, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "clean": dict(fn=op_clean, group="filter", dtypes=["float64"], sizes=[24, 40]),

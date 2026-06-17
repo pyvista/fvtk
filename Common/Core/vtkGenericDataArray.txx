@@ -103,7 +103,14 @@ void vtkGenericDataArray<DerivedT, ValueTypeT, ArrayType>::InterpolateTuple(vtkI
   // way we don't waste time redoing the other checks in the superclass, and
   // can avoid doing a dispatch for the most common usage of this method.
   DerivedT* other1 = vtkArrayDownCast<DerivedT>(source1);
-  DerivedT* other2 = other1 ? vtkArrayDownCast<DerivedT>(source2) : nullptr;
+  // The edge-interpolation callers (vtkDataSetAttributes::InterpolateEdge) pass
+  // the SAME source array for both endpoints (p1 and p2 of one array), so the
+  // second downcast resolves to an identical pointer. Reuse other1 in that case
+  // to skip a redundant vtkArrayDownCast (a GetArrayType virtual dispatch). The
+  // resulting pointer is the same either way, so this is byte-for-byte identical
+  // (and the source1!=source2 path, e.g. InterpolateTime, is unchanged).
+  DerivedT* other2 =
+    !other1 ? nullptr : (source2 == source1 ? other1 : vtkArrayDownCast<DerivedT>(source2));
   if (!other1 || !other2)
   {
     // Let the superclass handle dispatch/fallback.
