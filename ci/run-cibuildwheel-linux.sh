@@ -8,16 +8,19 @@
 # manylinux_2_17, smoke test under xvfb).
 #
 # Usage:
-#   ci/run-cibuildwheel-linux.sh                # default: cp313 only
-#   ci/run-cibuildwheel-linux.sh cp313-*        # explicit selector
-#   CIBW_BUILD="cp39-* cp313-*" ci/run-cibuildwheel-linux.sh
+#   ci/run-cibuildwheel-linux.sh                # default: cp311 (the abi3 leg)
+#   ci/run-cibuildwheel-linux.sh cp311-*        # explicit selector
+#   FVTK_ABI3=0 CIBW_BUILD="cp311-* cp313-*" ci/run-cibuildwheel-linux.sh
+#
+# FVTK_ABI3 is ON by default, so the single cp311 leg produces the cp311-abi3
+# wheel. Set FVTK_ABI3=0 (and a multi-cp selector) to build legacy static wheels.
 #
 # Requires a cibuildwheel on PATH (or in a venv): pip install cibuildwheel.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTDIR="${OUTDIR:-$REPO/wheelhouse-cibw}"
-SELECTOR="${1:-cp313-*}"
+SELECTOR="${1:-cp311-*}"
 
 mkdir -p "$OUTDIR"
 
