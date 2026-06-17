@@ -19,6 +19,9 @@
 #include "vtkOpenGLState.h"
 #include "vtkOpenGLVertexArrayObject.h"
 #include "vtkRenderState.h"
+// For VTK_OPENGL_ENABLE_STREAM_ANNOTATIONS, read by the local annotate() helper
+// so it only materializes a std::string when annotations are compiled in.
+#include "vtkRenderingOpenGLConfigure.h"
 #include "vtkRenderTimerLog.h"
 #include "vtkRenderer.h"
 #include "vtkShaderProgram.h"
@@ -62,9 +65,19 @@ vtkCxxSetObjectMacro(vtkDualDepthPeelingPass, VolumetricPass, vtkRenderPass);
 
 namespace
 {
-void annotate(const std::string& str)
+// Accept a string literal by const char* so that, in the default release build
+// where GL stream annotations are compiled out (VTK_OPENGL_ENABLE_STREAM_-
+// ANNOTATIONS undefined), no per-call std::string is heap-allocated. The
+// emitted GL command stream is unchanged: MarkDebugEvent is a no-op when
+// annotations are disabled, and when enabled it receives identical bytes (the
+// std::string is only materialized inside that branch).
+void annotate(const char* str)
 {
-  vtkOpenGLRenderUtilities::MarkDebugEvent(str);
+#ifdef VTK_OPENGL_ENABLE_STREAM_ANNOTATIONS
+  vtkOpenGLRenderUtilities::MarkDebugEvent(std::string(str));
+#else
+  (void)str;
+#endif
 }
 }
 

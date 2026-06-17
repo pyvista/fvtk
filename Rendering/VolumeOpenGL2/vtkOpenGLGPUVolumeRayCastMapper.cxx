@@ -461,6 +461,16 @@ public:
 
   vtkNew<vtkMatrix4x4> TempMatrix4x4;
 
+  // Persistent scratch matrices for BindTransformations(); these are fully
+  // overwritten (DeepCopy / Identity / Multiply4x4) each use, so reusing the
+  // same objects across frames avoids 5 vtkMatrix4x4 heap allocations per frame
+  // without changing any value sent to the GPU.
+  vtkNew<vtkMatrix4x4> BindDataToWorldMat;
+  vtkNew<vtkMatrix4x4> BindDataToViewMat;
+  vtkNew<vtkMatrix4x4> BindTexToDataMat;
+  vtkNew<vtkMatrix4x4> BindTexToViewMat;
+  vtkNew<vtkMatrix4x4> BindCellToPointMat;
+
   vtkSmartPointer<vtkPolyData> BBoxPolyData;
   vtkSmartPointer<vtkVolumeTexture> CurrentMask;
 
@@ -3448,7 +3458,14 @@ void vtkOpenGLGPUVolumeRayCastMapper::vtkInternal::BindTransformations(
   this->TexMaxVec.resize(numVolumes * 3, 0);
   this->EyePosVec.resize(numVolumes * 3, 0);
 
-  vtkNew<vtkMatrix4x4> dataToWorld, dataToView, texToDataMat, texToViewMat, cellToPointMat;
+  // Reuse persistent scratch matrices (fully overwritten below) instead of
+  // allocating five vtkMatrix4x4 per frame. Aliased to local names so the body
+  // is unchanged; values produced are bit-identical.
+  vtkMatrix4x4* const dataToWorld = this->BindDataToWorldMat;
+  vtkMatrix4x4* const dataToView = this->BindDataToViewMat;
+  vtkMatrix4x4* const texToDataMat = this->BindTexToDataMat;
+  vtkMatrix4x4* const texToViewMat = this->BindTexToViewMat;
+  vtkMatrix4x4* const cellToPointMat = this->BindCellToPointMat;
   float defaultTexMin[3] = { 0.f, 0.f, 0.f };
   float defaultTexMax[3] = { 1.f, 1.f, 1.f };
   float eyePos[3] = { 0.f, 0.f, 0.f };
@@ -3484,12 +3501,12 @@ void vtkOpenGLGPUVolumeRayCastMapper::vtkInternal::BindTransformations(
       texToDataMat->DeepCopy(volTex->GetCurrentBlock()->TextureToDataset.GetPointer());
 
       // Texture matrices (texture to view)
-      vtkMatrix4x4::Multiply4x4(volMatrix, texToDataMat.GetPointer(), texToViewMat.GetPointer());
-      vtkMatrix4x4::Multiply4x4(modelViewMat, texToViewMat.GetPointer(), texToViewMat.GetPointer());
+      vtkMatrix4x4::Multiply4x4(volMatrix, texToDataMat, texToViewMat);
+      vtkMatrix4x4::Multiply4x4(modelViewMat, texToViewMat, texToViewMat);
 
       // texToViewMat->Transpose();
       vtkInternal::CopyMatrixToVector<vtkMatrix4x4, 4, 4>(
-        texToViewMat.GetPointer(), this->TexEyeMatVec.data(), vecOffset);
+        texToViewMat, this->TexEyeMatVec.data(), vecOffset);
 
       // Cell to Point (texture-cells to texture-points)
       cellToPointMat->DeepCopy(volTex->CellToPointMatrix.GetPointer());
@@ -3520,7 +3537,7 @@ void vtkOpenGLGPUVolumeRayCastMapper::vtkInternal::BindTransformations(
     // volume (or the bbox).
     // This multiply may look backwards, but dataToWorld and modelViewMat are
     // both already transposed to send to OpenGL.
-    vtkMatrix4x4::Multiply4x4(dataToWorld.GetPointer(), modelViewMat, dataToView.GetPointer());
+    vtkMatrix4x4::Multiply4x4(dataToWorld, modelViewMat, dataToView);
     dataToView->Invert();
     eyePos[0] = dataToView->GetElement(3, 0);
     eyePos[1] = dataToView->GetElement(3, 1);
@@ -3528,9 +3545,9 @@ void vtkOpenGLGPUVolumeRayCastMapper::vtkInternal::BindTransformations(
     vtkInternal::CopyVector<float, 3>(eyePos, this->EyePosVec.data(), i * 3);
 
     vtkInternal::CopyMatrixToVector<vtkMatrix4x4, 4, 4>(
-      dataToWorld.GetPointer(), this->VolMatVec.data(), vecOffset);
+      dataToWorld, this->VolMatVec.data(), vecOffset);
 
-    this->InverseVolumeMat->DeepCopy(dataToWorld.GetPointer());
+    this->InverseVolumeMat->DeepCopy(dataToWorld);
     this->InverseVolumeMat->Invert();
     vtkInternal::CopyMatrixToVector<vtkMatrix4x4, 4, 4>(
       this->InverseVolumeMat.GetPointer(), this->InvMatVec.data(), vecOffset);
@@ -3538,16 +3555,16 @@ void vtkOpenGLGPUVolumeRayCastMapper::vtkInternal::BindTransformations(
     // Texture matrices (texture to dataset)
     texToDataMat->Transpose();
     vtkInternal::CopyMatrixToVector<vtkMatrix4x4, 4, 4>(
-      texToDataMat.GetPointer(), this->TexMatVec.data(), vecOffset);
+      texToDataMat, this->TexMatVec.data(), vecOffset);
 
     texToDataMat->Invert();
     vtkInternal::CopyMatrixToVector<vtkMatrix4x4, 4, 4>(
-      texToDataMat.GetPointer(), this->InvTexMatVec.data(), vecOffset);
+      texToDataMat, this->InvTexMatVec.data(), vecOffset);
 
     // Cell to Point (texture adjustment)
     cellToPointMat->Transpose();
     vtkInternal::CopyMatrixToVector<vtkMatrix4x4, 4, 4>(
-      cellToPointMat.GetPointer(), this->CellToPointVec.data(), vecOffset);
+      cellToPointMat, this->CellToPointVec.data(), vecOffset);
     vtkInternal::CopyVector<float, 3>(texMin, this->TexMinVec.data(), i * 3);
     vtkInternal::CopyVector<float, 3>(texMax, this->TexMaxVec.data(), i * 3);
   }

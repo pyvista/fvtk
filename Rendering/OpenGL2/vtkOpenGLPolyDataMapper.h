@@ -484,6 +484,27 @@ protected:
   vtkMTimeType EnvironmentTextureTime = 0;
   vtkTexture* EnvironmentTexture = nullptr;
 
+  // Per-frame cache for GetTextures(). GetTextures() rebuilds a
+  // std::vector<pair<vtkTexture*,std::string>> (copying every texture-name
+  // string out of the property map) on every call, and it is called several
+  // times per primitive per frame (shader-rebuild test + uniform binding).
+  // The texture *set* only changes when the actor, its property, or this
+  // mapper is Modified(): adding/removing a texture bumps the property MTime,
+  // SetTexture bumps the actor, and ColorTextureMap / batched block textures
+  // bump the mapper MTime. GetCachedTextures() returns the same vector that
+  // GetTextures() would, recomputing (through the virtual GetTextures, so
+  // subclass overrides are honored) only when one of those guard MTimes
+  // advances or the actor pointer changes. The bound texture units / uniform
+  // names are therefore byte-identical -- just computed once per change
+  // instead of once per draw.
+  std::vector<texinfo> CachedTextures;
+  vtkActor* CachedTexturesActor = nullptr;
+  vtkMTimeType CachedTexturesMapperTime = 0;
+  vtkMTimeType CachedTexturesActorTime = 0;
+  vtkMTimeType CachedTexturesPropertyTime = 0;
+  bool CachedTexturesValid = false;
+  const std::vector<texinfo>& GetCachedTextures(vtkActor* actor);
+
 private:
   vtkOpenGLPolyDataMapper(const vtkOpenGLPolyDataMapper&) = delete;
   void operator=(const vtkOpenGLPolyDataMapper&) = delete;

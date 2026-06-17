@@ -515,6 +515,34 @@ std::vector<texinfo> vtkOpenGLPolyDataMapper::GetTextures(vtkActor* actor)
 }
 
 //------------------------------------------------------------------------------
+const std::vector<texinfo>& vtkOpenGLPolyDataMapper::GetCachedTextures(vtkActor* actor)
+{
+  // The texture *set* (which textures, and their uniform names) is a function
+  // of this mapper (ColorTextureMap / batched block textures), the actor
+  // (SetTexture), and the actor's property (per-name textures) -- each of which
+  // bumps its own MTime when that set changes. Recompute only when one of those
+  // advances or the actor changes; otherwise reuse the previously built vector.
+  // This avoids rebuilding the vector and copying every texture-name std::string
+  // on every per-primitive, per-frame call while staying byte-identical.
+  vtkProperty* prop = actor->GetProperty();
+  vtkMTimeType mapperTime = this->GetMTime();
+  vtkMTimeType actorTime = actor->GetMTime();
+  vtkMTimeType propertyTime = prop->GetMTime();
+  if (!this->CachedTexturesValid || this->CachedTexturesActor != actor ||
+    this->CachedTexturesMapperTime != mapperTime || this->CachedTexturesActorTime != actorTime ||
+    this->CachedTexturesPropertyTime != propertyTime)
+  {
+    this->CachedTextures = this->GetTextures(actor);
+    this->CachedTexturesActor = actor;
+    this->CachedTexturesMapperTime = mapperTime;
+    this->CachedTexturesActorTime = actorTime;
+    this->CachedTexturesPropertyTime = propertyTime;
+    this->CachedTexturesValid = true;
+  }
+  return this->CachedTextures;
+}
+
+//------------------------------------------------------------------------------
 bool vtkOpenGLPolyDataMapper::HaveTCoords(vtkPolyData* poly)
 {
   return (poly->GetPointData()->GetTCoords() || this->ForceTextureCoordinates);
@@ -902,7 +930,7 @@ void vtkOpenGLPolyDataMapper::ReplaceShaderLight(
     vtkShaderProgram::Substitute(FSSource, "//VTK::TCoord::Impl", "");
 
     // get color and material from textures
-    std::vector<texinfo> textures = this->GetTextures(actor);
+    const std::vector<texinfo>& textures = this->GetCachedTextures(actor);
     bool albedo = false;
     bool material = false;
     bool emissive = false;
@@ -1131,7 +1159,7 @@ void vtkOpenGLPolyDataMapper::ReplaceShaderLight(
     vtkShaderProgram::Substitute(FSSource, "//VTK::TCoord::Impl", "");
 
     // get color and material from textures
-    std::vector<texinfo> textures = this->GetTextures(actor);
+    const std::vector<texinfo>& textures = this->GetCachedTextures(actor);
 
     for (auto& t : textures)
     {
@@ -1540,7 +1568,7 @@ void vtkOpenGLPolyDataMapper::ReplaceShaderTCoord(
     return;
   }
 
-  std::vector<texinfo> textures = this->GetTextures(actor);
+  const std::vector<texinfo>& textures = this->GetCachedTextures(actor);
   if (textures.empty())
   {
     return;
@@ -2177,7 +2205,7 @@ void vtkOpenGLPolyDataMapper::ReplaceShaderNormal(
       vtkShaderProgram::Substitute(FSSource, "//VTK::Normal::Impl", toString.str());
 
       // normal mapping
-      std::vector<texinfo> textures = this->GetTextures(actor);
+      const std::vector<texinfo>& textures = this->GetCachedTextures(actor);
       bool normalMapping =
         std::find_if(textures.begin(), textures.end(),
           [](const texinfo& tex) { return tex.second == "normalTex"; }) != textures.end();
@@ -2644,7 +2672,7 @@ bool vtkOpenGLPolyDataMapper::GetNeedToRebuildShaders(
   if (this->VBOs->GetNumberOfComponents("tcoord"))
   {
     vtkMTimeType texMTime = 0;
-    std::vector<texinfo> textures = this->GetTextures(actor);
+    const std::vector<texinfo>& textures = this->GetCachedTextures(actor);
     for (size_t i = 0; i < textures.size(); ++i)
     {
       vtkTexture* texture = textures[i].first;
@@ -2810,7 +2838,7 @@ void vtkOpenGLPolyDataMapper::SetMapperShaderParameters(
     cellBO.Program->SetUniformi(
       "showTexturesOnBackface", actor->GetProperty()->GetShowTexturesOnBackface() ? 1 : 0);
 
-    std::vector<texinfo> textures = this->GetTextures(actor);
+    const std::vector<texinfo>& textures = this->GetCachedTextures(actor);
     for (size_t i = 0; i < textures.size(); ++i)
     {
       vtkTexture* texture = textures[i].first;
@@ -2989,7 +3017,7 @@ void vtkOpenGLPolyDataMapper::SetLightingShaderParameters(
 
     if (oglRen->GetUseSphericalHarmonics() && sh)
     {
-      std::string uniforms[3] = { "shRed", "shGreen", "shBlue" };
+      static const char* const uniforms[3] = { "shRed", "shGreen", "shBlue" };
       for (int i = 0; i < 3; i++)
       {
         float coeffs[9];
@@ -3006,7 +3034,7 @@ void vtkOpenGLPolyDataMapper::SetLightingShaderParameters(
         coeffs[7] *= -1.092548f * 0.25f;
         coeffs[8] *= 0.546274f * 0.25f;
 
-        cellBO.Program->SetUniform1fv(uniforms[i].c_str(), 9, coeffs);
+        cellBO.Program->SetUniform1fv(uniforms[i], 9, coeffs);
       }
     }
   }
