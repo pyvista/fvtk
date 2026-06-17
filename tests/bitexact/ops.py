@@ -90,10 +90,12 @@ try:
         vtkGradientFilter,
         vtkShrinkFilter,
         vtkTableBasedClipDataSet,
+        vtkTransformFilter,
         vtkVertexGlyphFilter,
         vtkWarpScalar,
         vtkWarpVector,
     )
+    from vtkmodules.vtkCommonTransforms import vtkTransform
     from vtkmodules.vtkFiltersGeometry import (
         vtkDataSetSurfaceFilter,
         vtkGeometryFilter,
@@ -602,6 +604,25 @@ def op_warpvector(dtype, size):
     w.SetScaleFactor(0.3)
     w.Update()
     return w.GetOutput()
+
+
+def op_transform(dtype, size):
+    """vtkTransformFilter with a non-trivial 4x4 (rotate+translate+scale) so the
+    full matrix*point math (vtkLinearTransform::TransformPoints, the fvtk AVX2
+    FMV kernel) is exercised. Covers the FMV'd compute-bound transform kernel."""
+    t = vtkTransform()
+    t.Translate(0.123, -0.456, 0.789)
+    t.RotateWXYZ(37.0, 0.3, 0.5, 0.81)
+    t.Scale(1.25, 0.875, 1.0625)
+    f = vtkTransformFilter()
+    f.SetTransform(t)
+    f.SetInputData(make_sphere(size, size))
+    if dtype == "float64":
+        f.SetOutputPointsPrecision(1)  # DOUBLE
+    else:
+        f.SetOutputPointsPrecision(2)  # SINGLE
+    f.Update()
+    return f.GetOutput()
 
 
 def op_clean(dtype, size):
@@ -1281,6 +1302,9 @@ OPS = {
     "point2cell_ugrid": dict(fn=op_point2cell_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "elevation": dict(fn=op_elevation, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "warpvector": dict(fn=op_warpvector, group="filter", dtypes=["float64"], sizes=[24, 40]),
+    "transform": dict(
+        fn=op_transform, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]
+    ),
     "clean": dict(fn=op_clean, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "triangle": dict(fn=op_triangle, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "geometry": dict(fn=op_geometry, group="filter", dtypes=["float64"], sizes=[18, 28]),

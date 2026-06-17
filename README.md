@@ -221,6 +221,33 @@ maximum wheel portability.
     already inside a parallel scope (`vtkSMPTools::IsParallelScope()`), inheriting the caller's
     backend instead. We set **defaults**, not removing knobs.
 
+16. **AVX2 SIMD on the hot vertical kernels via function-multi-versioning (single portable
+    wheel; no `-march`).** The compute-bound, element-wise (`out[i] = f(in[i])`) inner loops of
+    `vtkLinearTransform` (the 4×4 matrix·point math behind `vtkTransformFilter` /
+    `vtkTransformPolyDataFilter`) and `vtkWarpVector` are hoisted into dedicated free functions
+    marked `__attribute__((target_clones("default","avx2")))`. GCC emits **two clones per
+    kernel** — a baseline **SSE2** `.default` clone and a wide-SIMD `.avx2` clone — plus an
+    **IFUNC resolver** that picks the right one at load time from CPUID. So a *single* wheel,
+    still built at the baseline x86-64 ISA floor (no `-march` bump, no lost portability for
+    pre-Haswell CPUs), runs 256-bit AVX2 where the CPU has it and the correct SSE2 path where it
+    doesn't. **Bit-exactness is preserved** (maxULP = 0 vs stock VTK 9.6.2): the two FMV'd TUs
+    are compiled with `-ffp-contract=off` (`set_source_files_properties`) so neither clone
+    contracts the `a*b+c`-shaped matrix/warp math into a fused `vfmadd` — FMA contraction is the
+    one transform that would diverge from stock by 1 ULP on adversarial data. Verified: the
+    `.avx2` clones carry **0 `vfmadd`** and use `ymm`; the whole `tests/bitexact/` suite (incl. a
+    new `transform` op) stays maxULP = 0; and a **2 M-point, double-precision, adversarial
+    (wide-dynamic-range) warp + transform** — inputs chosen to *expose* any FMA double-rounding —
+    is **byte-identical** to stock VTK 9.6.2 on both the AVX2 and the forced-SSE2 (default-clone)
+    paths. Measured (i9-14900K, 1 thread, AVX2 vs forced-SSE2 default clone): **transform 1.40×
+    cache-resident / ~1.05× DRAM** (compute-bound, win everywhere), **warp 1.41× cache-resident /
+    ~flat DRAM** (bandwidth-bound — wider lanes help only when the working set fits in cache).
+    Composes with lever 15: a 2 M-point warp runs **~3.0× over serial-SSE2** at 4 threads (the
+    SMP threading carries that win; SIMD is ~flat at DRAM scale, where memory bandwidth, not
+    arithmetic, is the bottleneck). Higher-arithmetic-intensity vertical kernels (the transform)
+    are where AVX2 pays; bandwidth-bound warps gain only cache-resident — and reduction kernels
+    (contour/smooth/decimate accumulation) are deliberately **not** FMV'd (the compiler can't
+    reorder a sum without `-ffast-math`, which is forbidden).
+
 Levers 12–14 are validated parity-green: differential PyVista core+plotting (**4,088 tests**),
 **0 regressions** vs the untuned `-O3` build (identical pass/fail/skip outcomes).
 
