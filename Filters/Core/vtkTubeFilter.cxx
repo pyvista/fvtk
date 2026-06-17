@@ -272,6 +272,11 @@ int vtkTubeFilter::RequestData(vtkInformation* vtkNotUsed(request),
   inCellId = input->GetNumberOfVerts();
   int checkAbortInterval = std::min(numLines / 10 + 1, (vtkIdType)1000);
   int progressCounter = 0;
+  // Reused scratch copy of each polyline's point indices (see assign() below).
+  // Hoisted out of the per-polyline loop so its buffer is reused across
+  // polylines instead of reallocating every iteration; assign() reproduces the
+  // exact same contents as the previous per-iteration vector construction.
+  std::vector<vtkIdType> ptsCopy;
   for (inLines->InitTraversal(); inLines->GetNextCell(npts, ptsOrig) && !abort; inCellId++)
   {
     this->UpdateProgress((double)inCellId / numLines);
@@ -288,7 +293,7 @@ int vtkTubeFilter::RequestData(vtkInformation* vtkNotUsed(request),
     {
       continue; // skip tubing this polyline
     }
-    std::vector<vtkIdType> ptsCopy(ptsOrig, ptsOrig + npts);
+    ptsCopy.assign(ptsOrig, ptsOrig + npts);
     vtkIdType* pts = ptsCopy.data();
 
     // remove degenerate lines to avoid warnings
