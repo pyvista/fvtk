@@ -33,8 +33,18 @@ import numpy as np
 
 # --- vtkmodules imports (resolve to stock vtk OR fvtk depending on the venv) ---
 from vtkmodules.vtkCommonCore import vtkFloatArray, vtkPoints, vtkLookupTable
-from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkCellArray, vtkImageData
-from vtkmodules.vtkRenderingCore import vtkTexture
+from vtkmodules.vtkCommonDataModel import (
+    vtkPolyData,
+    vtkCellArray,
+    vtkImageData,
+    vtkPiecewiseFunction,
+)
+from vtkmodules.vtkRenderingCore import (
+    vtkTexture,
+    vtkColorTransferFunction,
+    vtkVolume,
+    vtkVolumeProperty,
+)
 from vtkmodules.vtkFiltersTexture import vtkTextureMapToSphere
 from vtkmodules.vtkFiltersSources import (
     vtkConeSource,
@@ -53,6 +63,13 @@ from vtkmodules.vtkRenderingCore import (
 # mappers -> vtkOpenGLPolyDataMapper, etc.). Without this the abstract
 # RenderingCore classes have no concrete GL backend.
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+
+# Register the GPU ray-cast volume backend (vtkSmartVolumeMapper ->
+# vtkOpenGLGPUVolumeRayCastMapper). Without this the volume scene has no
+# concrete mapper. vtkSmartVolumeMapper itself lives in vtkRenderingVolumeOpenGL2.
+from vtkmodules.vtkRenderingVolume import vtkFixedPointVolumeRayCastMapper  # noqa: F401
+import vtkmodules.vtkRenderingVolumeOpenGL2  # noqa: F401
+from vtkmodules.vtkRenderingVolumeOpenGL2 import vtkSmartVolumeMapper
 
 WIN_W = 256
 WIN_H = 256
@@ -441,10 +458,95 @@ def scene_depth_peeling_dense():
     return ren, _new_window(ren)
 
 
+def scene_volume_raycast():
+    """GPU ray-cast volume rendering of a deterministic 64^3 scalar field.
+
+    Exercises the heavy PyVista add_volume path: vtkSmartVolumeMapper (-> GPU
+    ray cast) + a color transfer function + an opacity (piecewise) function +
+    vtkVolumeProperty. The scalar field, transfer functions, sample distance,
+    and camera are all fixed/deterministic so the GL command stream is identical
+    on both backends. This is the STEP-1 de-risk scene: ray casting uses 3D
+    textures + fragment-shader compositing (more FP / driver-dependent than
+    surface rendering), so we render it through the SAME host Mesa on both sides
+    and diff pixel-for-pixel.
+    """
+    dim = 64
+    img = vtkImageData()
+    img.SetDimensions(dim, dim, dim)
+    img.SetSpacing(1.0, 1.0, 1.0)
+    img.SetOrigin(0.0, 0.0, 0.0)
+    img.AllocateScalars(11, 1)  # VTK_FLOAT=11, 1 component
+    sc = img.GetPointData().GetScalars()
+    sc.SetName("vol")
+    # Deterministic field: a radial "blob" via pure integer/float algebra
+    # (squared distance from center, no trig), scaled into [0, 255].
+    c = (dim - 1) / 2.0
+    rmax2 = 3.0 * c * c
+    idx = 0
+    for k in range(dim):
+        dk = k - c
+        for j in range(dim):
+            dj = j - c
+            for i in range(dim):
+                di = i - c
+                d2 = di * di + dj * dj + dk * dk
+                # Falls off from 255 at center to 0 at the corner; deterministic.
+                v = 255.0 * (1.0 - d2 / rmax2)
+                if v < 0.0:
+                    v = 0.0
+                sc.SetValue(idx, v)
+                idx += 1
+
+    color = vtkColorTransferFunction()
+    color.AddRGBPoint(0.0, 0.0, 0.0, 0.0)
+    color.AddRGBPoint(64.0, 0.2, 0.1, 0.6)
+    color.AddRGBPoint(128.0, 0.1, 0.7, 0.3)
+    color.AddRGBPoint(192.0, 0.9, 0.6, 0.1)
+    color.AddRGBPoint(255.0, 1.0, 1.0, 0.9)
+
+    opacity = vtkPiecewiseFunction()
+    opacity.AddPoint(0.0, 0.0)
+    opacity.AddPoint(64.0, 0.02)
+    opacity.AddPoint(128.0, 0.08)
+    opacity.AddPoint(255.0, 0.25)
+
+    prop = vtkVolumeProperty()
+    prop.SetColor(color)
+    prop.SetScalarOpacity(opacity)
+    prop.SetInterpolationTypeToLinear()
+    prop.ShadeOff()
+
+    mapper = vtkSmartVolumeMapper()
+    mapper.SetInputData(img)
+    # Force the GPU ray-cast path and a FIXED sample distance so the compositing
+    # step count is deterministic (no auto-sample-distance heuristics).
+    mapper.SetRequestedRenderModeToGPU()
+    mapper.SetSampleDistance(0.5)
+    mapper.AutoAdjustSampleDistancesOff()
+    mapper.SetBlendModeToComposite()
+
+    vol = vtkVolume()
+    vol.SetMapper(mapper)
+    vol.SetProperty(prop)
+
+    ren = _renderer()
+    ren.AddVolume(vol)
+    # Camera placed explicitly relative to the volume center (dim/2 in each axis).
+    cam = ren.GetActiveCamera()
+    half = dim / 2.0
+    cam.SetFocalPoint(half, half, half)
+    cam.SetPosition(half + 3.0 * dim, half + 0.6 * dim, half + 0.8 * dim)
+    cam.SetViewUp(0.0, 1.0, 0.0)
+    cam.SetViewAngle(30.0)
+    cam.SetClippingRange(0.1, 1000.0)
+    return ren, _new_window(ren)
+
+
 SCENES = {
     "sphere_shaded": scene_sphere_shaded,
     "textured": scene_textured,
     "multi_textured": scene_multi_textured,
+    "volume_raycast": scene_volume_raycast,
     "cone_shaded": scene_cone_shaded,
     "scalars_lut": scene_scalars_lut,
     "points_glyph": scene_points_glyph,
