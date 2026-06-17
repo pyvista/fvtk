@@ -79,7 +79,10 @@ archs = ["x86_64"]
 # from the stock 2_28 repos, no EPEL/CRB enable needed); only the package manager
 # is dnf (yum is a dnf alias on AlmaLinux 8, but call dnf explicitly).
 before-all = [
-  "dnf install -y mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel mesa-libGLU-devel libglvnd-devel libX11-devel libXcursor-devel libXt-devel libXext-devel mesa-dri-drivers xorg-x11-server-Xvfb ccache git",
+  # mold = the fast ELF linker the build defaults to (FVTK_FAST_LINKER=mold);
+  # lld is the validated fallback. Both install from the stock 2_28 repos (no
+  # EPEL): mold 2.40, lld 21.1 verified on quay.io/pypa/manylinux_2_28_x86_64.
+  "dnf install -y mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel mesa-libGLU-devel libglvnd-devel libX11-devel libXcursor-devel libXt-devel libXext-devel mesa-dri-drivers xorg-x11-server-Xvfb ccache git mold lld",
   # before-all runs as root; the build runs as a non-root user, so make the
   # in-container ccache dir world-writable up front.
   "mkdir -p /ccache && chmod 0777 /ccache",

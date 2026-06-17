@@ -72,11 +72,13 @@ docker run --rm \
     # ---- toolchain + AlmaLinux 8 rendering deps (system mesa = GL backend) ---
     # System GCC 14.2.1 + gold + LTO plugin are already on PATH in the
     # manylinux_2_28 image. All package names match the el7 set (dnf, no EPEL).
+    # mold = the fast ELF linker the build defaults to (FVTK_FAST_LINKER=mold);
+    # lld is the validated fallback. Both install from the stock 2_28 repos.
     dnf install -y \
       mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel \
       mesa-libGLU-devel libglvnd-devel \
       libX11-devel libXcursor-devel libXt-devel libXext-devel \
-      ccache git
+      ccache git mold lld
     # NB: `| sed -n 1p` (reads whole stream), NOT `| head -1` (closes the pipe
     # after line 1) — under `set -o pipefail` the early close races a SIGPIPE
     # onto gcc/ld/ldd and aborts the build with exit 141 (seen on slow runners).

@@ -287,37 +287,107 @@ elseif ("$ENV{FVTK_PGO}" STREQUAL "use")
   unset(_fvtk_pgo)
 endif ()
 
-# Identical Code Folding (gold --icf=all). Folds byte-for-byte identical
-# functions and ships a single copy: VTK's heavy template instantiation and the
-# generated Python-wrapper boilerplate emit a lot of these. Complements
-# --gc-sections above (which drops UNREACHABLE code); ICF drops code that is
-# reached but DUPLICATED. Measured -10% wheel (47.1 -> 42.2 MiB) on top of the
-# other levers. --icf=all (vs --icf=safe) also folds address-taken functions, so
-# it can break code that relies on two functions having distinct addresses;
-# validated parity-green against PyVista's core+plotting suite (differential
-# baseline-vs-ICF run: byte-identical outcomes, 0 regressions). Toggle off with
-# `FVTK_ICF=0 ./build-fvtk.sh` for an A/B baseline or if a function-pointer-
-# identity issue surfaces (gold --icf=safe is the strictly-weaker fallback).
-# Linux/gold only; needs binutils (declared in shell.nix).
+# === Fast linker + Identical Code Folding (Linux/ELF) ========================
+# Two orthogonal levers share one link-line block because BOTH need to name the
+# linker (-fuse-ld=…):
 #
-# Read from the environment, NOT a cache option: this is a `-C` initial-cache
+#   FVTK_FAST_LINKER — which ELF linker drives every link edge. The link phase
+#   runs on EVERY build (ccache never caches linking), so on a warm/cached build
+#   the link of the ~9 VTK kit .so + the Python .abi3.so dominates. mold and lld
+#   are massively-parallel, mmap-based linkers that cut that phase several-fold
+#   vs the legacy serial gold/bfd. The linker only ARRANGES already-compiled
+#   objects — it does not touch FP codegen — so mold/lld vs gold produce
+#   functionally identical, FP-bit-identical filter output and pixel-identical
+#   renders (proven by the bitexact + renderexact suites). Values:
+#     mold (default) = -fuse-ld=mold   — fastest; dnf-installable on 2_28.
+#     lld            = -fuse-ld=lld     — LLVM linker; CI fallback.
+#     gold           = -fuse-ld=gold    — legacy binutils gold (prior default).
+#     off            = no -fuse-ld      — the compiler's system default (bfd).
+#   All of mold/lld/gold implement --icf=all, so ICF composes with any choice.
+#
+#   FVTK_ICF — Identical Code Folding (--icf=all). Folds byte-for-byte identical
+#   functions and ships a single copy: VTK's heavy template instantiation and the
+#   generated Python-wrapper boilerplate emit a lot of these. Complements
+#   --gc-sections above (which drops UNREACHABLE code); ICF drops code that is
+#   reached but DUPLICATED. Measured -10% wheel (47.1 -> 42.2 MiB) on top of the
+#   other levers. --icf=all (vs --icf=safe) also folds address-taken functions,
+#   so it can break code that relies on two functions having distinct addresses;
+#   validated parity-green against PyVista's core+plotting suite. Toggle off with
+#   FVTK_ICF=0 for an A/B baseline or if a function-pointer-identity issue
+#   surfaces. ICF is a runtime-transparent size lever; the suites prove it stays
+#   numerically/pixel exact regardless of which linker folds.
+#
+# Both read the environment, NOT a cache option: this is a `-C` initial-cache
 # file, processed before -D args are applied and before project(), so a
-# -DFVTK_ICF=OFF cache var would be too late to gate the append below (and
+# -DFVTK_*=… cache var would be too late to gate the appends below (and
 # CMAKE_SYSTEM_NAME isn't set yet either). $ENV{} is available now and matches
-# the repo's env-knob idiom (FVTK_STRIP, FAST). Default ON when unset.
-# gold (-fuse-ld=gold) and gold's --icf both exist only on the GNU/ELF toolchain:
-# ld64 (macOS) has no --icf (lld's --icf=all would, but the default macOS linker
-# is ld64) and MSVC folds via /OPT:ICF in its own block below. So this lever is
-# gated to gnu. On apple, ICF is held OFF for the first arm64 wheel (correctness-
-# first, no function-pointer-identity risk; -dead_strip already recovers the bulk
-# of the size win) — a future macOS ICF can opt into -fuse-ld=lld --icf=all once
-# lld is provisioned and validated.
-if(_FVTK_TOOLCHAIN STREQUAL "gnu" AND (NOT DEFINED ENV{FVTK_ICF} OR NOT "$ENV{FVTK_ICF}" STREQUAL "0"))
-  set(_fvtk_icf "-fuse-ld=gold -Wl,--icf=all")
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_icf}" CACHE STRING "" FORCE)
-  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_icf}" CACHE STRING "" FORCE)
-  set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_icf}" CACHE STRING "" FORCE)
-  unset(_fvtk_icf)
+# the repo's env-knob idiom (FVTK_STRIP, FVTK_LTO, FAST).
+#
+# Gated to gnu (Linux/ELF): -fuse-ld + --icf are ELF-linker features. ld64
+# (macOS) has no --icf and a future macOS arm64 build would opt into
+# -fuse-ld=lld --icf=all separately once lld is provisioned there; MSVC folds via
+# /OPT:ICF in its own block below.
+if(_FVTK_TOOLCHAIN STREQUAL "gnu")
+  set(_fvtk_link "")
+  # --- linker selection (default: mold) ---
+  # Resolve a requested name to a -fuse-ld value; "off"/unrecognized means no
+  # -fuse-ld (compiler default = bfd). An unset env defaults to mold.
+  if (NOT DEFINED ENV{FVTK_FAST_LINKER})
+    set(_fvtk_want "mold")
+  else ()
+    set(_fvtk_want "$ENV{FVTK_FAST_LINKER}")
+  endif ()
+  if (_fvtk_want STREQUAL "off")
+    set(_fvtk_ld "")                      # compiler default linker (bfd)
+  elseif (_fvtk_want MATCHES "^(mold|lld|gold)$")
+    set(_fvtk_ld "${_fvtk_want}")
+  else ()
+    message(WARNING "FVTK_FAST_LINKER='${_fvtk_want}' unrecognized "
+                    "(want mold|lld|gold|off); using compiler default linker.")
+    set(_fvtk_ld "")
+  endif ()
+  # Graceful fallback: a -fuse-ld=<x> for a linker that isn't installed makes
+  # EVERY link fail. mold is the default but is not universally present (CI + the
+  # wheel container dnf-install it; a bare dev box may not). If the chosen linker
+  # binary is absent, fall back to gold, then to the compiler default (bfd), so
+  # the build always links rather than hard-failing on the first link edge.
+  if (NOT _fvtk_ld STREQUAL "")
+    # mold ships as `mold`/`ld.mold`; lld as `ld.lld`; gold as `ld.gold`.
+    if (_fvtk_ld STREQUAL "mold")
+      find_program(_fvtk_ld_bin NAMES mold ld.mold)
+    else ()
+      find_program(_fvtk_ld_bin NAMES "ld.${_fvtk_ld}")
+    endif ()
+    if (NOT _fvtk_ld_bin)
+      find_program(_fvtk_gold_bin NAMES ld.gold)
+      if (_fvtk_gold_bin AND NOT _fvtk_ld STREQUAL "gold")
+        message(STATUS "FVTK_FAST_LINKER: '${_fvtk_ld}' not found on PATH; "
+                       "falling back to gold.")
+        set(_fvtk_ld "gold")
+      elseif (NOT _fvtk_gold_bin)
+        message(STATUS "FVTK_FAST_LINKER: '${_fvtk_ld}' (and gold) not found on "
+                       "PATH; using the compiler default linker (bfd).")
+        set(_fvtk_ld "")
+      endif ()
+      unset(_fvtk_gold_bin CACHE)
+    endif ()
+    unset(_fvtk_ld_bin CACHE)
+  endif ()
+  if (NOT _fvtk_ld STREQUAL "")
+    set(_fvtk_link "${_fvtk_link} -fuse-ld=${_fvtk_ld}")
+  endif ()
+  unset(_fvtk_want)
+  unset(_fvtk_ld)
+  # --- ICF (default ON) ---
+  if (NOT DEFINED ENV{FVTK_ICF} OR NOT "$ENV{FVTK_ICF}" STREQUAL "0")
+    set(_fvtk_link "${_fvtk_link} -Wl,--icf=all")
+  endif ()
+  if (NOT "${_fvtk_link}" STREQUAL "")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_fvtk_link}" CACHE STRING "" FORCE)
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${_fvtk_link}" CACHE STRING "" FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} ${_fvtk_link}" CACHE STRING "" FORCE)
+  endif ()
+  unset(_fvtk_link)
 endif()
 
 # === MSVC section-GC + COMDAT folding (Windows) ==============================
