@@ -394,6 +394,32 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
     newTCoords->SetName("TCoords");
   }
 
+  // The per-tuple output arrays below are filled at explicit, monotonically
+  // increasing tuple indices (ptIncr + i). Each input point that is glyphed
+  // contributes exactly numSourcePts tuples, so the running index never exceeds
+  // numPts * numSourcePts (the upper bound; it equals the exact count when no
+  // point is skipped and IndexMode is off). Pre-sizing the arrays to that upper
+  // bound here lets the per-point fill use SetTuple/SetTypedTuple at a known-valid
+  // index instead of InsertTuple, which re-checks and grows MaxId via
+  // EnsureAccessToTuple on every one of the ~26M calls. After the loop the arrays
+  // are trimmed to the exact written count (ptIncr) with SetNumberOfTuples, which
+  // only lowers MaxId and never reallocates or touches the kept tuples -- so the
+  // values, their indices, and the final tuple count are all bit-for-bit identical
+  // to the InsertTuple path.
+  const vtkIdType maxOutputTuples = numPts * numSourcePts;
+  if (newScalars)
+  {
+    newScalars->SetNumberOfTuples(maxOutputTuples);
+  }
+  if (newVectors)
+  {
+    newVectors->SetNumberOfTuples(maxOutputTuples);
+  }
+  if (newTCoords)
+  {
+    newTCoords->SetNumberOfTuples(maxOutputTuples);
+  }
+
   // Setting up for calls to PolyData::InsertNextCell()
   output->AllocateEstimate(numPts * numSourceCells, 3);
 
@@ -594,7 +620,7 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
       // Copy Input vector
       for (i = 0; i < numSourcePts; i++)
       {
-        newVectors->InsertTuple(i + ptIncr, v);
+        newVectors->SetTuple(i + ptIncr, v);
       }
       if (this->Orient)
       {
@@ -643,7 +669,7 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
       for (i = 0; i < numSourcePts; i++)
       {
         sourceTCoords->GetTuple(i, tc);
-        newTCoords->InsertTuple(i + ptIncr, tc);
+        newTCoords->SetTuple(i + ptIncr, tc);
       }
     }
 
@@ -653,7 +679,7 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
     {
       for (i = 0; i < numSourcePts; i++)
       {
-        newScalars->InsertTuple(i + ptIncr, &scalex); // = scaley = scalez
+        newScalars->SetTuple(i + ptIncr, &scalex); // = scaley = scalez
       }
     }
     else if (inCScalars && (this->ColorMode == VTK_COLOR_BY_SCALAR))
@@ -667,7 +693,7 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
     {
       for (i = 0; i < numSourcePts; i++)
       {
-        newScalars->InsertTuple(i + ptIncr, &vMag);
+        newScalars->SetTuple(i + ptIncr, &vMag);
       }
     }
 
@@ -748,6 +774,26 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
 
     ptIncr += numSourcePts;
     cellIncr += numSourceCells;
+  }
+
+  // Trim the pre-sized per-tuple arrays from the numPts * numSourcePts upper bound
+  // down to the exact number of tuples actually written (ptIncr). For the common
+  // no-skip / IndexMode-off case this is a no-op; when points were skipped (ghosts,
+  // blanking, invisibility, abort) or sources have differing sizes it lowers MaxId
+  // to match what the InsertTuple path would have produced. Shrinking via
+  // SetNumberOfTuples never reallocates and never modifies the kept tuples, so the
+  // result is bit-for-bit identical.
+  if (newScalars)
+  {
+    newScalars->SetNumberOfTuples(ptIncr);
+  }
+  if (newVectors)
+  {
+    newVectors->SetNumberOfTuples(ptIncr);
+  }
+  if (newTCoords)
+  {
+    newTCoords->SetNumberOfTuples(ptIncr);
   }
 
   // Update ourselves and release memory

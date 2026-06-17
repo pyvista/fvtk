@@ -497,6 +497,51 @@ def op_glyph(dtype, size):
     return g.GetOutput()
 
 
+def _tcoord_quad_source():
+    """A tiny deterministic glyph source polydata that carries TCoords, so a
+    vtkGlyph3D over it populates the output TCoords array (the plain arrow/sphere
+    sources do not)."""
+    src = vtkPolyData()
+    pts = vtkPoints()
+    pts.SetDataTypeToDouble()
+    pts.InsertNextPoint(0.0, 0.0, 0.0)
+    pts.InsertNextPoint(1.0, 0.0, 0.0)
+    pts.InsertNextPoint(1.0, 1.0, 0.0)
+    pts.InsertNextPoint(0.0, 1.0, 0.0)
+    src.SetPoints(pts)
+    cells = vtkCellArray()
+    cells.InsertNextCell(4)
+    for k in range(4):
+        cells.InsertCellPoint(k)
+    src.SetPolys(cells)
+    tc = numpy_to_vtk(
+        np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=np.float64),
+        deep=1,
+    )
+    tc.SetName("TCoords")
+    src.GetPointData().SetTCoords(tc)
+    return src
+
+
+def op_glyph_arrays(dtype, size):
+    """Glyph whose output exercises the pre-sized per-tuple arrays the wave-8
+    vtkGlyph3D optimization touches: GlyphVector (newVectors), the COLOR_BY_VECTOR
+    magnitude scalars (newScalars), and TCoords (newTCoords). The plain ``glyph``
+    op produces none of these, so this case is what makes the wave-8 SetTuple /
+    pre-size / trim path non-vacuously covered."""
+    inp = make_sphere_with_vectors(size, size, dtype)
+    g = vtkGlyph3D()
+    g.SetInputData(inp)
+    g.SetSourceData(_tcoord_quad_source())
+    g.SetVectorModeToUseVector()
+    g.SetColorModeToColorByVector()
+    g.SetScaleModeToScaleByVector()
+    g.SetScaleFactor(0.2)
+    g.OrientOn()
+    g.Update()
+    return g.GetOutput()
+
+
 def op_cell2point(dtype, size):
     vol = make_volume(size, dtype)
     nc = vol.GetNumberOfCells()
@@ -1148,6 +1193,7 @@ OPS = {
     "featureedges": dict(fn=op_featureedges, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "stripper": dict(fn=op_stripper, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "vertexglyph": dict(fn=op_vertexglyph, group="filter", dtypes=["float64"], sizes=[24, 40]),
+    "glyph_arrays": dict(fn=op_glyph_arrays, group="filter", dtypes=["float64"], sizes=[20, 32]),
     "decimatepro": dict(fn=op_decimatepro, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "cone": dict(fn=op_cone_triangulate, group="filter", dtypes=["float64"], sizes=[12, 30]),
     "tube": dict(fn=op_tube, group="filter", dtypes=["float32", "float64"], sizes=[16, 32]),
