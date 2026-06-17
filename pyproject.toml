@@ -50,17 +50,18 @@ test-command = "FVTK_IMPORT_NAME=fvtk xvfb-run -a -s '-screen 0 1280x1024x24' py
 # auditwheel repair runs by default; stamp the 2_17 tag explicitly to match the
 # raw-docker recipe (manylinux2014 == manylinux_2_17_x86_64).
 repair-wheel-command = "auditwheel repair --plat manylinux_2_17_x86_64 -w {dest_dir} {wheel}"
-# cibuildwheel >=4.0 auto-runs `abi3audit --strict` on abi3-tagged wheels and
-# FAILS the build on any non-abi3 symbol. fvtk's cp312-abi3 modules export the
-# wrapper runtime's OWN cross-module symbols (PyVTKObject_New, PyVTKEnum_Add, …)
-# shared between fvtk's own .so files — abi3audit reports these as "violations"
-# even though it also confirms the wheel is baseline-3.12-compatible
-# (is_abi3_baseline_compatible=true, computed=3.12). They are NOT CPython
-# limited-API violations, so override the audit to non-strict (report only) — the
-# wheel genuinely loads on 3.12+ (verified by the bitexact/render gates). The
-# pinned CI cibuildwheel (3.1.4) does not run abi3audit at all; this keeps a
-# future 4.x bump from spuriously failing. {wheel} is interpolated by cibuildwheel.
-audit-command = "abi3audit --report {wheel}"
+# NOTE on abi3audit: cibuildwheel >=4.0 auto-runs `abi3audit --strict` on
+# abi3-tagged wheels and FAILS the build on any non-abi3 symbol. fvtk's cp312-abi3
+# modules export the wrapper runtime's OWN cross-module symbols (PyVTKObject_New,
+# PyVTKEnum_Add, ...) shared between fvtk's own .so files — abi3audit reports these
+# as "violations" even though it also confirms the wheel is baseline-3.12-compatible
+# (is_abi3_baseline_compatible=true, computed=3.12). They are NOT CPython limited-API
+# violations (the wheel genuinely loads on 3.12+, verified by the bitexact/render
+# gates). The pinned cibuildwheel here is 3.1.4, which does NOT run abi3audit at all,
+# so nothing to override. If/when bumping to cibuildwheel >=4.0, set the audit to
+# non-strict via the env knob CIBW_AUDIT_COMMAND="abi3audit --report {wheel}" (the
+# `audit-command` pyproject key does not exist in 3.1.4 and 3.1.4 rejects unknown
+# keys, so it must NOT be added here until the cibuildwheel pin is >=4.0).
 
 [tool.cibuildwheel.linux]
 # manylinux2014 == glibc 2.17 == devtoolset-10 GCC 10.2.1 + gold 2.35 on PATH.
