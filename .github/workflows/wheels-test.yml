@@ -13,19 +13,6 @@
 name: wheels-test
 
 on:
-  # TEMPORARY pull_request trigger — REMOVE before merge. workflow_dispatch only
-  # registers from the default branch, so to iterate mac/windows to green on this
-  # PR we run on pushes to it. The final state of this file is dispatch-only (the
-  # user does NOT want every PR gated on mac/windows).
-  pull_request:
-    branches: [main]
-    paths:
-      - "pyproject.toml"
-      - "ci/cmake/**"
-      - "ci/cibw/**"
-      - "ci/smoke_min.py"
-      - "fvtk-config/**"
-      - ".github/workflows/wheels-test.yml"
   workflow_dispatch:
     inputs:
       os:
@@ -49,13 +36,9 @@ jobs:
       - id: pick
         shell: bash
         run: |
-          # On the TEMPORARY pull_request trigger there is no input -> iterate the
-          # two unproven OSes (linux is already green on the main CI gate). On
-          # workflow_dispatch, honour the selector (default: all three).
+          # Honour the workflow_dispatch selector (default: all three OSes).
           sel="${{ github.event.inputs.os }}"
-          # PR-trigger default: windows only (macos-arm64 is already proven green;
-          # linux is on the main CI gate). Saves CI minutes while iterating Windows.
-          if [ -z "$sel" ]; then sel="windows"; fi
+          if [ -z "$sel" ]; then sel="all"; fi
           case "$sel" in
             macos)         echo 'os=["macos-14"]' >> "$GITHUB_OUTPUT" ;;
             windows)       echo 'os=["windows-latest"]' >> "$GITHUB_OUTPUT" ;;
