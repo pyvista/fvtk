@@ -121,7 +121,11 @@ before-build = "pip install delvewheel \"cmake>=3.22,<4.2\" \"ninja>=1.11\" \"se
 # `delvewheel repair` fails with "Unable to find library: vtkchartscore-...dll".
 # repair_windows.py globs the per-leg build-cibw*/bin dirs and feeds them to
 # delvewheel via --add-path so every needed DLL resolves in one pass.
-repair-wheel-command = "python {project}/ci/cibw/repair_windows.py {project} {dest_dir} {wheel}"
+# NOTE: cibuildwheel does NOT expand {project} in repair-wheel-command (only
+# {wheel}/{dest_dir} are substituted, unlike before-build/test-command). It runs
+# this command with cwd == the project root, so we use a repo-relative script
+# path and pass "." for the project arg (the script resolves it to an abspath).
+repair-wheel-command = "python ci/cibw/repair_windows.py . {dest_dir} {wheel}"
 # Windows ships the native Win32 WGL backend with no headless display on CI, so
 # the global xvfb offscreen-render smoke is Linux-only. Use the minimal
 # import+compute smoke (no render, no xvfb) instead.

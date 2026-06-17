@@ -34,7 +34,13 @@ under the project root (plus a couple of fallbacks) and passes them all to
 delvewheel via repeated ``--add-path``.
 
 USAGE (from pyproject [tool.cibuildwheel.windows] repair-wheel-command):
-    python {project}/ci/cibw/repair_windows.py {project} {dest_dir} {wheel}
+    python ci/cibw/repair_windows.py . {dest_dir} {wheel}
+
+cibuildwheel does NOT substitute ``{project}`` in repair-wheel-command (only
+``{wheel}``/``{dest_dir}``), but it runs the command with cwd == the project
+root, so the command passes ``.`` as the project arg and this script resolves it
+to an absolute path (and defensively falls back to cwd if an unsubstituted
+``{project}`` placeholder ever reaches it).
 """
 from __future__ import annotations
 
@@ -71,6 +77,12 @@ def main(argv: list[str]) -> int:
         )
         return 2
     project, dest_dir, wheel = argv[0], argv[1], argv[2]
+    # cibuildwheel runs repair-wheel-command with cwd == project root and does
+    # not expand {project}; "." (or a stray unsubstituted "{project}") resolves
+    # to that cwd.
+    if not project or "{" in project:
+        project = os.getcwd()
+    project = os.path.abspath(project)
 
     bin_dirs = _bin_dirs(project)
     if not bin_dirs:
