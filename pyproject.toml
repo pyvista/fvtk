@@ -85,11 +85,20 @@ FVTK_BUILD_JOBS = "16"
 # ===========================================================================
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
-before-build = "python -m pip install 'cmake>=3.22,<4.2' 'ninja>=1.11' 'setuptools<81' wheel ccache"
+# ccache is NOT on PyPI (no wheel) — install it via Homebrew (preinstalled on the
+# macos-14 runner). cmake/ninja/setuptools/wheel come from pip into the build env.
+before-build = "brew install ccache && python -m pip install 'cmake>=3.22,<4.2' 'ninja>=1.11' 'setuptools<81' wheel"
 repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+# macOS ships a native Cocoa GL backend with no headless display on CI, so the
+# global xvfb offscreen-render smoke is Linux-only. Use the minimal import+compute
+# smoke (no render, no xvfb) instead.
+test-command = "python {project}/ci/smoke_min.py"
 
 [tool.cibuildwheel.macos.environment]
-FVTK_CMAKE_INIT = "{project}/ci/cmake/macos.cmake"
+# REPO-relative (NOT "{project}/..."): cibuildwheel does not expand {project}
+# inside environment values, only in before-build/test-command. The backend
+# (ci/cibw/fvtk_backend.py _init_cache) resolves this against the repo root.
+FVTK_CMAKE_INIT = "ci/cmake/macos.cmake"
 FVTK_TARGET_OS = "macos"
 MACOSX_DEPLOYMENT_TARGET = "11.0"
 _PYTHON_HOST_PLATFORM = "macosx-11.0-arm64"
@@ -104,8 +113,22 @@ CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
 before-build = "pip install delvewheel \"cmake>=3.22,<4.2\" \"ninja>=1.11\" \"setuptools<81\" wheel"
-repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
+# fvtk builds with VTK_ENABLE_KITS=ON: every DLL a .pyd imports (kit DLLs like
+# vtkRendering / vtkFilters, standalone module DLLs like vtkChartsCore, and the
+# vendored third-party DLLs) is a real file in the build tree's bin/ dir, but
+# VTK's Windows wheel layout does NOT copy them beside the .pyds (it leaves that
+# to delvewheel). That bin/ dir is not on PATH when delvewheel runs, so a plain
+# `delvewheel repair` fails with "Unable to find library: vtkchartscore-...dll".
+# repair_windows.py globs the per-leg build-cibw*/bin dirs and feeds them to
+# delvewheel via --add-path so every needed DLL resolves in one pass.
+repair-wheel-command = "python {project}/ci/cibw/repair_windows.py {project} {dest_dir} {wheel}"
+# Windows ships the native Win32 WGL backend with no headless display on CI, so
+# the global xvfb offscreen-render smoke is Linux-only. Use the minimal
+# import+compute smoke (no render, no xvfb) instead.
+test-command = "python {project}/ci/smoke_min.py"
 
 [tool.cibuildwheel.windows.environment]
-FVTK_CMAKE_INIT = "{project}/ci/cmake/windows.cmake"
+# REPO-relative (see the macos table note): {project} is not expanded in env
+# values. The backend resolves this against the repo root.
+FVTK_CMAKE_INIT = "ci/cmake/windows.cmake"
 FVTK_FORCE_MSVC = "ON"

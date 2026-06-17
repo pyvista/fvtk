@@ -32,6 +32,12 @@ public:
   };
 
   vtkHyperTreeGridGenerateFieldStrategy() = default;
+  // Out-of-line (defined in vtkHyperTreeGridGenerateFieldStrategy.cxx) so this
+  // exported abstract base has a key function / defining translation unit. This
+  // anchors the vtable, type-info and exported type-macro symbols in the kit
+  // DLL, which MSVC requires to link the Python wrapper (ELF tolerates the
+  // header-only form, but a defining TU is correct on every platform).
+  ~vtkHyperTreeGridGenerateFieldStrategy() override;
   vtkAbstractTypeMacro(vtkHyperTreeGridGenerateFieldStrategy, vtkObject);
   void PrintSelf(ostream& os, vtkIndent indent) override
   {

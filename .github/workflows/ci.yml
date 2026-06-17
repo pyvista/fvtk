@@ -38,6 +38,11 @@ jobs:
         uses: pypa/cibuildwheel@v3.1.4
         env:
           CIBW_BUILD: cp313-*   # fast PR gate; release matrix is wheels-cibuildwheel.yml
+          # PR builds are LTO-OFF for fast/cheap CI (FVTK_LTO=0 drops -flto in
+          # fvtk-config/minimal.cmake). cibuildwheel forwards CIBW_ENVIRONMENT
+          # into the per-leg build env. Releases (wheels-cibuildwheel.yml) leave
+          # FVTK_LTO unset -> default ON, so shipped wheels stay LTO-optimized.
+          CIBW_ENVIRONMENT: FVTK_LTO=0
       - uses: actions/upload-artifact@v4
         with:
           name: fvtk-wheel-cp313

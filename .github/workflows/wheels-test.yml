@@ -1,0 +1,83 @@
+# Dispatchable cross-OS smoke for the cibuildwheel wheel build.
+#
+# Builds the cp313 wheel on linux + macOS-arm64 + Windows via cibuildwheel and
+# runs the per-OS post-install smoke (pyproject [tool.cibuildwheel] test-command):
+#   linux   : xvfb offscreen render (ci/smoke_test.py)
+#   macos   : import + filter compute, NO render (ci/smoke_min.py)
+#   windows : import + filter compute, NO render (ci/smoke_min.py)
+#
+# This is a manual, workflow_dispatch-only gate: it is NOT run on every PR (only
+# linux is on the per-PR CI). It exists to prove macOS/Windows wheels build and
+# import-smoke green, and to iterate on them cheaply (cp313 only). The full cp
+# release matrix stays in wheels-cibuildwheel.yml (tag-gated, LTO ON).
+name: wheels-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: "Which OSes to build (all | macos | windows | linux)"
+        required: false
+        default: "all"
+        type: choice
+        options: [all, macos, windows, linux, macos-windows]
+
+concurrency:
+  group: wheels-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    name: select OS matrix
+    runs-on: ubuntu-latest
+    outputs:
+      os: ${{ steps.pick.outputs.os }}
+    steps:
+      - id: pick
+        shell: bash
+        run: |
+          # Honour the workflow_dispatch selector (default: all three OSes).
+          sel="${{ github.event.inputs.os }}"
+          if [ -z "$sel" ]; then sel="all"; fi
+          case "$sel" in
+            macos)         echo 'os=["macos-14"]' >> "$GITHUB_OUTPUT" ;;
+            windows)       echo 'os=["windows-latest"]' >> "$GITHUB_OUTPUT" ;;
+            linux)         echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT" ;;
+            macos-windows) echo 'os=["macos-14","windows-latest"]' >> "$GITHUB_OUTPUT" ;;
+            *)             echo 'os=["ubuntu-latest","macos-14","windows-latest"]' >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  build:
+    name: wheels-${{ matrix.os }} (cp313)
+    needs: matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.matrix.outputs.os) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # VTK derives version/provenance from full history
+
+      # Put MSVC (cl.exe) + the Windows SDK on PATH for the whole job. The Ninja
+      # generator does NOT auto-run vcvars, so without this cmake auto-selects the
+      # mingw GCC that ships on the windows runner (C:\mingw64\bin\cc.exe) and then
+      # chokes on the MSVC-only flags (/GL /Gy /Gw) the msvc toolchain path emits.
+      # With vcvars active, cmake+Ninja pick cl.exe and the /GL+/LTCG levers apply.
+      - name: Set up MSVC (vcvars) for the Ninja build
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build cp313 wheel + per-OS import/compute smoke (cibuildwheel)
+        uses: pypa/cibuildwheel@v3.1.4
+        env:
+          CIBW_BUILD: cp313-*   # cp313 only — fast/cheap cross-OS iteration
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fvtk-wheel-test-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error

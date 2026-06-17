@@ -53,9 +53,17 @@ def _jobs() -> str:
 
 
 def _init_cache() -> str:
-    return os.environ.get(
-        "FVTK_CMAKE_INIT", os.path.join(REPO, "ci", "cmake", "linux.cmake")
-    )
+    # FVTK_CMAKE_INIT selects the per-OS init-cache (ci/cmake/{linux,macos,
+    # windows}.cmake). It is set in pyproject [tool.cibuildwheel.<os>.environment]
+    # as a REPO-relative path (e.g. "ci/cmake/windows.cmake"): cibuildwheel does
+    # NOT expand its {project} token inside environment values (only in
+    # before-build/test-command), so an absolute "{project}/..." would reach cmake
+    # literally and fail ("Not a file: .../{project}/..."). Resolve a relative
+    # value against REPO here; absolute values are passed through unchanged.
+    val = os.environ.get("FVTK_CMAKE_INIT")
+    if not val:
+        return os.path.join(REPO, "ci", "cmake", "linux.cmake")
+    return val if os.path.isabs(val) else os.path.join(REPO, val)
 
 
 def _run(cmd, cwd=None):
