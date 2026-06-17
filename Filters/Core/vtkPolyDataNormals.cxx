@@ -25,9 +25,87 @@
 #include "vtkSplitSharpEdgesPolyData.h"
 #include "vtkTriangleFilter.h"
 
+#include "vtkAOSDataArrayTemplate.h"
+
 //-----------------------------------------------------------------------------
 VTK_ABI_NAMESPACE_BEGIN
 vtkStandardNewMacro(vtkPolyDataNormals);
+
+namespace
+{
+// fvtk bit-exact devirtualization: a raw-pointer cell-normal kernel that hoists
+// the per-triangle vtkArrayDispatch out of the loop. The stock path runs a full
+// vtkArrayDispatch type-resolution inside vtkPolygon::ComputeNormal for EVERY
+// triangle (callgrind: the dispatch ~= the actual normal math). This resolves
+// the concrete AOS point-array pointer ONCE outside the loop and computes the
+// normal via the SAME double-promoted Newell ops in the SAME order, then
+// vtkMath::Normalize -- so the result is BYTE-FOR-BYTE identical (maxULP=0) to
+// the dispatched path for triangle cells. It is engaged only when the runtime
+// guard below confirms concrete AOS float/double points + shareable triangle
+// connectivity; any other input falls back to the stock dispatched path.
+template <typename T>
+inline void FastTriCellNormal(const T* X, const vtkIdType* p, double n[3])
+{
+  const T* a = &X[3 * p[0]];
+  const T* b = &X[3 * p[1]];
+  const T* c = &X[3 * p[2]];
+  // Match the triangle case of vtkPolygon's NormalWorker exactly:
+  //   v1 = p1 - p0, v2 = p2 - p0 (subtraction in the array value type T,
+  //   promoted to double), n = v1 x v2, then vtkMath::Normalize(n).
+  // For numPts==3 the worker's commonPointId loop reduces to p0=pts[0],
+  // v1=pts[1]-pts[0], v2=pts[2]-pts[0], n = Cross(v1,v2). The degenerate
+  // first-edge case (v1==0) yields n={0,0,0} both here (Cross of a zero
+  // vector + Normalize-of-zero) and in the stock worker (it returns {0,0,0}),
+  // so the result is identical.
+  double v1[3] = { double(b[0] - a[0]), double(b[1] - a[1]), double(b[2] - a[2]) };
+  double v2[3] = { double(c[0] - a[0]), double(c[1] - a[1]), double(c[2] - a[2]) };
+  vtkMath::Cross(v1, v2, n);
+  vtkMath::Normalize(n);
+}
+
+// Returns true and fills cellNormals[offsetCells..] if the fast path applied to
+// every poly. Returns false (after possibly writing some tuples) if any poly is
+// not a triangle or the connectivity is not shareable -> caller redoes the whole
+// poly range via the stock dispatched path (SetTuple overwrites).
+template <typename T>
+bool FastCellNormals(vtkAOSDataArrayTemplate<T>* ptsArr, vtkCellArray* polys,
+  vtkIdType numPolys, vtkIdType offsetCells, vtkFloatArray* cellNormals)
+{
+  if (!polys->IsStorageShareable())
+  {
+    return false;
+  }
+  const T* X = ptsArr->GetPointer(0);
+  float* outN = cellNormals->GetPointer(3 * offsetCells);
+  bool ok = true;
+  vtkSMPThreadLocalObject<vtkIdList> tlScratch;
+  vtkSMPTools::For(0, numPolys,
+    [&](vtkIdType begin, vtkIdType end)
+    {
+      auto scratch = tlScratch.Local();
+      vtkIdType npts;
+      const vtkIdType* pts = nullptr;
+      double n[3];
+      for (vtkIdType polyId = begin; polyId < end; ++polyId)
+      {
+        // IsStorageShareable() guard above => pts points into shared storage
+        // (no per-cell copy); scratch is the required fallback arg, unused here.
+        polys->GetCellAtId(polyId, npts, pts, scratch);
+        if (npts != 3)
+        {
+          ok = false; // non-triangle -> abandon fast path; caller redoes range.
+          return;
+        }
+        FastTriCellNormal<T>(X, pts, n);
+        float* o = &outN[3 * polyId];
+        o[0] = static_cast<float>(n[0]);
+        o[1] = static_cast<float>(n[1]);
+        o[2] = static_cast<float>(n[2]);
+      }
+    });
+  return ok;
+}
+} // namespace
 
 //-----------------------------------------------------------------------------
 // Construct with feature angle=30, splitting and consistency turned on,
@@ -110,21 +188,42 @@ vtkSmartPointer<vtkFloatArray> vtkPolyDataNormals::GetCellNormals(vtkPolyData* d
           }
         });
 
-      // Compute Cell Normals of polys
-      vtkSMPTools::For(0, numPolys,
-        [&](vtkIdType begin, vtkIdType end)
+      // Compute Cell Normals of polys.
+      // Fast path (bit-exact, default-on): when the points are a concrete AOS
+      // float/double array, hoist the per-triangle vtkArrayDispatch out of the
+      // loop (resolve the typed pointer once) and compute the normal via the
+      // same double-promoted Newell ops + vtkMath::Normalize -> byte-identical
+      // to the stock dispatched path for triangle meshes. Any non-triangle poly
+      // or non-AOS-float/double point array falls back to the stock path below.
+      bool computedFast = false;
+      if (numPolys > 0 && points)
+      {
+        if (auto* pf = vtkAOSDataArrayTemplate<float>::FastDownCast(points->GetData()))
         {
-          auto tempCellPointIds = tlTempCellPointIds.Local();
-          vtkIdType npts;
-          const vtkIdType* pts = nullptr;
-          double n[3];
-          for (vtkIdType polyId = begin; polyId < end; polyId++)
+          computedFast = FastCellNormals<float>(pf, polys, numPolys, offsetCells, cellNormals);
+        }
+        else if (auto* pd = vtkAOSDataArrayTemplate<double>::FastDownCast(points->GetData()))
+        {
+          computedFast = FastCellNormals<double>(pd, polys, numPolys, offsetCells, cellNormals);
+        }
+      }
+      if (!computedFast)
+      {
+        vtkSMPTools::For(0, numPolys,
+          [&](vtkIdType begin, vtkIdType end)
           {
-            polys->GetCellAtId(polyId, npts, pts, tempCellPointIds);
-            vtkPolygon::ComputeNormal(points, npts, pts, n);
-            cellNormals->SetTuple(offsetCells + polyId, n);
-          }
-        });
+            auto tempCellPointIds = tlTempCellPointIds.Local();
+            vtkIdType npts;
+            const vtkIdType* pts = nullptr;
+            double n[3];
+            for (vtkIdType polyId = begin; polyId < end; polyId++)
+            {
+              polys->GetCellAtId(polyId, npts, pts, tempCellPointIds);
+              vtkPolygon::ComputeNormal(points, npts, pts, n);
+              cellNormals->SetTuple(offsetCells + polyId, n);
+            }
+          });
+      }
 
       // Set default value for strip cell normals
       offsetCells += numPolys;
