@@ -174,10 +174,10 @@ keeps the common case warm.
 ### 3. Wrapper-generation parallelism — NOT a lever (already parallel)
 The `vtkWrapHierarchy`/`vtkWrapPython` codegen steps are ordinary ninja edges and
 already run across all `-j` workers, interleaved with compiles (see structural
-finding #1). ~105 s busy / 4 cores ≈ 26 s wall. There is no serial wrapper-gen
-long-pole to fix. The one true serialization in wrapping is the per-module
-**hierarchy** file (every module's wrappers depend on the global hierarchy), but
-it is cheap (`.txt`, sub-second each) and not on the critical path. **No change
+finding #1). Each step is sub-second (longest: `vtkWrapPython` 0.9 s, a per-module
+`*-hierarchy.txt` 0.66 s); there is no serial wrapper-gen long-pole to fix. The
+per-module hierarchy file (every module's wrappers depend on it) is the only true
+serialization point, and it is cheap and off the critical path. **No change
 recommended.** The only realizable codegen win would be NOT generating wrappers
 for classes pyvista never calls — already done (`_nowrap_classes.cmake`, ~1175
 classes skipped).
