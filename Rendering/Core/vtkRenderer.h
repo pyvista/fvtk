@@ -28,7 +28,8 @@
 #include "vtkMatrix3x3.h"
 #include "vtkVolumeCollection.h" // Needed for access in inline members
 
-#include <array> // To store matrices
+#include <array>  // To store matrices
+#include <vector> // To store the per-frame prop traversal buffer
 
 VTK_ABI_NAMESPACE_BEGIN
 class vtkFXAAOptions;
@@ -1001,9 +1002,12 @@ protected:
   int NumberOfPropsRendered;
 
   // A temporary list of props used for culling, and traversal
-  // of all props when rendering
+  // of all props when rendering. PropArray points at PropArrayStorage's data;
+  // the storage is a persistent member so the per-frame traversal buffer is
+  // reused instead of heap-allocated/freed (new[]/delete[]) on every Render().
   vtkProp** PropArray;
   int PropArrayCount;
+  std::vector<vtkProp*> PropArrayStorage;
 
   // Indicates if the renderer should receive events from an interactor.
   // Typically only used in conjunction with transparent renderers.

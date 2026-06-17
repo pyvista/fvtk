@@ -330,9 +330,13 @@ void vtkRenderer::Render()
   // the props that need to be rendered into an image.
   // Fill these in later (in AllocateTime) - get a
   // count of them there too
+  // Reuse a persistent buffer instead of new[]/delete[] every frame. resize()
+  // never shrinks capacity, so steady-state frames do not allocate. The filled
+  // pointer array and traversal order are identical to the old heap array.
   if (this->Props->GetNumberOfItems() > 0)
   {
-    this->PropArray = new vtkProp*[this->Props->GetNumberOfItems()];
+    this->PropArrayStorage.resize(this->Props->GetNumberOfItems());
+    this->PropArray = this->PropArrayStorage.data();
   }
   else
   {
@@ -383,9 +387,8 @@ void vtkRenderer::Render()
     }
   }
 
-  // Clean up the space we allocated before. If the PropArray exists,
-  // they all should exist
-  delete[] this->PropArray;
+  // Drop the dangling view into the persistent buffer. The buffer's capacity is
+  // retained for the next frame (no delete[]); contents are stale but unused.
   this->PropArray = nullptr;
 
   if (this->BackingStore)
