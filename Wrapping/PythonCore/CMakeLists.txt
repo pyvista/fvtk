@@ -16,7 +16,8 @@ set(private_classes
   PyVTKReference)
 
 set(headers
-  vtkPythonCompatibility.h)
+  vtkPythonCompatibility.h
+  vtkPythonTypeAccess.h)
 
 set(private_headers
   PyVTKExtras.h)

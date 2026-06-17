@@ -1,9 +1,68 @@
 # fvtk Python stable-ABI (abi3 / `Py_LIMITED_API`) feasibility
 
-Status: **investigation + diagnostic build lever landed.** No working abi3 wheel
-yet — and, as documented below, one is *not* achievable without a substantial
-rewrite of the auto-generated Python wrapper runtime. This document is the
-evidence-backed blocker inventory and recommended roadmap.
+Status: **incremental ladder in progress.** The original feasibility pass
+(below) correctly concluded that a *complete* abi3 wheel needs a generator +
+runtime port with an unbounded parity tail, and recommended deferral. The
+active decision is **not** to defer wholesale but to land that port as a ladder
+of *independently valuable, bit-exact* increments, so each commit improves fvtk
+(CI time / API hygiene / perf) on its own and the abi3 endpoint is approached
+without a big-bang. See the **Increment status log** immediately below; the
+original blocker inventory and roadmap follow it unchanged for reference.
+
+---
+
+## Increment status log (newest first)
+
+Validation context: executor host, warm ninja tree at `~/tmp/fvtk`, numeric
+bit-exact suite (`tests/bitexact/`, 124 cases) vs stock VTK 9.6.2 + a new
+wrapper-behavior parity gate (`test_wrapper_parity.py`).
+
+### Increment 1 — `tp_*` accessor shim layer (API hygiene, no-op today) — LANDED
+
+- **What landed.** New header `Wrapping/PythonCore/vtkPythonTypeAccess.h` with
+  inline read accessors `vtkPythonType_GetBase()` / `vtkPythonType_GetDict()`.
+  Under the default (non-limited) build they expand to exactly the access the
+  runtime already used — `PyType_GetSlot(tp, Py_tp_base)` for `tp_base` (the
+  form the code already used behind a `PY_VERSION_HEX >= 0x030A0000` ladder at
+  every site) and the plain `tp->tp_dict` field read for `tp_dict`. Under
+  `Py_LIMITED_API` they route to `PyType_GetSlot` / `PyType_GetDict`.
+- **Sites migrated** (reads only — borrowed-slot reads; the few tp_* *writes*,
+  e.g. lazy `tp_dict = PyDict_New()`, are deliberately left for the heap-type
+  increment): `PyVTKObject.cxx` (3 sites incl. one inline version-ladder
+  collapsed), `vtkPythonUtil.cxx` (4 sites, collapsing **three** inline
+  `#if PY_VERSION_HEX` ladders into one accessor). Net `-16` lines, removes 3
+  copies of the version-gated base-walk boilerplate (B2 blocker shrinks).
+- **Bit-exact / API / perf delta.** API hygiene win + small dead-code removal;
+  byte-for-byte behavior preserved. Default-build codegen is equivalent (the
+  migrated `tp_base` sites already emitted `PyType_GetSlot` on the cp311+
+  matrix; `tp_dict` stays a direct field read). No runtime-perf change; no
+  numeric change.
+- **Validation.** Executor full build clean (WrappingPythonCore relinked,
+  `vtkCommonCore.*.so` rebuilt). **125 passed / 0 failed** = 124 numeric
+  bit-exact cases + the new parity gate. Parity probe confirms vs stock 9.6.2:
+  type `__flags__` (HEAPTYPE=0 / IMMUTABLETYPE=1 — static types preserved), mro
+  / isinstance / issubclass, repr shape, **numpy zero-copy buffer protocol
+  (byte-identical values + shared-memory mutation, the B5 risk surface)**,
+  weakref, instance `__dict__`, `override` presence — all identical (modulo the
+  intentional `vtkmodules`→`fvtk` package rename, normalized out).
+- **New safety net.** `tests/bitexact/wrapper_parity.py` +
+  `test_wrapper_parity.py` — the wrapper-behavior parity gate, to be run every
+  subsequent increment. This is the instrument that will catch the heap-type
+  divergence in Increment 2.
+- **Next pickup.** Increment 2: convert the ~8 static `PyTypeObject` defs in
+  `Wrapping/PythonCore` to `PyType_FromSpec` heap types behind a compat shim,
+  watching `flag_heaptype::*` in the parity gate — if it flips to `True`, that
+  is the documented heap-vs-static parity wall.
+
+### Increment 0 — cibuildwheel matrix trim (CI-time win) — LANDED
+
+`pyproject.toml`: `build` selector `cp39…cp313` → `cp311 cp312 cp313 cp314`
+(drop two EOL/near-EOL legs, add cp314; `requires-python` → `>=3.11`). 5 cp
+legs → 4 = immediate CI-time reduction; cp311 is the abi3 floor. Pure packaging
+metadata, no compiled-core or numeric change. Commit standalone.
+
+---
+
 
 Scope owner: abi3 / wrapper-generation / packaging track. All findings are local
 to this worktree; nothing here pushes, opens PRs, or triggers CI.

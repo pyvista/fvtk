@@ -22,6 +22,7 @@
 #include "vtkDataArray.h"
 #include "vtkObjectBase.h"
 #include "vtkPythonCommand.h"
+#include "vtkPythonTypeAccess.h"
 #include "vtkPythonUtil.h"
 #include "vtkStringFormatter.h"
 
@@ -58,14 +59,7 @@ static PyObject* PyVTKClass_override(PyObject* cls, PyObject* type)
     if (PyType_IsSubtype(newtypeobj, typeobj))
     {
       // Make sure "type" and intermediate classes aren't wrapped classes
-      for (PyTypeObject* tp = newtypeobj; tp && tp != typeobj;
-           tp =
-#if PY_VERSION_HEX >= 0x030A0000
-             (PyTypeObject*)PyType_GetSlot(tp, Py_tp_base)
-#else
-             tp->tp_base
-#endif
-      )
+      for (PyTypeObject* tp = newtypeobj; tp && tp != typeobj; tp = vtkPythonType_GetBase(tp))
       {
         PyVTKClass* c = vtkPythonUtil::FindClass(vtkPythonUtil::StripModuleFromType(tp));
         if (c && tp == c->py_type)
@@ -185,10 +179,11 @@ void PyVTKClass_AddCombinedGetSetDefinitions(PyTypeObject* pytype, PyGetSetDef* 
     if (getset->get == nullptr)
     {
       // find a getter in superclass
-      if (pytype->tp_base != nullptr)
+      if (vtkPythonType_GetBase(pytype) != nullptr)
       {
         auto key = PyUnicode_FromString(getset->name);
-        if (auto superGetSet = vtkPythonUtil::FindGetSetDescriptor(pytype->tp_base, key))
+        if (auto superGetSet =
+              vtkPythonUtil::FindGetSetDescriptor(vtkPythonType_GetBase(pytype), key))
         {
           getset->get = superGetSet->get;
           if (getset->closure)
@@ -203,10 +198,11 @@ void PyVTKClass_AddCombinedGetSetDefinitions(PyTypeObject* pytype, PyGetSetDef* 
     else if (getset->set == nullptr)
     {
       // find a setter in superclass
-      if (pytype->tp_base != nullptr)
+      if (vtkPythonType_GetBase(pytype) != nullptr)
       {
         auto key = PyUnicode_FromString(getset->name);
-        if (auto superGetSet = vtkPythonUtil::FindGetSetDescriptor(pytype->tp_base, key))
+        if (auto superGetSet =
+              vtkPythonUtil::FindGetSetDescriptor(vtkPythonType_GetBase(pytype), key))
         {
           getset->set = superGetSet->set;
           if (getset->closure)

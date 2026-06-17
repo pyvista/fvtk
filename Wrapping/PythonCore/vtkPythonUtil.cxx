@@ -4,6 +4,7 @@
 #include "vtkPythonUtil.h"
 #include "vtkABINamespace.h"
 #include "vtkPythonOverload.h"
+#include "vtkPythonTypeAccess.h"
 
 #include "PyVTKMethodDescriptor.h"
 
@@ -599,21 +600,11 @@ PyVTKClass* vtkPythonUtil::FindNearestBaseClass(vtkObjectBase* ptr)
 
     if (ptr->IsA(pyclass->vtk_name))
     {
-      PyTypeObject* base =
-#if PY_VERSION_HEX >= 0x030A0000
-        (PyTypeObject*)PyType_GetSlot(pyclass->py_type, Py_tp_base)
-#else
-        pyclass->py_type->tp_base
-#endif
-        ;
+      PyTypeObject* base = vtkPythonType_GetBase(pyclass->py_type);
       // count the hierarchy depth for this class
       for (depth = 0; base != nullptr; depth++)
       {
-#if PY_VERSION_HEX >= 0x030A0000
-        base = (PyTypeObject*)PyType_GetSlot(base, Py_tp_base);
-#else
-        base = base->tp_base;
-#endif
+        base = vtkPythonType_GetBase(base);
       }
       // we want the class that is furthest from vtkObjectBase.
       // The ClassMap is an unordered_map, so iteration order is not
@@ -971,13 +962,7 @@ PyTypeObject* vtkPythonUtil::FindBaseTypeObject(const char* name)
     // in case of override, drill down to get the original (non-override) type,
     // that's what we need to use for the base class of other wrapped classes
     for (PyTypeObject* pytype = info->py_type; pytype != nullptr;
-         pytype =
-#if PY_VERSION_HEX >= 0x030A0000
-           (PyTypeObject*)PyType_GetSlot(pytype, Py_tp_base)
-#else
-           pytype->tp_base
-#endif
-    )
+         pytype = vtkPythonType_GetBase(pytype))
     {
       if (strcmp(vtkPythonUtil::StripModuleFromType(pytype), name) == 0)
       {
@@ -1248,10 +1233,11 @@ void vtkPythonVoidFuncArgDelete(void* arg)
 PyGetSetDef* vtkPythonUtil::FindGetSetDescriptor(PyTypeObject* pytype, PyObject* key)
 {
   // Check if tp_dict is present
-  if (pytype->tp_dict != nullptr && PyDict_Check(pytype->tp_dict))
+  PyObject* tpdict = vtkPythonType_GetDict(pytype);
+  if (tpdict != nullptr && PyDict_Check(tpdict))
   {
     // Check if the attribute is in the dictionary
-    PyObject* attr = PyDict_GetItem(pytype->tp_dict, key);
+    PyObject* attr = PyDict_GetItem(tpdict, key);
     if (attr != nullptr)
     {
       PyDescrObject* descr = (PyDescrObject*)attr;
@@ -1266,9 +1252,10 @@ PyGetSetDef* vtkPythonUtil::FindGetSetDescriptor(PyTypeObject* pytype, PyObject*
     }
   }
   // Recursively check in base types
-  if (pytype->tp_base != nullptr)
+  PyTypeObject* base = vtkPythonType_GetBase(pytype);
+  if (base != nullptr)
   {
-    return vtkPythonUtil::FindGetSetDescriptor(pytype->tp_base, key);
+    return vtkPythonUtil::FindGetSetDescriptor(base, key);
   }
   // No matching getset descriptor found
   return nullptr;
