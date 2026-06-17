@@ -9,6 +9,12 @@
 #              setup-python) alongside stock vtk==9.6.2 and assert byte-for-byte
 #              identical output (maxULP=0). No container — only the build needs
 #              old glibc; the wheel runs anywhere.
+#   renderexact : same idea but for the RENDERING pipeline (tests/renderexact).
+#              Renders the scenes offscreen via vtkEGLRenderWindow under stock vtk
+#              and fvtk through the SAME host Mesa software GL (llvmpipe) and asserts
+#              pixel-for-pixel identical RGBA + Z framebuffers. A sibling of bitexact
+#              (reuses the build artifact) so its apt Mesa install / EGL flakes can
+#              never perturb the numeric gate.
 name: CI
 
 on:
@@ -61,4 +67,34 @@ jobs:
         with:
           name: bitexact-output
           path: /tmp/bx-out
+          if-no-files-found: ignore
+
+  renderexact:
+    name: fvtk == stock VTK 9.6.2 (pixel-exact render, software EGL)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Mesa software GL/EGL (llvmpipe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1-mesa-dri libglx-mesa0 libgles2 libosmesa6 libxcb1
+      - uses: actions/download-artifact@v4
+        with:
+          name: fvtk-wheel-cp313
+          path: dist
+      - name: Pixel-exact render suite (fvtk vs stock VTK 9.6.2, software EGL)
+        run: ci/run-renderexact.sh dist python
+      - name: Upload render diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderexact-output
+          path: /tmp/rx-out
           if-no-files-found: ignore
