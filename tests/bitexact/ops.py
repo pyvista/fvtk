@@ -439,6 +439,55 @@ def op_normals(dtype, size):
     return n.GetOutput()
 
 
+def _sphere_with_precision(theta, phi, dtype):
+    """Triangulated sphere whose POINT array is forced to the requested precision.
+
+    vtkSphereSource emits float32 points; this rebuilds the points as a concrete
+    AOS float32 OR float64 array so the vtkPolyDataNormals cell-normal fast path
+    (FastDownCast<float>/FastDownCast<double>) is exercised on BOTH branches.
+    """
+    s = make_sphere(theta, phi)
+    pts_np = vtk_to_numpy(s.GetPoints().GetData()).astype(dtype)
+    pa = numpy_to_vtk(np.ascontiguousarray(pts_np), deep=1)
+    newpts = vtkPoints()
+    newpts.SetData(pa)
+    out = vtkPolyData()
+    out.SetPoints(newpts)
+    out.SetPolys(s.GetPolys())
+    return out
+
+
+def op_normals_fastpath(dtype, size):
+    """Covers the always-on bit-exact raw-pointer cell-normal fast path in
+    vtkPolyDataNormals::GetCellNormals.
+
+    Drives concrete AOS float32/float64 triangle meshes (the fast-path guard) and
+    computes BOTH cell + point normals with sharp-edge splitting ON, so the cell
+    normals produced by the hoisted-dispatch kernel feed the splitting + point
+    accumulation. Output point + cell normal arrays must be byte-identical
+    (maxULP=0) to stock vtkPolygon::ComputeNormal."""
+    n = vtkPolyDataNormals()
+    n.SetInputData(_sphere_with_precision(size, size, dtype))
+    n.SetComputePointNormals(True)
+    n.SetComputeCellNormals(True)
+    n.SetSplitting(True)
+    n.SetFeatureAngle(30.0)
+    n.Update()
+    return n.GetOutput()
+
+
+def op_normals_smooth(dtype, size):
+    """Companion to op_normals_fastpath with splitting OFF (smooth shading):
+    same hoisted cell-normal kernel, no seam duplication. float32/float64."""
+    n = vtkPolyDataNormals()
+    n.SetInputData(_sphere_with_precision(size, size, dtype))
+    n.SetComputePointNormals(True)
+    n.SetComputeCellNormals(True)
+    n.SetSplitting(False)
+    n.Update()
+    return n.GetOutput()
+
+
 def op_contour(dtype, size):
     c = vtkContourFilter()
     c.SetInputData(make_volume(size, dtype))
@@ -1226,6 +1275,8 @@ OPS = {
     "glyph": dict(fn=op_glyph, group="modified", dtypes=["float64"], sizes=[20, 32]),
     "cell2point": dict(fn=op_cell2point, group="modified", dtypes=["float32", "float64"], sizes=[20, 32]),
     # --- broader filter coverage ---
+    "normals_fastpath": dict(fn=op_normals_fastpath, group="filter", dtypes=["float32", "float64"], sizes=[24, 48]),
+    "normals_smooth": dict(fn=op_normals_smooth, group="filter", dtypes=["float32", "float64"], sizes=[24, 48]),
     "point2cell": dict(fn=op_point2cell, group="filter", dtypes=["float32", "float64"], sizes=[20, 28]),
     "point2cell_ugrid": dict(fn=op_point2cell_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "elevation": dict(fn=op_elevation, group="filter", dtypes=["float64"], sizes=[24, 40]),
