@@ -62,6 +62,7 @@ try:
         vtkUnstructuredGrid,
     )
     from vtkmodules.vtkFiltersCore import (
+        vtkCellCenters,
         vtkCellDataToPointData,
         vtkPointDataToCellData,
         vtkContourFilter,
@@ -857,6 +858,25 @@ def op_locator_celllocator(dtype, size):
     }
 
 
+def op_cellcenters(dtype, size):
+    # vtkCellCenters over a hex unstructured grid carrying a deterministic cell
+    # scalar. RequestData runs the SMP center functor then a second per-cell
+    # traversal that calls GetCellType to compact out empty cells -> exercises
+    # the empty-cell-mask optimization. The hex grid has no empty cells, so the
+    # CopyArrays fast PassData branch is taken and the computed center points
+    # (parametric-center EvaluateLocation per cell) must be byte-identical.
+    ug = make_hex_ugrid(size, dtype)
+    nc = ug.GetNumberOfCells()
+    ca = numpy_to_vtk(np.arange(nc, dtype=np.float64), deep=1)
+    ca.SetName("cid")
+    ug.GetCellData().AddArray(ca)
+    cc = vtkCellCenters()
+    cc.SetInputData(ug)
+    cc.SetCopyArrays(True)
+    cc.Update()
+    return cc.GetOutput()
+
+
 def op_cutter(dtype, size):
     # Unstructured hex grid + plane cut with triangle generation OFF -> drives
     # UnstructuredGridCutter -> vtkContourHelper::Contour 3D-cell merge path
@@ -1153,6 +1173,7 @@ OPS = {
     "tube": dict(fn=op_tube, group="filter", dtypes=["float32", "float64"], sizes=[16, 32]),
     "gradient": dict(fn=op_gradient, group="filter", dtypes=["float32", "float64"], sizes=[16, 24]),
     "cutter": dict(fn=op_cutter, group="filter", dtypes=["float64"], sizes=[8, 12]),
+    "cellcenters": dict(fn=op_cellcenters, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "clip_tets": dict(fn=op_clip_tets, group="filter", dtypes=["float32", "float64"], sizes=[6, 10]),
     "contour_hexug": dict(fn=op_contour_hexug, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "contour_tetug": dict(fn=op_contour_tetug, group="filter", dtypes=["float64"], sizes=[6, 10]),

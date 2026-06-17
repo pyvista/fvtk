@@ -374,8 +374,17 @@ void vtkTetra::Contour(double value, vtkDataArray* cellScalars, vtkIncrementalPo
   int i, j, index, v1, v2, newCellId;
   const vtkIdType* vert;
   vtkIdType pts[3];
-  double t, x1[3], x2[3], x[3], deltaScalar;
+  double t, x1buf[3], x2buf[3], x[3], deltaScalar;
   vtkIdType offset = verts->GetNumberOfCells() + lines->GetNumberOfCells();
+
+  // When the cell's Points are stored as VTK_DOUBLE (the common case), read the
+  // raw double pointer once and index it directly in the hot edge loop instead of
+  // calling the virtual vtkPoints::GetPoint(id, double[3]) twice per edge. On a
+  // double-backed array GetPoint copies the same stored doubles via
+  // vtkDoubleArray::GetTuple, so the indexed reads are byte-identical. If the
+  // points are not double, fall back to the original GetPoint path.
+  const auto pointsArray = vtkDoubleArray::FastDownCast(this->Points->GetData());
+  const double* pointsPtr = pointsArray ? pointsArray->GetPointer(0) : nullptr;
 
   // Build the case table
   for (i = 0, index = 0; i < 4; i++)
@@ -420,8 +429,20 @@ void vtkTetra::Contour(double value, vtkDataArray* cellScalars, vtkIncrementalPo
       // linear interpolation across edge
       t = (deltaScalar == 0.0 ? 0.0 : (value - sv1) / deltaScalar);
 
-      this->Points->GetPoint(v1, x1);
-      this->Points->GetPoint(v2, x2);
+      const double* x1;
+      const double* x2;
+      if (pointsPtr)
+      {
+        x1 = pointsPtr + 3 * v1;
+        x2 = pointsPtr + 3 * v2;
+      }
+      else
+      {
+        this->Points->GetPoint(v1, x1buf);
+        this->Points->GetPoint(v2, x2buf);
+        x1 = x1buf;
+        x2 = x2buf;
+      }
 
       for (j = 0; j < 3; j++)
       {
@@ -1042,7 +1063,16 @@ void vtkTetra::Clip(double value, vtkDataArray* cellScalars, vtkIncrementalPoint
   const vtkIdType* vert;
   vtkIdType pts[6];
   int pointId;
-  double t, x1[3], x2[3], x[3];
+  double t, x1buf[3], x2buf[3], x[3];
+
+  // When the cell's Points are stored as VTK_DOUBLE (the common case), read the
+  // raw double pointer once and index it directly for the interpolated edge
+  // points instead of calling the virtual vtkPoints::GetPoint twice per edge. On
+  // a double-backed array GetPoint copies the same stored doubles via
+  // vtkDoubleArray::GetTuple, so the indexed reads are byte-identical. If the
+  // points are not double, fall back to the original GetPoint path.
+  const auto pointsArray = vtkDoubleArray::FastDownCast(this->Points->GetData());
+  const double* pointsPtr = pointsArray ? pointsArray->GetPointer(0) : nullptr;
 
   // Build the case table
   if (insideOut)
@@ -1114,8 +1144,20 @@ void vtkTetra::Clip(double value, vtkDataArray* cellScalars, vtkIncrementalPoint
       // linear interpolation across edge
       t = (deltaScalar == 0.0 ? 0.0 : (value - sv1) / deltaScalar);
 
-      this->Points->GetPoint(v1, x1);
-      this->Points->GetPoint(v2, x2);
+      const double* x1;
+      const double* x2;
+      if (pointsPtr)
+      {
+        x1 = pointsPtr + 3 * v1;
+        x2 = pointsPtr + 3 * v2;
+      }
+      else
+      {
+        this->Points->GetPoint(v1, x1buf);
+        this->Points->GetPoint(v2, x2buf);
+        x1 = x1buf;
+        x2 = x2buf;
+      }
       for (j = 0; j < 3; j++)
       {
         x[j] = x1[j] + t * (x2[j] - x1[j]);

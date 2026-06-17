@@ -526,8 +526,17 @@ void vtkPyramid::Contour(double value, vtkDataArray* cellScalars,
   int i, j, index, v1, v2, newCellId;
   const vtkIdType* vert;
   vtkIdType pts[3];
-  double t, x1[3], x2[3], x[3], deltaScalar;
+  double t, x1buf[3], x2buf[3], x[3], deltaScalar;
   vtkIdType offset = verts->GetNumberOfCells() + lines->GetNumberOfCells();
+
+  // When the cell's Points are stored as VTK_DOUBLE (the common case), read the
+  // raw double pointer once and index it directly in the hot edge loop instead of
+  // calling the virtual vtkPoints::GetPoint twice per edge. On a double-backed
+  // array GetPoint copies the same stored doubles via vtkDoubleArray::GetTuple,
+  // so the indexed reads are byte-identical. If the points are not double, fall
+  // back to the original GetPoint path.
+  const auto pointsArray = vtkDoubleArray::FastDownCast(this->Points->GetData());
+  const double* pointsPtr = pointsArray ? pointsArray->GetPointer(0) : nullptr;
 
   // Build the case table
   for (i = 0, index = 0; i < 5; i++)
@@ -573,8 +582,20 @@ void vtkPyramid::Contour(double value, vtkDataArray* cellScalars,
       // linear interpolation
       t = (deltaScalar == 0.0 ? 0.0 : (value - v1Scalar) / deltaScalar);
 
-      this->Points->GetPoint(v1, x1);
-      this->Points->GetPoint(v2, x2);
+      const double* x1;
+      const double* x2;
+      if (pointsPtr)
+      {
+        x1 = pointsPtr + 3 * v1;
+        x2 = pointsPtr + 3 * v2;
+      }
+      else
+      {
+        this->Points->GetPoint(v1, x1buf);
+        this->Points->GetPoint(v2, x2buf);
+        x1 = x1buf;
+        x2 = x2buf;
+      }
 
       for (j = 0; j < 3; j++)
       {

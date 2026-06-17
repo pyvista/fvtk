@@ -322,6 +322,13 @@ int vtkFeatureEdges::RequestData(vtkInformation* vtkNotUsed(request),
     }
   }
 
+  // Used with non manifold edges when there are ghost cells in the input.
+  // Hoisted out of the per-polygon loop and Reset() per polygon so the
+  // starting state is identical to a fresh vtkIdList each iteration, avoiding
+  // a vtkIdList New()/Delete() per output polygon (pure allocation reuse; the
+  // contents and the order in which ids are appended are unchanged).
+  vtkNew<vtkIdList> edgesRemapping;
+
   for (newCellId = 0, newPolys->InitTraversal(); newPolys->GetNextCell(npts, pts) && !abort;
        newCellId++)
   {
@@ -330,6 +337,7 @@ int vtkFeatureEdges::RequestData(vtkInformation* vtkNotUsed(request),
       this->UpdateProgress(static_cast<double>(newCellId) / numCells);
       abort = this->CheckAbort();
     }
+    edgesRemapping->Reset();
 
     if (numPolys == numCells) // Input only has Polys
     {
@@ -349,9 +357,6 @@ int vtkFeatureEdges::RequestData(vtkInformation* vtkNotUsed(request),
     {
       continue;
     }
-
-    // Used with non manifold edges when there are ghost cells in the input
-    vtkNew<vtkIdList> edgesRemapping;
 
     for (i = 0; i < npts; i++)
     {

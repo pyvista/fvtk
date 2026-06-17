@@ -24,6 +24,7 @@
 #include "vtkUnsignedCharArray.h"
 
 #include <atomic>
+#include <vector>
 
 VTK_ABI_NAMESPACE_BEGIN
 vtkStandardNewMacro(vtkCellCenters);
@@ -37,12 +38,17 @@ class CellCenterFunctor
   vtkSMPThreadLocal<std::vector<double>> TLWeigths;
   vtkDataSet* DataSet;
   vtkDoubleArray* CellCenters;
+  // Optional per-cell emptiness mask: EmptyMask[cellId] == 1 iff the cell is
+  // VTK_EMPTY_CELL. Filled here in the first (parallel) pass so the second
+  // single-threaded compaction pass need not re-call the virtual GetCellType.
+  unsigned char* EmptyMask;
   vtkIdType MaxCellSize;
 
 public:
-  CellCenterFunctor(vtkDataSet* ds, vtkDoubleArray* cellCenters)
+  CellCenterFunctor(vtkDataSet* ds, vtkDoubleArray* cellCenters, unsigned char* emptyMask)
     : DataSet(ds)
     , CellCenters(cellCenters)
+    , EmptyMask(emptyMask)
     , MaxCellSize(ds->GetMaxCellSize())
   {
   }
@@ -66,7 +72,8 @@ public:
     {
       this->DataSet->GetCell(cellId, cell);
       double x[3] = { 0.0 };
-      if (cell->GetCellType() != VTK_EMPTY_CELL)
+      const bool empty = (cell->GetCellType() == VTK_EMPTY_CELL);
+      if (!empty)
       {
         double pcoords[3];
         int subId = cell->GetParametricCenter(pcoords);
@@ -79,6 +86,10 @@ public:
         x[2] = 0.0;
       }
       this->CellCenters->SetTypedTuple(cellId, x);
+      if (this->EmptyMask)
+      {
+        this->EmptyMask[cellId] = empty ? 1 : 0;
+      }
     }
   }
 };
@@ -151,12 +162,13 @@ struct GhostCellsToGhostPointsConverter
   vtkIdList* CellIdList;
 };
 
-} // end anonymous namespace
-
-//------------------------------------------------------------------------------
-void vtkCellCenters::ComputeCellCenters(vtkDataSet* dataset, vtkDoubleArray* centers)
+// Shared implementation: computes cell centers and, when emptyMask is non-null,
+// records per-cell emptiness so callers can skip a redundant second GetCellType
+// traversal.
+void ComputeCellCentersImpl(
+  vtkDataSet* dataset, vtkDoubleArray* centers, unsigned char* emptyMask)
 {
-  CellCenterFunctor functor(dataset, centers);
+  CellCenterFunctor functor(dataset, centers, emptyMask);
 
   // Call this once one the main thread before calling on multiple threads.
   // According to the documentation for vtkDataSet::GetCell(vtkIdType, vtkGenericCell*),
@@ -169,6 +181,14 @@ void vtkCellCenters::ComputeCellCenters(vtkDataSet* dataset, vtkDoubleArray* cen
 
   // Now split the work among threads.
   vtkSMPTools::For(0, dataset->GetNumberOfCells(), functor);
+}
+
+} // end anonymous namespace
+
+//------------------------------------------------------------------------------
+void vtkCellCenters::ComputeCellCenters(vtkDataSet* dataset, vtkDoubleArray* centers)
+{
+  ::ComputeCellCentersImpl(dataset, centers, nullptr);
 }
 
 //------------------------------------------------------------------------------
@@ -202,7 +222,12 @@ int vtkCellCenters::RequestData(vtkInformation* vtkNotUsed(request),
   vtkNew<vtkIdList> cellIdList;
   cellIdList->SetNumberOfIds(numCells);
 
-  vtkCellCenters::ComputeCellCenters(input, pointArray);
+  // Record per-cell emptiness in the parallel center pass so the compaction
+  // loop below does not have to re-issue a virtual GetCellType per cell. The
+  // mask byte equals (GetCellType(cellId) == VTK_EMPTY_CELL), so consuming it is
+  // value-identical to the original predicate.
+  std::vector<unsigned char> emptyMask(static_cast<std::size_t>(numCells), 0);
+  ::ComputeCellCentersImpl(input, pointArray, emptyMask.data());
 
   // Remove points that would have been produced by empty cells
   // This should be multithreaded someday
@@ -219,7 +244,7 @@ int vtkCellCenters::RequestData(vtkInformation* vtkNotUsed(request),
       abort = this->CheckAbort();
     }
 
-    if (input->GetCellType(cellId) != VTK_EMPTY_CELL)
+    if (emptyMask[cellId] == 0)
     {
       newPts->SetPoint(numPoints, newPts->GetPoint(cellId));
       pointIdList->SetId(numPoints, numPoints);

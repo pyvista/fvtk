@@ -523,8 +523,18 @@ void vtkHexahedron::Contour(double value, vtkDataArray* cellScalars,
   const vtkIdType* vert;
   int v1, v2, newCellId;
   vtkIdType pts[3];
-  double t, x1[3], x2[3], x[3], deltaScalar;
+  double t, x1buf[3], x2buf[3], x[3], deltaScalar;
   vtkIdType offset = verts->GetNumberOfCells() + lines->GetNumberOfCells();
+
+  // When the cell's Points are stored as VTK_DOUBLE (the common case), read the
+  // raw double pointer once and index it directly in the hot marching-cubes edge
+  // loop instead of calling the virtual vtkPoints::GetPoint(id, double[3]) twice
+  // per edge. vtkPoints::GetPoint on a double-backed array copies the same stored
+  // doubles via vtkDoubleArray::GetTuple, so the indexed reads are byte-identical.
+  // If the points are not double (e.g. a cell built from a float-valued grid),
+  // fall back to the original GetPoint path which converts identically as before.
+  const auto pointsArray = vtkDoubleArray::FastDownCast(this->Points->GetData());
+  const double* pointsPtr = pointsArray ? pointsArray->GetPointer(0) : nullptr;
 
   // Build the case table
   for (i = 0, index = 0; i < 8; i++)
@@ -569,8 +579,20 @@ void vtkHexahedron::Contour(double value, vtkDataArray* cellScalars,
       // linear interpolation
       t = (deltaScalar == 0.0 ? 0.0 : (value - sv1) / deltaScalar);
 
-      this->Points->GetPoint(v1, x1);
-      this->Points->GetPoint(v2, x2);
+      const double* x1;
+      const double* x2;
+      if (pointsPtr)
+      {
+        x1 = pointsPtr + 3 * v1;
+        x2 = pointsPtr + 3 * v2;
+      }
+      else
+      {
+        this->Points->GetPoint(v1, x1buf);
+        this->Points->GetPoint(v2, x2buf);
+        x1 = x1buf;
+        x2 = x2buf;
+      }
 
       for (j = 0; j < 3; j++)
       {
