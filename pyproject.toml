@@ -24,7 +24,7 @@ name = "fvtk"
 # is overwritten by the wheel the backend actually produces.
 version = "9.6.2"
 description = "fvtk — trimmed PyVista-parity hard-fork of VTK 9.6.2 (vtkmodules renamed to top-level fvtk)"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 # ===========================================================================
 # cibuildwheel — Linux manylinux_2_17 (glibc 2.17), the same platform tag as the
@@ -32,8 +32,10 @@ requires-python = ">=3.9"
 # ===========================================================================
 [tool.cibuildwheel]
 build-frontend = "pip"
-# cp39..cp313 on CPython only (VTK has no PyPy/free-threading wrappers here).
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+# cp311..cp314 on CPython only (VTK has no PyPy/free-threading wrappers here).
+# cp39/cp310 dropped (EOL/near-EOL) to cut CI legs; cp314 added. cp311 is the
+# floor a future cp3x-abi3 (stable-ABI) wheel would target.
+build = "cp311-* cp312-* cp313-* cp314-*"
 skip = "*-musllinux_*"
 test-command = "FVTK_IMPORT_NAME=fvtk xvfb-run -a -s '-screen 0 1280x1024x24' python {project}/ci/smoke_test.py"
 # auditwheel repair runs by default; stamp the 2_17 tag explicitly to match the
