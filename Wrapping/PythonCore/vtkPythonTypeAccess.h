@@ -38,6 +38,53 @@
 #define VTK_ABI3_LIMITED 0
 #endif
 
+// ---------------------------------------------------------------------------
+// PyMemberDef + Py_T_*/Py_READONLY stable-ABI compatibility (limited-API floor
+// below 3.12).
+//
+// The abi3 wrapper port carries each wrapped type's per-instance dict/weakref
+// layout in a PyType_Spec via a Py_tp_members slot of synthetic
+// "__dictoffset__"/"__weaklistoffset__" PyMemberDef entries (Py_T_PYSSIZET /
+// Py_READONLY), and PyVTKMethodDescriptor uses a Py_T_OBJECT_EX member. CPython
+// only promoted `struct PyMemberDef` and the Py_-prefixed member type/flag
+// constants into the *stable ABI* in 3.12 (gh-93274). At a 3.11 limited-API
+// floor (Py_LIMITED_API == 0x030b0000, the fvtk default) the headers do not
+// expose them, so the generated *Python.cxx and the runtime fail to compile
+// ("PyMemberDef has incomplete type" / "Py_T_PYSSIZET not declared").
+//
+// These definitions are part of the STABLE ABI from 3.12 on — the struct layout
+// and the numeric type/flag values are fixed and forward-compatible — so we
+// reproduce them verbatim when (and only when) building against a limited-API
+// floor older than 3.12 that omits them. On 3.12+ (or any non-limited build) the
+// real header definitions are present and these blocks are skipped, keeping the
+// emitted code byte-identical to the header-provided path. The values mirror
+// CPython's Include/descrobject.h exactly. Must precede any wrapper/runtime use.
+#if defined(Py_LIMITED_API) && Py_LIMITED_API + 0 < 0x030c0000
+#ifndef Py_T_PYSSIZET
+// Member type/flag constants (Include/descrobject.h). Only the three the abi3
+// port references are needed; the rest of the table is intentionally omitted.
+// Defining Py_T_PYSSIZET here also makes any later <structmember.h> that gates
+// on it skip its (limited-API-excluded) redefinition.
+#define Py_T_OBJECT_EX 16
+#define Py_T_PYSSIZET 19
+#define Py_READONLY 1
+// struct PyMemberDef is absent from the <3.12 limited API; define the stable
+// layout (gh-93274) so Py_tp_members slot tables compile. Guard with a sentinel
+// so a co-included header that also provides it cannot trigger a redefinition.
+#ifndef VTK_ABI3_PYMEMBERDEF_DEFINED
+#define VTK_ABI3_PYMEMBERDEF_DEFINED 1
+struct PyMemberDef
+{
+  const char* name;
+  int type;
+  Py_ssize_t offset;
+  int flags;
+  const char* doc;
+};
+#endif
+#endif
+#endif
+
 VTK_ABI_NAMESPACE_BEGIN
 
 //------------------------------------------------------------------------------
