@@ -181,15 +181,29 @@ green (9,731 passed / 8 pre-existing env-fails / 0 introduced).
     wheel** at zero runtime cost (cold code). `FVTK_WRAP_OPTSIZE=0` to disable.
 
 11. **Array-dispatch value-type trim (`FVTK_DISPATCH_MINIMAL`, on by default).** VTK's default
-    `vtkArrayDispatch` typelist is ~14 value types; PyVista's `numpy_to_vtk` only ever yields
-    float/double/int/uint8/int64. A hook in `Common/Core/vtkCreateArrayDispatchArrayList.cmake`
-    trims the AOS + StructuredPoint dispatch lists to those 6, so `Dispatch`/`Dispatch2`/`Dispatch3`
-    instantiate far fewer workers in the Filters/Common kits. **Correctness-preserving:** an
-    excluded value type still works via the virtual `vtkDataArray` fallback (same mechanism as the
-    SOA-off lever) — only the fast path is dropped, never a result. `FVTK_DISPATCH_MINIMAL=0`
-    restores the full list. (Note: this trims the *dispatch* typelist only — the per-type array
-    *classes* and their bulk instantiations stay, because CommonCore's own array machinery
-    references the SOA/implicit backends regardless of the dispatch switches.)
+    `vtkArrayDispatch` typelist is ~14 value types; PyVista's `numpy_to_vtk` overwhelmingly yields
+    double/float, plus `vtkIdType` (ids/connectivity) and uint8 (RGBA colors). A hook in
+    `Common/Core/vtkCreateArrayDispatchArrayList.cmake` trims the AOS + StructuredPoint dispatch
+    lists to those **4** (`double;float;vtkIdType;unsigned char`; `vtkIdType` is 64-bit signed so
+    int64 still dispatches through it), so `Dispatch`/`Dispatch2`/`Dispatch3` instantiate far fewer
+    workers across every dispatched filter TU in the Filters/Common kits — and because Dispatch2/3
+    multiply the list N²/N³, 14 → 4 collapses the cross-filter fan-out hard. **Bit-exact
+    (maxULP=0):** an excluded value type (int32, narrow ints) still works via the virtual
+    `vtkDataArray` fallback (same mechanism as the SOA-off lever) — only the typed fast path is
+    dropped, never a result; the only cost is *runtime* speed for int32/narrow-int workloads.
+    `FVTK_DISPATCH_MINIMAL=0` restores the full list. (This trims the *dispatch* typelist only — the
+    per-type array *classes* and their bulk instantiations stay, because CommonCore's own array
+    machinery references the SOA/implicit backends regardless of the dispatch switches.)
+
+11b. **Drop dead implicit-array families (`FVTK_DROP_DEAD_ARRAYS`, on by default).** The
+    `vtkStridedArray` and `vtkStdFunctionArray` implicit families are never constructed by PyVista,
+    and their dispatch options default OFF (already absent from the dispatch typelist). This drops
+    their per-numeric-type instantiation TUs (`vtkStridedArrayInstantiate_*`,
+    `vtkStdFunctionArrayInstantiate_*`, `vtkStridedImplicitBackendInstantiate_*`) and generated
+    fixed-size specialization classes from the build. The template headers stay in place (header-only,
+    zero cost), so it is a pure instantiation drop, trivially reversible via `FVTK_DROP_DEAD_ARRAYS=0`.
+    Unlike SOA/ScaledSOA (load-bearing), these two have no reference from any kept CommonCore
+    machinery, so the cut is link-safe.
 
 Levers 9–11 plus a strip-coverage fix (the kit `libvtkCommon.so` was shipping unstripped — its
 26 MB `.symtab` is now removed via a wheel re-strip+repack) take the stripped wheel **49 → 38 MiB**.
