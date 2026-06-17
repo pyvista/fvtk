@@ -14,6 +14,7 @@
 #include "vtkSMPTools.h"
 #include "vtkStreamingDemandDrivenPipeline.h"
 #include "vtkUnsignedCharArray.h"
+#include "vtkCellArray.h"
 #include "vtkUnstructuredGrid.h"
 
 #include <algorithm>
@@ -109,6 +110,16 @@ struct vtkThreshold::EvaluateCellsFunctor
   bool UsePointScalars;
   vtkIdType NumberOfCells;
 
+  // Devirtualized cell access for the common vtkUnstructuredGrid input: cache
+  // the concrete cell-types array + connectivity so the per-cell hot loop reads
+  // them directly instead of dispatching vtkDataSet::GetCellType/GetCellPoints
+  // virtually every iteration. Null for non-UG inputs (fall back to virtual).
+  // The values read are byte-identical to the virtual path (pure access
+  // devirtualization), and GetCellAtId keeps the per-thread cellIds scratch so
+  // thread-safety of the SMP path is preserved.
+  vtkUnsignedCharArray* UGCellTypes = nullptr;
+  vtkCellArray* UGConnectivity = nullptr;
+
   vtkSMPThreadLocal<vtkSmartPointer<vtkIdList>> TLCellIds;
 
   vtkNew<vtkUnsignedCharArray> InsidenessArray;
@@ -130,6 +141,11 @@ struct vtkThreshold::EvaluateCellsFunctor
     {
       // ensure that internal structures are initialized.
       this->Input->GetCell(0);
+    }
+    if (auto* ug = vtkUnstructuredGrid::SafeDownCast(this->Input))
+    {
+      this->UGCellTypes = ug->GetCellTypesArray();
+      this->UGConnectivity = ug->GetCells();
     }
   }
 
@@ -166,13 +182,21 @@ struct vtkThreshold::EvaluateCellsFunctor
         insideness[cellId] = 0;
         continue;
       }
-      int cellType = this->Input->GetCellType(cellId);
+      int cellType = this->UGCellTypes ? static_cast<int>(this->UGCellTypes->GetValue(cellId))
+                                       : this->Input->GetCellType(cellId);
       if (cellType == VTK_EMPTY_CELL)
       {
         insideness[cellId] = 0;
         continue;
       }
-      this->Input->GetCellPoints(cellId, numCellPts, cellPts, cellIds);
+      if (this->UGConnectivity)
+      {
+        this->UGConnectivity->GetCellAtId(cellId, numCellPts, cellPts, cellIds);
+      }
+      else
+      {
+        this->Input->GetCellPoints(cellId, numCellPts, cellPts, cellIds);
+      }
 
       int keepCell = 0;
       if (this->UsePointScalars)

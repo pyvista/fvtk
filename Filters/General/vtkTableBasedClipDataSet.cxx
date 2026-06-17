@@ -36,6 +36,7 @@
 #include "vtkUnstructuredGrid.h"
 
 #include <cstring>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -557,6 +558,11 @@ struct EvaluateCells
   using TEdge = EdgeType<TInputIdType>;
 
   TGrid* Input;
+  // Devirtualized cell access, populated only when TGrid is the concrete
+  // vtkUnstructuredGrid (see the if constexpr branches in the cell loops). The
+  // values read are byte-identical to GetCellType/GetCellPoints; no FP.
+  vtkUnsignedCharArray* UGCellTypes = nullptr;
+  vtkCellArray* UGConn = nullptr;
   vtkDoubleArray* ClipArray;
   double IsoValue;
   vtkIdType NumberOfInputCells;
@@ -594,6 +600,11 @@ struct EvaluateCells
       {
         inputPolyData->BuildCells();
       }
+    }
+    if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
+    {
+      this->UGCellTypes = input->GetCellTypesArray();
+      this->UGConn = input->GetCells();
     }
   }
 
@@ -639,7 +650,14 @@ struct EvaluateCells
 
       for (cellId = batch.BeginId; cellId < batch.EndId; ++cellId)
       {
-        cellType = this->Input->GetCellType(cellId);
+        if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
+        {
+          cellType = static_cast<int>(this->UGCellTypes->GetValue(cellId));
+        }
+        else
+        {
+          cellType = this->Input->GetCellType(cellId);
+        }
         // check if the cell type is supported
         if (!TBCCases::IsCellTypeSupported(cellType))
         {
@@ -651,7 +669,14 @@ struct EvaluateCells
           cellsCase[cellId] = TBCCases::DISCARDED_CELL_CASE;
           continue;
         }
-        this->Input->GetCellPoints(cellId, numberOfPoints, pointIndices, idList);
+        if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
+        {
+          this->UGConn->GetCellAtId(cellId, numberOfPoints, pointIndices, idList);
+        }
+        else
+        {
+          this->Input->GetCellPoints(cellId, numberOfPoints, pointIndices, idList);
+        }
 
         // compute case index
         caseIndex = 0;
@@ -792,7 +817,14 @@ struct EvaluateCells
       int cellType;
       for (vtkIdType cellId = 0; cellId < this->NumberOfInputCells; ++cellId)
       {
-        cellType = this->Input->GetCellType(cellId);
+        if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
+        {
+          cellType = static_cast<int>(this->UGCellTypes->GetValue(cellId));
+        }
+        else
+        {
+          cellType = this->Input->GetCellType(cellId);
+        }
         if (unsupportedCellTypes.find(cellType) != unsupportedCellTypes.end())
         {
           this->UnsupportedCells.push_back(cellId);
@@ -831,6 +863,10 @@ struct ExtractCells
   using TOutputIdTypeArray = vtkAOSDataArrayTemplate<TOutputIdType>;
 
   TGrid* Input;
+  // Devirtualized cell access, populated only when TGrid is the concrete
+  // vtkUnstructuredGrid (see the if constexpr branch in the extract loop).
+  vtkUnsignedCharArray* UGCellTypes = nullptr;
+  vtkCellArray* UGConn = nullptr;
   vtkAOSDataArrayTemplate<TInputIdType>* PointsMap;
   vtkUnsignedCharArray* CellsCase;
   const TableBasedCellBatches& CellBatches;
@@ -872,6 +908,11 @@ struct ExtractCells
     , NumberOfKeptPointsAndEdges(numberOfKeptPoints + numberOfEdges)
     , Filter(filter)
   {
+    if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
+    {
+      this->UGCellTypes = input->GetCellTypesArray();
+      this->UGConn = input->GetCells();
+    }
     // create connectivity array, offsets array, and types array
     this->Connectivity = vtkSmartPointer<TOutputIdTypeArray>::New();
     this->Connectivity->SetNumberOfValues(this->ConnectivitySize);
@@ -934,8 +975,22 @@ struct ExtractCells
           continue;
         }
 
-        cellType = this->Input->GetCellType(cellId);
-        this->Input->GetCellPoints(cellId, numberOfPoints, pointIndices, idList);
+        if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
+        {
+          cellType = static_cast<int>(this->UGCellTypes->GetValue(cellId));
+        }
+        else
+        {
+          cellType = this->Input->GetCellType(cellId);
+        }
+        if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
+        {
+          this->UGConn->GetCellAtId(cellId, numberOfPoints, pointIndices, idList);
+        }
+        else
+        {
+          this->Input->GetCellPoints(cellId, numberOfPoints, pointIndices, idList);
+        }
 
         // Keep the cell (Fast path)
         if (TBCCases::IsCellKept(numberOfPoints, caseIndex))

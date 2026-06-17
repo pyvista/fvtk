@@ -361,9 +361,11 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
     {
       if (this->Visited[cellId] >= 0)
       {
+        // Hoist the cell-type read: it was fetched virtually up to 3x per cell
+        // (polyhedron test + both InsertNextCell calls). Identical value, no FP.
+        const int cellType = input->GetCellType(cellId);
         // special handling for polyhedron cells
-        if (vtkUnstructuredGrid::SafeDownCast(input) &&
-          input->GetCellType(cellId) == VTK_POLYHEDRON)
+        if (cellType == VTK_POLYHEDRON && vtkUnstructuredGrid::SafeDownCast(input))
         {
           vtkUnstructuredGrid::SafeDownCast(input)->GetFaceStream(cellId, this->PointIds);
           vtkUnstructuredGrid::ConvertFaceStreamPointIds(this->PointIds, this->PointMap);
@@ -380,11 +382,11 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
         vtkIdType newCellId = -1;
         if (pdOutput)
         {
-          newCellId = pdOutput->InsertNextCell(input->GetCellType(cellId), this->PointIds);
+          newCellId = pdOutput->InsertNextCell(cellType, this->PointIds);
         }
         else if (ugOutput)
         {
-          newCellId = ugOutput->InsertNextCell(input->GetCellType(cellId), this->PointIds);
+          newCellId = ugOutput->InsertNextCell(cellType, this->PointIds);
         }
         if (newCellId >= 0)
         {
@@ -410,9 +412,10 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
         }
         if (inReg)
         {
+          // Hoist the cell-type read (fetched virtually up to 3x per cell).
+          const int cellType = input->GetCellType(cellId);
           // special handling for polyhedron cells
-          if (vtkUnstructuredGrid::SafeDownCast(input) &&
-            input->GetCellType(cellId) == VTK_POLYHEDRON)
+          if (cellType == VTK_POLYHEDRON && vtkUnstructuredGrid::SafeDownCast(input))
           {
             vtkUnstructuredGrid::SafeDownCast(input)->GetFaceStream(cellId, this->PointIds);
             vtkUnstructuredGrid::ConvertFaceStreamPointIds(this->PointIds, this->PointMap);
@@ -429,11 +432,11 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
           vtkIdType newCellId = -1;
           if (pdOutput)
           {
-            newCellId = pdOutput->InsertNextCell(input->GetCellType(cellId), this->PointIds);
+            newCellId = pdOutput->InsertNextCell(cellType, this->PointIds);
           }
           else if (ugOutput)
           {
-            newCellId = ugOutput->InsertNextCell(input->GetCellType(cellId), this->PointIds);
+            newCellId = ugOutput->InsertNextCell(cellType, this->PointIds);
           }
           if (newCellId >= 0)
           {

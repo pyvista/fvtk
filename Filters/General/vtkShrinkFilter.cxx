@@ -93,6 +93,9 @@ int vtkShrinkFilter::RequestData(
     // Get the list of points for this cell.
     input->GetCellPoints(cellId, ptIds);
     vtkIdType numIds = ptIds->GetNumberOfIds();
+    // Hoist the cell-type read (used twice below: polyhedron test +
+    // InsertNextCell). Identical value, no FP — output is unchanged.
+    const int cellType = input->GetCellType(cellId);
 
     // Periodically update progress and check for an abort request.
     if (cellId % tenth == 0)
@@ -143,7 +146,7 @@ int vtkShrinkFilter::RequestData(
     }
 
     // special handling for polyhedron cells
-    if (vtkUnstructuredGrid::SafeDownCast(input) && input->GetCellType(cellId) == VTK_POLYHEDRON)
+    if (cellType == VTK_POLYHEDRON && vtkUnstructuredGrid::SafeDownCast(input))
     {
       vtkUnstructuredGrid::SafeDownCast(input)->GetFaceStream(cellId, newPtIds);
       vtkUnstructuredGrid::ConvertFaceStreamPointIds(newPtIds, pointMap);
@@ -157,7 +160,7 @@ int vtkShrinkFilter::RequestData(
     }
 
     // Store the new cell in the output.
-    output->InsertNextCell(input->GetCellType(cellId), newPtIds);
+    output->InsertNextCell(cellType, newPtIds);
   }
 
   // Store the new set of points in the output.
