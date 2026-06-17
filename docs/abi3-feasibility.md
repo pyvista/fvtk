@@ -53,13 +53,27 @@ now ships ONE stable-ABI wheel instead of a per-minor matrix.
 zero-cost support for every future CPython minor (the stable-ABI `.so` is
 forward-compatible; no cp315/… rebuild).
 
-**Validation (executor, end-to-end on the DEFAULT build, no FVTK_ABI3 override).**
-The DEFAULT-built wheel comes out abi3-tagged (`fvtk-…-cp311-abi3-manylinux_2_17_x86_64.whl`),
-installs on the CI python (3.13) and imports; the 122-case numeric+parity suite
-is GREEN against it (every numeric case `maxULP=0` vs stock VTK 9.6.2, numpy
-zero-copy shared+byte-identical, ONLY `__flags__` diverges); and `FVTK_ABI3=0`
-still builds the static wheel and passes STRICT parity (escape hatch confirmed).
-Run evidence is appended below once executed on the executor.
+**Validation (executor, end-to-end on the DEFAULT build, no FVTK_ABI3 override;
+isolated tree `~/tmp/abi3-default-5d74a8a` from a clean `git archive` of the branch,
+cp313 nix python, floor `0x030b0000`).**
+- DEFAULT configure (no `-DFVTK_ABI3`): `CMakeCache.txt` reports
+  `FVTK_ABI3:BOOL=ON` / `FVTK_ABI3_VERSION:STRING=0x030b0000` — the default took.
+- Full build: clean, **85 `vtkXxx.abi3.so`** wrapper modules emitted. Import on
+  cp313: `from fvtk.vtkCommonCore import vtkObject` OK,
+  `type(vtkObject()).__flags__ & HEAPTYPE == True` (heap types in effect).
+- **Numeric bitexact + abi3-aware parity gate (`BITEXACT_ABI3=1`): 140 passed /
+  0 failed** — 138 `test_bitexact` numeric cases `maxULP=0` vs stock VTK 9.6.2
+  (the count rose from 122 because main's filter-opt waves added cases, all of
+  which the abi3 wheel includes), `test_wrapper_behavior_parity` PASSED (numpy
+  zero-copy shared+byte-identical, mro/isinstance/repr/weakref/instance-dict
+  identical, ONLY `__flags__` diverges), `test_abi3_heaptypes_in_effect` PASSED
+  (every probed type actually became a heap type).
+- **Escape hatch:** `-DFVTK_ABI3=OFF` rebuilds the legacy static-type wheel
+  (`vtkCommonCore.cpython-313-*.so`) and passes the STRICT parity gate
+  (`BITEXACT_ABI3=0`, byte-for-byte incl. `__flags__`).
+- **Wheel tag:** the backend's `_retag_abi3()` produces
+  `fvtk-…-cp311-abi3-<plat>.whl` (filename + WHEEL `Tag:` + RECORD), verified to
+  install via pip into a clean venv.
 
 ### Increment 4 (close the residual 3 TUs + full generator/runtime port) — abi3 wheel COMPILES, IMPORTS, and is BIT-EXACT
 
