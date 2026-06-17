@@ -499,6 +499,33 @@ struct EvaluatePoints
 constexpr int MAX_CELL_SIZE = 8;
 
 //-----------------------------------------------------------------------------
+// Resolve the cell array's Int64-AOS storage to raw typed pointers so the
+// per-cell loops can read connectivity inline instead of calling the out-of-line
+// vtkCellArray::GetCellAtId once per cell. Returns true (and sets offsetsPtr/
+// connPtr) only for the zero-copy CanShareConnPtr case (Int64 AOS storage, where
+// the connectivity ValueType is layout-identical to vtkIdType). Any other storage
+// leaves the pointers null and the caller keeps using GetCellAtId.
+inline bool ResolveCellArray64(
+  vtkCellArray* conn, const vtkTypeInt64*& offsetsPtr, const vtkTypeInt64*& connPtr)
+{
+  offsetsPtr = nullptr;
+  connPtr = nullptr;
+  if (conn && conn->GetStorageType() == vtkCellArray::StorageTypes::Int64)
+  {
+    if (auto* offs = conn->GetOffsetsArray64())
+    {
+      if (auto* cn = conn->GetConnectivityArray64())
+      {
+        offsetsPtr = offs->GetPointer(0);
+        connPtr = cn->GetPointer(0);
+        return offsetsPtr != nullptr && connPtr != nullptr;
+      }
+    }
+  }
+  return false;
+}
+
+//-----------------------------------------------------------------------------
 // Keep track of output information within each batch of cells - this
 // information is eventually rolled up into offsets into the cell
 // connectivity and offsets arrays so that separate threads know where to
@@ -563,6 +590,14 @@ struct EvaluateCells
   // values read are byte-identical to GetCellType/GetCellPoints; no FP.
   vtkUnsignedCharArray* UGCellTypes = nullptr;
   vtkCellArray* UGConn = nullptr;
+  // Hoisted typed connectivity pointers for the dominant Int64-AOS storage case
+  // (vtkCellArray's default storage). When non-null, the per-cell loop reads the
+  // cell offsets/connectivity inline instead of calling the out-of-line, cross-
+  // shared-library vtkCellArray::GetCellAtId (which also re-runs its StorageType
+  // switch every cell). The values read are byte-identical to GetCellAtId's
+  // CanShareConnPtr (zero-copy) path; no FP. nullptr => fall back to GetCellAtId.
+  const vtkTypeInt64* UGConn64Offsets = nullptr;
+  const vtkTypeInt64* UGConn64Conn = nullptr;
   vtkDoubleArray* ClipArray;
   double IsoValue;
   vtkIdType NumberOfInputCells;
@@ -605,6 +640,7 @@ struct EvaluateCells
     {
       this->UGCellTypes = input->GetCellTypesArray();
       this->UGConn = input->GetCells();
+      ResolveCellArray64(this->UGConn, this->UGConn64Offsets, this->UGConn64Conn);
     }
   }
 
@@ -671,7 +707,20 @@ struct EvaluateCells
         }
         if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
         {
-          this->UGConn->GetCellAtId(cellId, numberOfPoints, pointIndices, idList);
+          if (this->UGConn64Conn)
+          {
+            // Inline the zero-copy Int64-AOS GetCellAtId fast path: read the cell
+            // span directly from the hoisted typed pointers (byte-identical to
+            // GetCellAtId's CanShareConnPtr branch), avoiding the per-cell
+            // cross-shared-library call and its StorageType switch.
+            const vtkTypeInt64 begin = this->UGConn64Offsets[cellId];
+            numberOfPoints = static_cast<vtkIdType>(this->UGConn64Offsets[cellId + 1] - begin);
+            pointIndices = reinterpret_cast<const vtkIdType*>(this->UGConn64Conn + begin);
+          }
+          else
+          {
+            this->UGConn->GetCellAtId(cellId, numberOfPoints, pointIndices, idList);
+          }
         }
         else
         {
@@ -867,6 +916,11 @@ struct ExtractCells
   // vtkUnstructuredGrid (see the if constexpr branch in the extract loop).
   vtkUnsignedCharArray* UGCellTypes = nullptr;
   vtkCellArray* UGConn = nullptr;
+  // See EvaluateCells: hoisted Int64-AOS connectivity pointers so the per-cell
+  // loop reads cells inline instead of calling the cross-shared-library
+  // vtkCellArray::GetCellAtId once per cell. nullptr => fall back to GetCellAtId.
+  const vtkTypeInt64* UGConn64Offsets = nullptr;
+  const vtkTypeInt64* UGConn64Conn = nullptr;
   vtkAOSDataArrayTemplate<TInputIdType>* PointsMap;
   vtkUnsignedCharArray* CellsCase;
   const TableBasedCellBatches& CellBatches;
@@ -912,6 +966,7 @@ struct ExtractCells
     {
       this->UGCellTypes = input->GetCellTypesArray();
       this->UGConn = input->GetCells();
+      ResolveCellArray64(this->UGConn, this->UGConn64Offsets, this->UGConn64Conn);
     }
     // create connectivity array, offsets array, and types array
     this->Connectivity = vtkSmartPointer<TOutputIdTypeArray>::New();
@@ -985,7 +1040,17 @@ struct ExtractCells
         }
         if constexpr (std::is_same_v<TGrid, vtkUnstructuredGrid>)
         {
-          this->UGConn->GetCellAtId(cellId, numberOfPoints, pointIndices, idList);
+          if (this->UGConn64Conn)
+          {
+            // Inline zero-copy Int64-AOS GetCellAtId fast path (see EvaluateCells).
+            const vtkTypeInt64 begin = this->UGConn64Offsets[cellId];
+            numberOfPoints = static_cast<vtkIdType>(this->UGConn64Offsets[cellId + 1] - begin);
+            pointIndices = reinterpret_cast<const vtkIdType*>(this->UGConn64Conn + begin);
+          }
+          else
+          {
+            this->UGConn->GetCellAtId(cellId, numberOfPoints, pointIndices, idList);
+          }
         }
         else
         {
