@@ -871,16 +871,10 @@ if (VTK_BUILD_TESTING)
   add_subdirectory(Testing/Install)
 endif ()
 
-# The doxygen documentation needs to be aware of all modules.
-option(VTK_BUILD_DOCUMENTATION "Build the Doxygen VTK documentation" OFF)
-if (VTK_BUILD_DOCUMENTATION)
-  add_subdirectory(Utilities/Doxygen)
-endif ()
-
-option(VTK_BUILD_SPHINX_DOCUMENTATION "Build the Sphinx documentation for VTK" OFF)
-if (VTK_BUILD_SPHINX_DOCUMENTATION)
-  add_subdirectory(Utilities/Sphinx)
-endif ()
+# fvtk is a Python-wheel-only fork; the Doxygen/Sphinx documentation builds and
+# their generator trees (Utilities/Doxygen, Utilities/Sphinx) were removed. The
+# old VTK_BUILD_DOCUMENTATION / VTK_BUILD_SPHINX_DOCUMENTATION option blocks +
+# add_subdirectory() calls are dropped with them.
 
 # Adds a test to verify consistent use of VTK_MARSHAL(AUTO|MANUAL) macros.
 # This is a pure python test, it doesn't need any compiled VTK modules.
