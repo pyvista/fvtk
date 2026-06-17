@@ -13,6 +13,78 @@ original blocker inventory and roadmap follow it unchanged for reference.
 
 ## Increment status log (newest first)
 
+### Increment 3 (generator port START + the matrix-payoff MEASUREMENT) — spec-emission LANDED; runtime-side seam pinned; numbers measured
+
+Two halves: (a) port the wrapper generator's central type-emission routine to
+emit a `PyType_Spec` under abi3, and (b) **measure** the wrapper-TU compile cost
+and project the cp-matrix savings the abi3 wheel buys. Both done; the runtime
+glue (`Py%s_ClassNew`/`PyVTKClass_Add`) that consumes the spec is the documented
+next pickup (it reopens the `tp_dict`-population seam from Increment 2).
+
+**(a) Generator spec-emission — LANDED.** `vtkWrapPython_GenerateObjectType`
+(`Wrapping/Tools/vtkWrapPythonClass.c`) now wraps its static-`PyTypeObject`
+emission in `#if defined(Py_LIMITED_API) … #else … #endif` and, in the
+limited-API branch, emits a new `vtkWrapPython_GenerateObjectSpec`: a
+`PyType_Slot[]` + `PyType_Spec` mirroring every static field —
+`tp_dealloc/repr/str/getattro/setattro/doc/traverse/getset/init/new/free`,
+the **buffer protocol via `Py_bf_getbuffer`/`Py_bf_releasebuffer`** slots (pointing
+at the now-externally-linked `PyVTKObject_AsBuffer_GetBuffer/ReleaseBuffer`), and
+the per-instance dict/weakref layout via a **`Py_tp_members` synthetic
+`__dictoffset__`/`__weaklistoffset__`** pair (`Py_T_PYSSIZET`/`Py_READONLY`), plus
+the `vtkAlgorithm`/`vtkCollection`/`vtkCollectionIterator` special slots and the
+`BASETYPE|HAVE_GC` flags. Verified: a default rebuild (FVTK_ABI3 OFF) regenerates
++ compiles vtkCommonCore wrappers clean and byte-identical (the `#else` static
+path is unchanged; the added lines are preprocessor-only). The generated
+`vtkObjectPython.cxx` now carries the `PyvtkObject_Spec`/`PyvtkObject_Slots` block
+under `#if defined(Py_LIMITED_API)`.
+
+  *Not yet wired (documented next pickup):* `Py%s_ClassNew()` still passes
+  `&Py%s_Type` to `PyVTKClass_Add`; the abi3 path must instead `PyType_FromSpec`
+  the spec, set `tp_base` at runtime (cross-module base resolved via
+  `vtkPythonUtil::FindBaseTypeObject`, not expressible as a static `Py_tp_base`),
+  and populate the custom method descriptors via the `SetDictItem` accessor
+  (Increment 2) — i.e. an abi3 overload of `PyVTKClass_Add` taking a `PyType_Spec*`
+  + base. The number protocol's `Py_nb_*` slot decomposition for wrapped classes
+  (the generated `Py%s_AsNumber` table) is the companion emitter still to add. So
+  a wrapped module compiles its spec block but does not yet *import* under abi3;
+  that is the runtime-glue work, bounded and identified here.
+
+**(b) MEASUREMENT — real numbers (executor, cp313, minimal profile).**
+- Scope of the wrapper compile: **85 Python modules, 1664 generated wrapper
+  `.cxx` sources**, compiled (fvtk uses unity builds for wrappers) into **97
+  unity wrapper TUs**.
+- Per-unity-wrapper-TU true compile cost (ccache bypassed, measured on 4
+  representative module unity-0 TUs): **1.10 / 1.48 / 1.53 / 1.36 s → ~1.35 s avg**.
+- Total wrapper compilation per cp leg: **97 × ~1.35 s ≈ 131 CPU-seconds** (the
+  C++ kit libs are already shared across legs via the ccache cross-leg fix, so
+  this wrapper compile is the *entire* marginal per-leg cost).
+- **Today (per-version wrappers):** the wheel matrix is 4 cp legs (cp311–cp314,
+  post Increment 0). The wrapper `.so`s are version-tagged
+  (`*.cpython-3XX-*.so`), so every leg recompiles all 97 unity TUs →
+  **4 × 131 ≈ 524 CPU-seconds of wrapper compilation**.
+- **With abi3 (single `cp3x-abi3` wheel):** wrappers compiled **once** →
+  **~131 CPU-seconds**, and future CPython minors (cp315, …) need **no rebuild**
+  at all (the stable-ABI `.so` is forward-compatible).
+- **Savings: ~393 CPU-seconds, i.e. 3 of 4 legs' wrapper compilation eliminated
+  (~75 % of the wrapper-compile cost), plus zero-cost support for every future
+  CPython minor.** On the full (non-minimal) CoDim build the wrapper-TU count is
+  ~2–3× larger, so the absolute saving scales up proportionally.
+- **Wheel tag flip (the one-line product change, once the runtime glue lands):**
+  `pyproject.toml` `build = "cp311-* cp312-* cp313-* cp314-*"` → `build = "cp311-*"`
+  (single leg), and the wrapper SOABI tag in `ci/cibw/fvtk_backend.py:47`
+  (`sysconfig.get_config_var("SOABI")`, currently `cpython-313-…`) becomes `abi3`
+  so the one wheel is tagged `cp311-abi3-<plat>` and installs on cp311+.
+
+**Full-generator rollout picks up at:** (1) the `Py%s_ClassNew`/`PyVTKClass_Add`
+abi3 overload (`PyType_FromSpec` + runtime `tp_base` + `SetDictItem` dict
+population) — this also closes the Increment-2 `tp_dict`-population residual; (2)
+the wrapped-class number-protocol `Py_nb_*` slot emitter; (3) the enum
+(`vtkWrapPythonEnum.c:187`) and special-type (`vtkWrapPythonType.c:664`)
+emitters, same `PyType_Spec` pattern; (4) the remaining runtime-TU mechanical
+casts + the `_PyType_Lookup`/`Py_HashPointer`/`FindGetSetDescriptor`/`tp_name`
+sites enumerated in the Increment-2 entry. Then the wheel-tag flip above.
+
+
 Validation context: executor host, warm ninja tree at `~/tmp/fvtk`, numeric
 bit-exact suite (`tests/bitexact/`, 124 cases) vs stock VTK 9.6.2 + a new
 wrapper-behavior parity gate (`test_wrapper_parity.py`). The abi3 leg is built

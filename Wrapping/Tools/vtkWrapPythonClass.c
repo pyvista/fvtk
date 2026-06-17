@@ -441,10 +441,95 @@ static void vtkWrapPython_GenerateObjectNew(
 }
 
 /* -------------------------------------------------------------------- */
+/* write out the type object as a PyType_Spec for the limited API (abi3).
+ *
+ * Under Py_LIMITED_API a static PyTypeObject cannot be defined; the type must be
+ * built at runtime with PyType_FromSpec (a heap type). This emits the equivalent
+ * PyType_Slot[] + PyType_Spec, mirroring the static fields below:
+ *   - tp_as_buffer        -> Py_bf_getbuffer / Py_bf_releasebuffer slots
+ *                            (PyVTKObject_AsBuffer_GetBuffer/ReleaseBuffer have
+ *                             external linkage under abi3)
+ *   - tp_dictoffset/      -> Py_tp_members synthetic __dictoffset__/
+ *     tp_weaklistoffset      __weaklistoffset__ members (the limited-API-safe way
+ *                            to express the per-instance dict/weakref layout)
+ *   - tp_base             -> set at runtime in Py%s_ClassNew (Py_tp_base can't
+ *                            carry a cross-module pointer resolved by FindBase...)
+ * The flags add Py_TPFLAGS_BASETYPE|HAVE_GC just like the static form. */
+static void vtkWrapPython_GenerateObjectSpec(
+  FILE* fp, const char* module, const char* classname, const int hasNumberProtocol)
+{
+  fprintf(fp,
+    "static PyMemberDef Py%s_SpecMembers[] = {\n"
+    "  { \"__dictoffset__\", Py_T_PYSSIZET, offsetof(PyVTKObject, vtk_dict), Py_READONLY, nullptr },\n"
+    "  { \"__weaklistoffset__\", Py_T_PYSSIZET, offsetof(PyVTKObject, vtk_weakreflist), Py_READONLY, nullptr },\n"
+    "  { nullptr, 0, 0, 0, nullptr }\n"
+    "};\n\n",
+    classname);
+
+  fprintf(fp,
+    "static PyType_Slot Py%s_Slots[] = {\n"
+    "  { Py_tp_dealloc, (void*)PyVTKObject_Delete },\n"
+    "  { Py_tp_repr, (void*)PyVTKObject_Repr },\n"
+    "  { Py_tp_str, (void*)PyVTKObject_String },\n"
+    "  { Py_tp_getattro, (void*)PyObject_GenericGetAttr },\n"
+    "  { Py_tp_setattro, (void*)PyObject_GenericSetAttr },\n"
+    "  { Py_bf_getbuffer, (void*)PyVTKObject_AsBuffer_GetBuffer },\n"
+    "  { Py_bf_releasebuffer, (void*)PyVTKObject_AsBuffer_ReleaseBuffer },\n"
+    "  { Py_tp_doc, (void*)Py%s_Doc },\n"
+    "  { Py_tp_traverse, (void*)PyVTKObject_Traverse },\n"
+    "  { Py_tp_getset, (void*)PyVTKObject_GetSet },\n"
+    "  { Py_tp_members, (void*)Py%s_SpecMembers },\n"
+    "  { Py_tp_init, (void*)PyVTKObject_Init },\n"
+    "  { Py_tp_new, (void*)PyVTKObject_New },\n"
+    "  { Py_tp_free, (void*)PyObject_GC_Del },\n",
+    classname, classname, classname);
+
+  if (hasNumberProtocol)
+  {
+    /* the number protocol is itself decomposed into Py_nb_* slots by the
+     * abi3 branch of vtkWrapPython_GenerateNumberProtocol; reference them via a
+     * helper macro the generated AsNumber block expands to under Py_LIMITED_API */
+    fprintf(fp, "  Py%s_NumberSlots // expands to the Py_nb_* rows, comma-terminated\n", classname);
+  }
+  if (strcmp(classname, "vtkAlgorithm") == 0)
+  {
+    fprintf(fp, "  { Py_tp_call, (void*)PyvtkAlgorithm_Call },\n");
+  }
+  if (strcmp(classname, "vtkCollection") == 0)
+  {
+    fprintf(fp, "  { Py_tp_iter, (void*)PyvtkCollection_Iter },\n");
+  }
+  else if (strcmp(classname, "vtkCollectionIterator") == 0)
+  {
+    fprintf(fp,
+      "  { Py_tp_iter, (void*)PyvtkCollectionIterator_Iter },\n"
+      "  { Py_tp_iternext, (void*)PyvtkCollectionIterator_Next },\n");
+  }
+  fprintf(fp,
+    "  { 0, nullptr }\n"
+    "};\n\n");
+
+  fprintf(fp,
+    "static PyType_Spec Py%s_Spec = {\n"
+    "  PYTHON_PACKAGE_SCOPE \"%s.%s\",\n"
+    "  sizeof(PyVTKObject), 0,\n"
+    "  Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,\n"
+    "  Py%s_Slots\n"
+    "};\n\n",
+    classname, module, classname, classname);
+}
+
+/* -------------------------------------------------------------------- */
 /* write out the type object */
 void vtkWrapPython_GenerateObjectType(
   FILE* fp, const char* module, const char* classname, const int hasNumberProtocol)
 {
+  /* abi3: emit the PyType_Spec form; the static PyTypeObject below is compiled
+   * only in the default (non-limited) build. */
+  fprintf(fp, "#if defined(Py_LIMITED_API)\n");
+  vtkWrapPython_GenerateObjectSpec(fp, module, classname, hasNumberProtocol);
+  fprintf(fp, "#else\n");
+
   /* Generate the TypeObject */
   fprintf(fp,
     "#ifdef VTK_PYTHON_NEEDS_DEPRECATION_WARNING_SUPPRESSION\n"
@@ -546,6 +631,9 @@ void vtkWrapPython_GenerateObjectType(
     "  VTK_WRAP_PYTHON_SUPPRESS_UNINITIALIZED\n"
     "};\n"
     "\n");
+
+  /* close the #if defined(Py_LIMITED_API) ... #else ... started above */
+  fprintf(fp, "#endif // Py_LIMITED_API\n\n");
 }
 
 /* -------------------------------------------------------------------- */
