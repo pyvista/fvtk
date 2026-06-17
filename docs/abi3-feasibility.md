@@ -78,6 +78,27 @@ cp313 nix python, floor `0x030b0000`).**
   `fvtk-…-cp311-abi3-<plat>.whl` (filename + WHEEL `Tag:` + RECORD), verified to
   install via pip into a clean venv.
 
+**cp311-floor limited-API gap + fix (CI-caught; the cp313 validation masked it).**
+The first CI run failed compiling the generated wrapper member tables against the
+genuine cp311 limited-API headers: `struct PyMemberDef` and the Py_-prefixed
+member constants (`Py_T_PYSSIZET`/`Py_T_OBJECT_EX`/`Py_READONLY`) only entered the
+headers' limited-API surface in **3.12** (gh-93274), so `<Python.h>` at floor
+`0x030b0000` exposes neither. The cp313-headers executor build defines them
+unconditionally even at floor 3.11, which is why it compiled clean and masked the
+gap. **Fix (keeps the cp311 floor):** `vtkPythonTypeAccess.h`, under a `<3.12`
+limited-API floor, `#include <structmember.h>` — which 3.11 ships (guarded by
+`Py_STRUCTMEMBER_H`) and which provides `struct PyMemberDef` + the legacy
+un-prefixed constants even under the limited API, it is just not auto-included by
+`<Python.h>` — and `#define` the Py_-prefixed spellings onto the un-prefixed
+values. The header's include guard keeps it idempotent so
+`PyVTKMethodDescriptor.cxx`'s own `#include <structmember.h>` does not redefine
+the struct (that collision was the first-cut bug). Inert on 3.12+/non-limited.
+**Verified against REAL cp311 limited-API headers on the executor:** full abi3
+build clean (85 `vtkXxx.abi3.so` incl. `PyVTKMethodDescriptor`), the cp311-built
+module imports on a cp311 venv as heap types, and the numeric bitexact +
+abi3-aware parity gate is **140/140** (maxULP=0 vs stock VTK 9.6.2, only
+`__flags__` diverges). Floor stays `0x030b0000` (cp311) as mandated.
+
 ### Increment 4 (close the residual 3 TUs + full generator/runtime port) — abi3 wheel COMPILES, IMPORTS, and is BIT-EXACT
 
 The three residual TUs (`vtkPythonUtil.cxx`, `PyVTKObject.cxx`,
