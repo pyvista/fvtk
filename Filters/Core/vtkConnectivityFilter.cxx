@@ -452,9 +452,11 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
     {
       if (this->Visited[cellId] == largestRegionId)
       {
+        // Hoist the cell-type read (fetched virtually up to 3x per cell), matching
+        // the sibling extraction branches above. Identical value, no FP.
+        const int cellType = input->GetCellType(cellId);
         // special handling for polyhedron cells
-        if (vtkUnstructuredGrid::SafeDownCast(input) &&
-          input->GetCellType(cellId) == VTK_POLYHEDRON)
+        if (cellType == VTK_POLYHEDRON && vtkUnstructuredGrid::SafeDownCast(input))
         {
           vtkUnstructuredGrid::SafeDownCast(input)->GetFaceStream(cellId, this->PointIds);
           vtkUnstructuredGrid::ConvertFaceStreamPointIds(this->PointIds, this->PointMap);
@@ -471,11 +473,11 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
         vtkIdType newCellId = -1;
         if (pdOutput)
         {
-          newCellId = pdOutput->InsertNextCell(input->GetCellType(cellId), this->PointIds);
+          newCellId = pdOutput->InsertNextCell(cellType, this->PointIds);
         }
         else if (ugOutput)
         {
-          newCellId = ugOutput->InsertNextCell(input->GetCellType(cellId), this->PointIds);
+          newCellId = ugOutput->InsertNextCell(cellType, this->PointIds);
         }
         if (newCellId >= 0)
         {

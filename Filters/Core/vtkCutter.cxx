@@ -539,6 +539,13 @@ void vtkCutter::DataSetCutter(vtkDataSet* input, vtkPolyData* output)
   cell = vtkGenericCell::New();
   vtkContourHelper helper(this->Locator, newVerts, newLines, newPolys, inPD, inCD, outPD, outCD,
     estimatedSize, this->GenerateTriangles != 0);
+  // cutScalars and cellScalars are concrete single-component vtkDoubleArrays
+  // created above; cutScalars is fully populated by the FunctionValue loop and
+  // never modified by the cell loops below. Devirtualize the per-cell-point
+  // scalar gather (matching the already-direct-pointer UnstructuredGridCutter
+  // path): a raw double load/store is byte-for-byte identical to the virtual
+  // GetComponent(id,0)/SetTuple(i,&s) pair (no arithmetic, no reassociation).
+  const double* const cutScalarsPtr = cutScalars->GetPointer(0);
   if (this->SortBy == VTK_SORT_BY_CELL)
   {
     vtkIdType numCuts = numContours * numCells;
@@ -571,10 +578,10 @@ void vtkCutter::DataSetCutter(vtkDataSet* input, vtkPolyData* output)
 
         vtkIdType numCellPts = cellPts->GetNumberOfPoints();
         cellScalars->SetNumberOfTuples(numCellPts);
+        double* const cellScalarsPtr = cellScalars->GetPointer(0);
         for (vtkIdType i = 0; i < numCellPts; ++i)
         {
-          double s = cutScalars->GetComponent(cellIds->GetId(i), 0);
-          cellScalars->SetTuple(i, &s);
+          cellScalarsPtr[i] = cutScalarsPtr[cellIds->GetId(i)];
         }
 
         value = this->ContourValues->GetValue(iter);
@@ -631,10 +638,10 @@ void vtkCutter::DataSetCutter(vtkDataSet* input, vtkPolyData* output)
 
         vtkIdType numCellPts = cellPts->GetNumberOfPoints();
         cellScalars->SetNumberOfTuples(numCellPts);
+        double* const cellScalarsPtr = cellScalars->GetPointer(0);
         for (vtkIdType i = 0; i < numCellPts; i++)
         {
-          double s = cutScalars->GetComponent(cellIds->GetId(i), 0);
-          cellScalars->SetTuple(i, &s);
+          cellScalarsPtr[i] = cutScalarsPtr[cellIds->GetId(i)];
         }
 
         // Loop over all contour values.

@@ -645,6 +645,19 @@ def op_connectivity(dtype, size):
     return c.GetOutput()
 
 
+def op_connectivity_largest(dtype, size):
+    # vtkConnectivityFilter in the default ExtractLargestRegion mode over a hex
+    # UG -> the "extract largest region" output branch, whose per-cell
+    # GetCellType is hoisted (read once, reused for the polyhedron test and the
+    # InsertNextCell emit). Single connected grid => the whole grid is the
+    # largest region, so every cell flows through the hoisted branch.
+    c = vtkConnectivityFilter()
+    c.SetInputData(make_hex_ugrid(size, dtype))
+    c.SetExtractionModeToLargestRegion()
+    c.Update()
+    return c.GetOutput()
+
+
 def op_featureedges(dtype, size):
     f = vtkFeatureEdges()
     f.SetInputData(make_sphere(size, size))
@@ -963,6 +976,44 @@ def op_cutter(dtype, size):
     return cut.GetOutput()
 
 
+def op_cutter_polydata(dtype, size):
+    # vtkCutter on a vtkPolyData (triangle sphere) with GenerateTriangles OFF.
+    # A polydata input that is NOT eligible for the plane-cutter fast path routes
+    # to vtkCutter::DataSetCutter, whose per-cell-point scalar gather
+    # (cutScalars/cellScalars are concrete single-component vtkDoubleArrays) is
+    # the devirtualized raw-pointer load/store. The default SortBy is
+    # SORT_BY_VALUE -> exercises the second gather loop.
+    p = vtkPlane()
+    p.SetOrigin(0.0, 0.0, 0.0)
+    p.SetNormal(1, 1, 1)
+    cut = vtkCutter()
+    cut.SetInputData(make_sphere(size, size))
+    cut.SetCutFunction(p)
+    cut.GenerateTrianglesOff()
+    cut.SetValue(0, 0.0)
+    cut.SetValue(1, 0.25)
+    cut.Update()
+    return cut.GetOutput()
+
+
+def op_cutter_polydata_bycell(dtype, size):
+    # Same vtkCutter::DataSetCutter path as op_cutter_polydata, but with
+    # SortByToSortByCell, which exercises the FIRST per-cell-point scalar gather
+    # loop (the SORT_BY_CELL branch) — the other devirtualized raw-pointer copy.
+    p = vtkPlane()
+    p.SetOrigin(0.0, 0.0, 0.0)
+    p.SetNormal(1, 0, 1)
+    cut = vtkCutter()
+    cut.SetInputData(make_sphere(size, size))
+    cut.SetCutFunction(p)
+    cut.GenerateTrianglesOff()
+    cut.SetSortByToSortByCell()
+    cut.SetValue(0, 0.0)
+    cut.SetValue(1, 0.25)
+    cut.Update()
+    return cut.GetOutput()
+
+
 # ---- vtkCommon operations (explicitly requested) ----
 def op_common_dataarray(dtype, size):
     """vtkDataArray / vtkAOSDataArrayTemplate round-trip + tuple/component ops."""
@@ -1235,6 +1286,7 @@ OPS = {
     "geometry": dict(fn=op_geometry, group="filter", dtypes=["float64"], sizes=[18, 28]),
     "shrink": dict(fn=op_shrink, group="filter", dtypes=["float64"], sizes=[16, 24]),
     "connectivity": dict(fn=op_connectivity, group="filter", dtypes=["float64"], sizes=[16, 24]),
+    "connectivity_largest": dict(fn=op_connectivity_largest, group="filter", dtypes=["float64"], sizes=[8, 12]),
     "featureedges": dict(fn=op_featureedges, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "stripper": dict(fn=op_stripper, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "vertexglyph": dict(fn=op_vertexglyph, group="filter", dtypes=["float64"], sizes=[24, 40]),
@@ -1244,6 +1296,8 @@ OPS = {
     "tube": dict(fn=op_tube, group="filter", dtypes=["float32", "float64"], sizes=[16, 32]),
     "gradient": dict(fn=op_gradient, group="filter", dtypes=["float32", "float64"], sizes=[16, 24]),
     "cutter": dict(fn=op_cutter, group="filter", dtypes=["float64"], sizes=[8, 12]),
+    "cutter_polydata": dict(fn=op_cutter_polydata, group="filter", dtypes=["float64"], sizes=[12, 20]),
+    "cutter_polydata_bycell": dict(fn=op_cutter_polydata_bycell, group="filter", dtypes=["float64"], sizes=[12, 20]),
     "cellcenters": dict(fn=op_cellcenters, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "clip_tets": dict(fn=op_clip_tets, group="filter", dtypes=["float32", "float64"], sizes=[6, 10]),
     "contour_hexug": dict(fn=op_contour_hexug, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
