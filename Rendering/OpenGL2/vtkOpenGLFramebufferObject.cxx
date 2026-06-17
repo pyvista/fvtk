@@ -561,8 +561,9 @@ bool vtkOpenGLFramebufferObject::Start(int width, int height)
 void vtkOpenGLFramebufferObject::ActivateBuffers()
 {
   GLint maxbuffers;
-  // todo move to cache
-  glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
+  // GL_MAX_DRAW_BUFFERS is a per-context constant; serve it from the cached
+  // value in vtkOpenGLState instead of issuing a glGetIntegerv round-trip.
+  this->Context->GetState()->vtkglGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
 
   GLenum* buffers = new GLenum[maxbuffers];
   GLint count = 0;
@@ -594,7 +595,8 @@ void vtkOpenGLFramebufferObject::ActivateReadBuffer(unsigned int colorAtt)
 void vtkOpenGLFramebufferObject::ActivateDrawBuffers(unsigned int num)
 {
   GLint maxbuffers;
-  glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
+  // GL_MAX_DRAW_BUFFERS is a per-context constant; serve it from cache.
+  this->Context->GetState()->vtkglGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
 
   GLenum* buffers = new GLenum[maxbuffers];
   GLint count = 0;
@@ -628,7 +630,8 @@ unsigned int vtkOpenGLFramebufferObject::GetActiveDrawBuffer(unsigned int id)
 void vtkOpenGLFramebufferObject::ActivateDrawBuffers(unsigned int* ids, int num)
 {
   GLint maxbuffers;
-  glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
+  // GL_MAX_DRAW_BUFFERS is a per-context constant; serve it from cache.
+  this->Context->GetState()->vtkglGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
 
   GLenum* buffers = new GLenum[maxbuffers];
   GLint count = 0;
@@ -819,7 +822,7 @@ unsigned int vtkOpenGLFramebufferObject::GetMaximumNumberOfActiveTargets()
   if (this->Context)
   {
     GLint maxbuffers;
-    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
+    this->Context->GetState()->vtkglGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxbuffers);
     result = static_cast<unsigned int>(maxbuffers);
   }
   return result;
@@ -832,7 +835,7 @@ unsigned int vtkOpenGLFramebufferObject::GetMaximumNumberOfRenderTargets()
   if (this->Context)
   {
     GLint maxColorAttachments;
-    glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &maxColorAttachments);
+    this->Context->GetState()->vtkglGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &maxColorAttachments);
     result = static_cast<unsigned int>(maxColorAttachments);
   }
   return result;

@@ -1208,6 +1208,12 @@ void vtkOpenGLState::vtkglGetIntegerv(GLenum pname, GLint* params)
     case GL_MAX_TEXTURE_SIZE:
       *params = this->MaxTextureSize;
       break;
+    case GL_MAX_DRAW_BUFFERS:
+      *params = this->MaxDrawBuffers;
+      break;
+    case GL_MAX_COLOR_ATTACHMENTS:
+      *params = this->MaxColorAttachments;
+      break;
     case GL_MAJOR_VERSION:
       *params = this->MajorVersion;
       break;
@@ -1602,6 +1608,8 @@ void vtkOpenGLState::Initialize(vtkOpenGLRenderWindow*)
   ::glGetIntegerv(GL_MAX_TESS_GEN_LEVEL, &this->MaxTessellationLevel);
 #endif
   ::glGetIntegerv(GL_MAX_TEXTURE_SIZE, &this->MaxTextureSize);
+  ::glGetIntegerv(GL_MAX_DRAW_BUFFERS, &this->MaxDrawBuffers);
+  ::glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &this->MaxColorAttachments);
   ::glGetIntegerv(GL_MAJOR_VERSION, &this->MajorVersion);
   ::glGetIntegerv(GL_MINOR_VERSION, &this->MinorVersion);
   char const* tmp = reinterpret_cast<const char*>(::glGetString(GL_VENDOR));
@@ -1896,6 +1904,8 @@ vtkOpenGLState::vtkOpenGLState()
   , MinorVersion(-1)
   , MaxTessellationLevel(-1)
   , MaxTextureSize(-1)
+  , MaxDrawBuffers(-1)
+  , MaxColorAttachments(-1)
 {
   this->ShaderCache = vtkOpenGLShaderCache::New();
   this->VBOCache = vtkOpenGLVertexBufferObjectCache::New();
