@@ -25,6 +25,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // for uintptr_t
@@ -65,7 +66,7 @@ public:
 // of the vtk/python garbage collection system, because it contains
 // exactly one pointer reference for each VTK object known to python)
 class vtkPythonObjectMap
-  : public std::map<vtkObjectBase*, std::pair<PyObject*, std::atomic<int32_t>>>
+  : public std::unordered_map<vtkObjectBase*, std::pair<PyObject*, std::atomic<int32_t>>>
 {
 public:
   ~vtkPythonObjectMap();
@@ -130,12 +131,12 @@ void vtkPythonObjectMap::remove(vtkObjectBase* key)
 // VTK objects come back, their 'dict' can be restored to them.
 // Periodically the weak pointers are checked and the dicts of
 // VTK objects that have been deleted are tossed away.
-class vtkPythonGhostMap : public std::map<vtkObjectBase*, PyVTKObjectGhost>
+class vtkPythonGhostMap : public std::unordered_map<vtkObjectBase*, PyVTKObjectGhost>
 {
 };
 
 // Keep track of all the VTK classes that python knows about.
-class vtkPythonClassMap : public std::map<std::string, PyVTKClass>
+class vtkPythonClassMap : public std::unordered_map<std::string, PyVTKClass>
 {
 };
 
@@ -143,12 +144,12 @@ class vtkPythonClassMap : public std::map<std::string, PyVTKClass>
 // These differ only for templated classes derived from vtkObjectBase,
 // where GetClassName() returns typeid(T).name() which in general is
 // not a valid Python name.
-class vtkPythonClassNameMap : public std::map<std::string, std::string>
+class vtkPythonClassNameMap : public std::unordered_map<std::string, std::string>
 {
 };
 
 // Like the ClassMap, for types not derived from vtkObjectBase.
-class vtkPythonSpecialTypeMap : public std::map<std::string, PyVTKSpecialType>
+class vtkPythonSpecialTypeMap : public std::unordered_map<std::string, PyVTKSpecialType>
 {
 };
 
@@ -614,8 +615,16 @@ PyVTKClass* vtkPythonUtil::FindNearestBaseClass(vtkObjectBase* ptr)
         base = base->tp_base;
 #endif
       }
-      // we want the class that is furthest from vtkObjectBase
-      if (depth > maxdepth)
+      // we want the class that is furthest from vtkObjectBase.
+      // The ClassMap is an unordered_map, so iteration order is not
+      // deterministic; on a depth tie, break it deterministically by
+      // preferring the lexicographically smaller class name. This
+      // reproduces the result the previous std::map (ordered by class
+      // name) would have selected, keeping the chosen Python type stable
+      // regardless of container iteration order.
+      if (depth > maxdepth ||
+        (depth == maxdepth && nearestbase != nullptr &&
+          strcmp(pyclass->vtk_name, nearestbase->vtk_name) < 0))
       {
         maxdepth = depth;
         nearestbase = pyclass;
