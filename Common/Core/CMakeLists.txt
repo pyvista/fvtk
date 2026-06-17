@@ -206,20 +206,28 @@ include(vtkTypeLists)
 #
 # Stock VTK concatenates ~17 template-instantiation sources (AOS/SOA/implicit
 # backends, etc.) per numeric type into ONE vtkArrayBulkInstantiate_<type>.cxx
-# via #include. At -O3 each of those 14 bulk TUs is a ~140s monster, and because
-# there are only 14 of them they serialize badly on a CI runner (the build's
-# critical path / long tail). The concatenation was a process-spawn optimization;
-# at -O3 the per-TU compile cost dwarfs spawn cost, so bundling only hurts.
+# via #include (14 such bulk TUs). FVTK_SPLIT_BULK_INSTANTIATE=ON instead compiles
+# the ~312 component .cxx DIRECTLY, turning 14 large TUs into many small ones. It
+# is byte-for-byte identical OBJECT CODE (same explicit instantiations + flags,
+# just emitted into separate .o) -> ABI- and bit-exact-neutral; it only changes
+# build scheduling.
 #
-# FVTK_SPLIT_BULK_INSTANTIATE=ON compiles the ~225 component .cxx (which already
-# exist on disk — the bulk file merely #includes them) DIRECTLY, turning 14 huge
-# TUs into ~225 small ones that fill all cores evenly. This is byte-for-byte
-# identical OBJECT CODE (same explicit instantiations, same flags, just emitted
-# into separate .o instead of one) -> ABI- and bit-exact-neutral; it only changes
-# build scheduling. OFF restores the stock single-bulk-TU-per-type layout.
+# DEFAULT OFF — MEASURED net-NEGATIVE at the build-time level that matters.
+# Each split component TU independently re-parses the heavy array template
+# headers (vtkDataArrayPrivate.txx + all the AOS/SOA/implicit backend templates)
+# that the bulk TU parsed ONCE per type, so the front-end/template cost is paid
+# ~17x more. That extra total work is not recovered by better load-balancing.
+# Measured (CommonCore array-instantiation TUs only, manylinux2014 GCC 10.2.1):
+#     -j4 : bulk 248 s  vs  split 340 s   (split +37% SLOWER)
+#     -j16: bulk  67 s  vs  split  90 s   (split +34% SLOWER)
+# Both the 4-core CI target and a 16-core box favor BULK. (An earlier claim of
+# "361->161 s, -55%" did not reproduce.) Kept as an opt-in for the unusual case
+# of a very-high-core machine where the bulk path's 14-TU width is the ceiling;
+# FVTK_SPLIT_BULK_INSTANTIATE=ON re-enables it (and builds clean on GCC < 11 via
+# the VTK_DEPRECATION_LEVEL=0 fix on the split TUs below).
 option(FVTK_SPLIT_BULK_INSTANTIATE
-  "fvtk: compile per-type array instantiations as many small TUs (parallelism) instead of one bulk TU"
-  ON)
+  "fvtk: compile per-type array instantiations as many small TUs instead of one bulk TU (measured slower at <=16 cores; default OFF)"
+  OFF)
 
 if (NOT FVTK_SPLIT_BULK_INSTANTIATE)
   foreach (type IN LISTS vtk_numeric_types)
