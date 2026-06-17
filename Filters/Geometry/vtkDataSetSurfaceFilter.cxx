@@ -1465,11 +1465,37 @@ int vtkDataSetSurfaceFilter::UnstructuredGridExecuteInternal(
   vtkUnstructuredGrid* ugConcrete = vtkUnstructuredGrid::SafeDownCast(input);
   vtkUnsignedCharArray* ugCellTypes = ugConcrete ? ugConcrete->GetCellTypesArray() : nullptr;
   vtkCellArray* ugConn = ugConcrete ? ugConcrete->GetCells() : nullptr;
+  // For the dominant Int64-AOS cell-array storage (vtkCellArray's default), hoist
+  // the type-dispatch out of the per-cell loop: cache raw typed offset/conn
+  // pointers once and read each cell inline below, instead of calling the out-of-
+  // line, cross-shared-library vtkCellArray::GetCellAtId (which also re-runs its
+  // StorageType switch) once per cell. The values read are byte-identical to
+  // GetCellAtId's zero-copy (CanShareConnPtr) path; no FP. nullptr => GetCellAtId.
+  const vtkTypeInt64* ugConn64Offsets = nullptr;
+  const vtkTypeInt64* ugConn64Conn = nullptr;
+  if (ugConn && ugConn->GetStorageType() == vtkCellArray::StorageTypes::Int64)
+  {
+    if (auto* offs = ugConn->GetOffsetsArray64())
+    {
+      if (auto* cn = ugConn->GetConnectivityArray64())
+      {
+        ugConn64Offsets = offs->GetPointer(0);
+        ugConn64Conn = cn->GetPointer(0);
+      }
+    }
+  }
   auto getCellTypeFast = [&](vtkIdType cid) -> int {
     return ugCellTypes ? static_cast<int>(ugCellTypes->GetValue(cid)) : input->GetCellType(cid);
   };
   auto getCellPointsFast = [&](vtkIdType cid, vtkIdType& n, const vtkIdType*& p) {
-    if (ugConn)
+    if (ugConn64Conn)
+    {
+      // Inline zero-copy Int64-AOS GetCellAtId fast path.
+      const vtkTypeInt64 begin = ugConn64Offsets[cid];
+      n = static_cast<vtkIdType>(ugConn64Offsets[cid + 1] - begin);
+      p = reinterpret_cast<const vtkIdType*>(ugConn64Conn + begin);
+    }
+    else if (ugConn)
     {
       ugConn->GetCellAtId(cid, n, p, pointIdList);
     }
