@@ -605,7 +605,6 @@ set(private_headers
 
 set(templates
   vtkArrayIteratorTemplateImplicit.txx
-  vtkThreadedCallbackQueue.txx
   ${vtk_smp_templates})
 
 set(private_templates

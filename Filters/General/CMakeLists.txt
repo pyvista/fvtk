@@ -137,8 +137,7 @@ set(classes
   vtkWarpVector
   vtkYoungsMaterialInterface)
 
-set(templates
-  vtkJoinTables.txx)
+set(templates)
 
 set(no_wrap_classes
   vtkReflectionUtilities)
