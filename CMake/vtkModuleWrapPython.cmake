@@ -689,6 +689,17 @@ extern PyObject* PyInit_${_vtk_python_library_name}();
     PRIVATE
       "-DPYTHON_PACKAGE=\"${_vtk_python_PYTHON_PACKAGE}\"")
 
+  # fvtk: Python stable-ABI (abi3) — EXPERIMENTAL. See fvtk-config/minimal.cmake
+  # and docs/abi3-feasibility.md. Compiles the generated wrapper TUs against the
+  # CPython limited API so a single cp3x-abi3 wheel can serve all newer CPython.
+  # The stock wrapper runtime is not limited-API clean yet, so this currently
+  # exists to surface the porting worklist via the resulting compile errors.
+  if (FVTK_ABI3)
+    target_compile_definitions("${name}"
+      PRIVATE
+        "Py_LIMITED_API=${FVTK_ABI3_VERSION}")
+  endif ()
+
   target_link_libraries("${name}"
     PRIVATE
       ${ARGN}

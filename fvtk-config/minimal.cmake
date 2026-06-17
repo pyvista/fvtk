@@ -26,6 +26,24 @@ include("${CMAKE_CURRENT_LIST_DIR}/_nocompile_classes.cmake")
 set(FVTK_WRAP_UNITY ON CACHE BOOL "fvtk: batch Python wrappers into unity TUs")
 set(FVTK_WRAP_UNITY_CHUNK 32 CACHE STRING "fvtk: wrappers per unity TU")
 
+# --- Lever: Python stable-ABI (abi3 / Py_LIMITED_API) — EXPERIMENTAL ----------
+# When ON, the Python wrapper TUs (generated *Python.cxx + WrappingPythonCore)
+# are compiled with Py_LIMITED_API set to FVTK_ABI3_VERSION so that ONE wheel
+# (cp3x-abi3) is import-compatible across all CPython >= that version, instead
+# of the current per-minor cp39..cp313 matrix.
+#
+# STATUS: the stock VTK wrapper runtime is NOT limited-API clean (it defines
+# static PyTypeObject instances and pokes tp_* fields directly; under
+# Py_LIMITED_API PyTypeObject is an OPAQUE type, so those TUs fail to compile).
+# Turning this ON is therefore a *diagnostic* lever for now: it drives the
+# compile so the concrete blocker errors can be collected as the porting
+# worklist. See docs/abi3-feasibility.md. Do NOT expect a working wheel yet.
+option(FVTK_ABI3 "fvtk: compile Python wrappers against the CPython stable ABI (Py_LIMITED_API). EXPERIMENTAL — see docs/abi3-feasibility.md" OFF)
+# 0x030d0000 == CPython 3.13. The limited-API floor; the resulting abi3 wheel
+# would be tagged cp313-abi3 and load on 3.13+. Lower it (e.g. 0x03090000 for
+# 3.9) only after the runtime is actually ported.
+set(FVTK_ABI3_VERSION "0x030d0000" CACHE STRING "fvtk: Py_LIMITED_API value when FVTK_ABI3 is ON (0x030d0000 = CPython 3.13)")
+
 # --- build hygiene -----------------------------------------------------------
 set(CMAKE_BUILD_TYPE "Release" CACHE STRING "")
 set(VTK_BUILD_TESTING OFF CACHE BOOL "")
