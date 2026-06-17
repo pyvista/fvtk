@@ -11,6 +11,7 @@
 #include "vtkObjectFactory.h"
 #include "vtkPointData.h"
 #include "vtkStructuredGrid.h"
+#include "vtkStructuredPointArray.h"
 
 #include "vtkNew.h"
 
@@ -66,15 +67,24 @@ int vtkImageDataToPointSet::RequestData(vtkInformation* vtkNotUsed(request),
   vtkNew<vtkPoints> points;
   points->SetDataTypeToDouble();
   points->SetNumberOfPoints(nbPoints);
+  // The output point array is a contiguous double[3] buffer and the input image's
+  // coordinates come from an implicit vtkStructuredPointArray<double> backend.
+  // Hoist the backend cast out of the loop (vtkImageData::GetPoint re-fetches and
+  // re-casts it on every call) and write each coordinate straight into the output
+  // buffer at its fixed index 3*i via the same GetTypedTuple() the virtual GetPoint
+  // dispatches to. Same math, same values, same fixed indices, same serial order.
+  // The abort check is batched to every 4096 points (CheckAbort only sets the abort
+  // flag; it never affects output values or order) instead of paying a virtual call
+  // per point.
+  auto* inPoints = static_cast<vtkStructuredPointArray<double>*>(inData->GetPoints()->GetData());
+  auto* outPtr = static_cast<double*>(points->GetVoidPointer(0));
   for (vtkIdType i = 0; i < nbPoints; i++)
   {
-    if (this->CheckAbort())
+    if ((i % 4096 == 0) && this->CheckAbort())
     {
       break;
     }
-    double p[3];
-    inData->GetPoint(i, p);
-    points->SetPoint(i, p);
+    inPoints->GetTypedTuple(i, outPtr + 3 * i);
   }
   outData->SetPoints(points);
 
