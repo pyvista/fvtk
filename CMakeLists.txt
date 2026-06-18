@@ -477,21 +477,21 @@ endif ()
 
 include(vtkModule)
 include(vtkModuleDebugging)
+# fvtk: Accelerators, Geovis, GUISupport, and Serialization were physically
+# removed from this Python-only wheel fork (never in the minimal closure).
+# vtk_module_find_modules silently ignores a missing directory, so their stale
+# entries here were inert -- dropped to keep the source-dir list truthful.
 set(vtk_source_directories
-  "${CMAKE_CURRENT_SOURCE_DIR}/Accelerators"
   "${CMAKE_CURRENT_SOURCE_DIR}/Charts"
   "${CMAKE_CURRENT_SOURCE_DIR}/Common"
   "${CMAKE_CURRENT_SOURCE_DIR}/Domains"
   "${CMAKE_CURRENT_SOURCE_DIR}/Filters"
-  "${CMAKE_CURRENT_SOURCE_DIR}/Geovis"
-  "${CMAKE_CURRENT_SOURCE_DIR}/GUISupport"
   "${CMAKE_CURRENT_SOURCE_DIR}/Imaging"
   "${CMAKE_CURRENT_SOURCE_DIR}/Infovis"
   "${CMAKE_CURRENT_SOURCE_DIR}/Interaction"
   "${CMAKE_CURRENT_SOURCE_DIR}/IO"
   "${CMAKE_CURRENT_SOURCE_DIR}/Parallel"
   "${CMAKE_CURRENT_SOURCE_DIR}/Rendering"
-  "${CMAKE_CURRENT_SOURCE_DIR}/Serialization"
   "${CMAKE_CURRENT_SOURCE_DIR}/Testing"
   "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty"
   "${CMAKE_CURRENT_SOURCE_DIR}/Utilities"
