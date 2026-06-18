@@ -77,6 +77,7 @@ try:
         vtkThreshold,
         vtkTriangleFilter,
         vtkAppendFilter,
+        vtkAppendPolyData,
         vtkCleanPolyData,
         vtkConnectivityFilter,
         vtkContourGrid,
@@ -888,6 +889,201 @@ def op_append(dtype, size):
     return a.GetOutput()
 
 
+def _ugrid_with_data(maker, n, dtype, pd_name, cd_base, dtype_cd=np.float64):
+    """Take a UG builder, attach a deterministic per-POINT scalar named `pd_name`
+    and a deterministic per-CELL scalar 'cs' (values cd_base + cellId) so the
+    append's point-data / cell-data CopyData paths copy non-trivial, per-input
+    distinguishable values. Order/offset bugs would scramble these."""
+    ug = maker(n, dtype)
+    npts = ug.GetNumberOfPoints()
+    ncells = ug.GetNumberOfCells()
+    pa = numpy_to_vtk(
+        np.ascontiguousarray((np.arange(npts, dtype=np.int64) % 17).astype(dtype)),
+        deep=1,
+    )
+    pa.SetName(pd_name)
+    ug.GetPointData().AddArray(pa)
+    ca = numpy_to_vtk(
+        np.ascontiguousarray(
+            (cd_base + np.arange(ncells, dtype=np.int64)).astype(dtype_cd)
+        ),
+        deep=1,
+    )
+    ca.SetName("cs")
+    ug.GetCellData().AddArray(ca)
+    return ug
+
+
+def op_append_ugrid_mixed(dtype, size):
+    """vtkAppendFilter over UNSTRUCTURED-GRID inputs of DIFFERENT cell types
+    (hexahedra + wedge/pyramid), NO point merge. Drives the vtkUnstructuredGrid
+    fast branch of RequestData (typed vtkCellArray bulk append via AppendCellArray
+    + per-input cellConnectivityOffset/pointOffset) for two distinct cell-type
+    topologies concatenated in order, plus the AppendArrays/FieldList.CopyData
+    point+cell-data copy into presized output arrays.
+
+    Bit-exact load: the output points, connectivity, offsets, celltypes and the
+    'cs' cell scalar (= input-index-dependent base + cellId) must appear in input
+    order with the correct per-input point-id offset. A wrong offset or a scrambled
+    input order changes connectivity / cell-data bytes -> divergence. Both inputs
+    carry a SHARED point scalar 'p' and cell scalar 'cs' (intersected field list),
+    so every array is copied; the hex input additionally carries a 'hexonly' array
+    that the wedge input lacks, exercising the field-intersection drop (it must NOT
+    appear in the output)."""
+    a = vtkAppendFilter()
+    hexug = _ugrid_with_data(make_hex_ugrid, max(4, size), dtype, "p", 100)
+    # extra array present on ONLY the first input -> must be intersected away.
+    nptsh = hexug.GetNumberOfPoints()
+    extra = numpy_to_vtk(
+        np.ascontiguousarray((np.arange(nptsh, dtype=np.int64) % 5).astype(dtype)),
+        deep=1,
+    )
+    extra.SetName("hexonly")
+    hexug.GetPointData().AddArray(extra)
+    wp = _ugrid_with_data(make_wedge_pyramid_ugrid, max(2, size // 4), dtype, "p", 500)
+    a.AddInputData(hexug)
+    a.AddInputData(wp)
+    a.MergePointsOff()
+    a.Update()
+    return a.GetOutput()
+
+
+def op_append_mixed_types(dtype, size):
+    """vtkAppendFilter mixing a vtkUnstructuredGrid input AND a vtkPolyData input,
+    NO merge. The UG drives the fast UG branch; the polydata drives the vtkPolyData
+    branch (verts/lines/polys typed appends with per-array cell/connectivity offset
+    bookkeeping). Both carry a shared point scalar 'p' and cell scalar 'cs'.
+
+    This is the cross-branch order/offset test: output cells are [all UG cells,
+    then all polydata cells]; the polydata's point ids must be offset by the UG
+    point count. Any mismatch in branch ordering, cumulative offsets, or the
+    cell-data concatenation order shows up as a connectivity / 'cs' byte diff."""
+    a = vtkAppendFilter()
+    hexug = _ugrid_with_data(make_hex_ugrid, max(4, size), dtype, "p", 0)
+    pd = make_polylines(nlines=4, length=max(4, size // 2), dtype=dtype)
+    # rename the polydata point scalar to the shared name 'p' so it intersects with
+    # the UG's 'p'; add a matching per-cell 'cs' scalar.
+    pd.GetPointData().GetScalars().SetName("p")
+    nc = pd.GetNumberOfCells()
+    ca = numpy_to_vtk(
+        np.ascontiguousarray((9000 + np.arange(nc, dtype=np.int64)).astype(np.float64)),
+        deep=1,
+    )
+    ca.SetName("cs")
+    pd.GetCellData().AddArray(ca)
+    a.AddInputData(hexug)
+    a.AddInputData(pd)
+    a.MergePointsOff()
+    a.Update()
+    return a.GetOutput()
+
+
+def _polydata_vlp_with_data(seed, npts, dtype, scalar_name="p"):
+    """A vtkPolyData carrying ALL of verts, lines and polys, plus a per-POINT
+    scalar (name `scalar_name`) and a per-CELL scalar 'cs'. `seed` shifts the
+    coordinates and the scalar values so distinct inputs are distinguishable in
+    the appended output. Deterministic integer algebra only (no trig)."""
+    idx = np.arange(npts, dtype=np.int64)
+    coords = np.empty((npts, 3), dtype=dtype)
+    coords[:, 0] = ((idx + seed) % 7).astype(dtype)
+    coords[:, 1] = ((idx * 2 + seed) % 5).astype(dtype)
+    coords[:, 2] = (idx % 3).astype(dtype)
+    pd = vtkPolyData()
+    vp = vtkPoints()
+    vp.SetData(numpy_to_vtk(np.ascontiguousarray(coords), deep=1))
+    pd.SetPoints(vp)
+
+    verts = vtkCellArray()
+    verts.InsertNextCell(1)
+    verts.InsertCellPoint(0)
+    verts.InsertNextCell(1)
+    verts.InsertCellPoint(npts - 1)
+    pd.SetVerts(verts)
+
+    lines = vtkCellArray()
+    lines.InsertNextCell(3)
+    for k in (0, 1, 2):
+        lines.InsertCellPoint(k % npts)
+    pd.SetLines(lines)
+
+    polys = vtkCellArray()
+    polys.InsertNextCell(3)
+    for k in (1, 2, 3):
+        polys.InsertCellPoint(k % npts)
+    polys.InsertNextCell(4)
+    for k in (0, 2, 3, 4):
+        polys.InsertCellPoint(k % npts)
+    pd.SetPolys(polys)
+
+    pa = numpy_to_vtk(
+        np.ascontiguousarray(((idx + 100 * seed) % 23).astype(dtype)), deep=1
+    )
+    pa.SetName(scalar_name)
+    pd.GetPointData().AddArray(pa)
+
+    ncells = pd.GetNumberOfCells()
+    ca = numpy_to_vtk(
+        np.ascontiguousarray(
+            (1000 * seed + np.arange(ncells, dtype=np.int64)).astype(np.float64)
+        ),
+        deep=1,
+    )
+    ca.SetName("cs")
+    pd.GetCellData().AddArray(ca)
+    return pd
+
+
+def op_append_polydata(dtype, size):
+    """vtkAppendPolyData over multiple vtkPolyData inputs, each carrying verts +
+    lines + polys and a point scalar 'p' + cell scalar 'cs'. Exercises
+    vtkAppendPolyData::ExecuteAppend (Filters/Core/vtkAppendPolyData.cxx): the
+    presized point copy (InsertTuples into SetNumberOfPoints storage), the four
+    per-target typed cell-array appends (AppendCellArray with per-input
+    point/connectivity offsets), and the cell-data CopyData whose output offsets
+    are the GROUPED order verts|lines|polys|strips across all inputs.
+
+    Bit-exact load: the canonical vtkPolyData cell order is ALL verts, then ALL
+    lines, then ALL polys, then ALL strips, concatenated across inputs within each
+    group. The 'cs' cell scalar is copied with exactly that grouped, per-input
+    offset layout (outVertOffset / outLineOffset+totalVerts / ...). A scrambled
+    group order, a wrong per-input offset, or a wrong point-id offset on the
+    connectivity all produce byte differences in conn/off/'cs'. Three inputs of
+    different sizes make the cumulative offsets non-degenerate."""
+    a = vtkAppendPolyData()
+    a.AddInputData(_polydata_vlp_with_data(1, max(6, size), dtype))
+    a.AddInputData(_polydata_vlp_with_data(2, max(6, size + 3), dtype))
+    a.AddInputData(_polydata_vlp_with_data(3, max(6, size + 5), dtype))
+    a.Update()
+    return a.GetOutput()
+
+
+def op_append_polydata_partial(dtype, size):
+    """vtkAppendPolyData where inputs have DIFFERENT array sets and DIFFERENT
+    present cell-array targets. Input 0 has verts+lines+polys and arrays {p, cs};
+    input 1 is polys-only and arrays {p} (no 'cs'). The point-field intersection
+    keeps only 'p'; 'cs' is dropped (present in some inputs but not all). This
+    exercises vtkAppendPolyData's FieldList intersection / NULL-array handling and
+    the totalNumberOfVerts/Lines==per-input-only path (an input contributing to
+    only a subset of the four cell-array targets).
+
+    Bit-exact load: output retains exactly the intersected point array 'p' in
+    input order; cell array 'cs' must be absent; cells are grouped verts|lines|
+    polys across both inputs with correct offsets even though input 1 has no
+    verts/lines."""
+    a = vtkAppendPolyData()
+    pd0 = _polydata_vlp_with_data(4, max(6, size), dtype)
+    pd1 = _polydata_vlp_with_data(5, max(6, size + 2), dtype)
+    # input 1: drop its cell scalar 'cs' (so it is intersected away) and keep
+    # ONLY polys (no verts/lines) to exercise the subset-of-targets path.
+    pd1.GetCellData().RemoveArray("cs")
+    pd1.SetVerts(vtkCellArray())
+    pd1.SetLines(vtkCellArray())
+    a.AddInputData(pd0)
+    a.AddInputData(pd1)
+    a.Update()
+    return a.GetOutput()
+
+
 def op_probe(dtype, size):
     # vtkProbeFilter probing an image-data input against an unstructured tet
     # source -> ProbeImagePointsInCell (the devirtualized ComputePointId path in
@@ -1519,6 +1715,10 @@ OPS = {
     "contour_hexug": dict(fn=op_contour_hexug, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "contour_tetug": dict(fn=op_contour_tetug, group="filter", dtypes=["float64"], sizes=[6, 10]),
     "append": dict(fn=op_append, group="filter", dtypes=["float64"], sizes=[16, 28]),
+    "append_ugrid_mixed": dict(fn=op_append_ugrid_mixed, group="filter", dtypes=["float32", "float64"], sizes=[5, 8]),
+    "append_mixed_types": dict(fn=op_append_mixed_types, group="filter", dtypes=["float32", "float64"], sizes=[5, 8]),
+    "append_polydata": dict(fn=op_append_polydata, group="filter", dtypes=["float32", "float64"], sizes=[8, 16]),
+    "append_polydata_partial": dict(fn=op_append_polydata_partial, group="filter", dtypes=["float64"], sizes=[8, 16]),
     "probe": dict(fn=op_probe, group="filter", dtypes=["float32", "float64"], sizes=[10, 16]),
     "geometry_ugrid": dict(fn=op_geometry_ugrid, group="filter", dtypes=["float64"], sizes=[8, 14]),
     "threshold_ugrid": dict(fn=op_threshold_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
