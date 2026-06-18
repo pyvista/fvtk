@@ -2083,6 +2083,99 @@ inline void vtkMath::TensorFromSymmetricTensor(T tensor[9])
   tensor[2] = tensor[6]; // XZ
   tensor[1] = tensor[3]; // XY
 }
+
+//------------------------------------------------------------------------------
+inline bool vtkMath::ProjectVector(const float a[3], const float b[3], float projection[3])
+{
+  float bSquared = vtkMath::Dot(b, b);
+
+  if (bSquared == 0)
+  {
+    projection[0] = 0;
+    projection[1] = 0;
+    projection[2] = 0;
+    return false;
+  }
+
+  float scale = vtkMath::Dot(a, b) / bSquared;
+
+  for (int i = 0; i < 3; ++i)
+  {
+    projection[i] = b[i];
+  }
+  vtkMath::MultiplyScalar(projection, scale);
+
+  return true;
+}
+
+//------------------------------------------------------------------------------
+inline bool vtkMath::ProjectVector(const double a[3], const double b[3], double projection[3])
+{
+  double bSquared = vtkMath::Dot(b, b);
+
+  if (bSquared == 0)
+  {
+    projection[0] = 0;
+    projection[1] = 0;
+    projection[2] = 0;
+    return false;
+  }
+
+  double scale = vtkMath::Dot(a, b) / bSquared;
+
+  for (int i = 0; i < 3; ++i)
+  {
+    projection[i] = b[i] * scale;
+  }
+
+  return true;
+}
+
+//------------------------------------------------------------------------------
+inline bool vtkMath::ProjectVector2D(const float a[2], const float b[2], float projection[2])
+{
+  float bSquared = vtkMath::Dot2D(b, b);
+
+  if (bSquared == 0)
+  {
+    projection[0] = 0;
+    projection[1] = 0;
+    return false;
+  }
+
+  float scale = vtkMath::Dot2D(a, b) / bSquared;
+
+  for (int i = 0; i < 2; ++i)
+  {
+    projection[i] = b[i];
+  }
+  vtkMath::MultiplyScalar2D(projection, scale);
+
+  return true;
+}
+
+//------------------------------------------------------------------------------
+inline bool vtkMath::ProjectVector2D(const double a[2], const double b[2], double projection[2])
+{
+  double bSquared = vtkMath::Dot2D(b, b);
+
+  if (bSquared == 0)
+  {
+    projection[0] = 0;
+    projection[1] = 0;
+    return false;
+  }
+
+  double scale = vtkMath::Dot2D(a, b) / bSquared;
+
+  for (int i = 0; i < 2; ++i)
+  {
+    projection[i] = b[i];
+  }
+  vtkMath::MultiplyScalar2D(projection, scale);
+
+  return true;
+}
 VTK_ABI_NAMESPACE_END
 
 namespace
