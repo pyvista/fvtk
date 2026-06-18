@@ -20,9 +20,158 @@
 #include "vtkTriangleFilter.h"
 #include "vtkTriangleStrip.h"
 
+#include "vtkTypeInt32Array.h"
+#include "vtkTypeInt64Array.h"
+
 #include <memory> // For unique_ptr
 
 VTK_ABI_NAMESPACE_BEGIN
+
+namespace
+{
+//------------------------------------------------------------------------------
+// Devirtualized point-coordinate reader.
+//
+// vtkPolyData::GetPoint(id, x) ultimately calls vtkPoints::GetPoint, which is a
+// virtual, cross-shared-library call into the point array's GetTuple (libvtkCommon).
+// The curvature inner loops fetch the 3 vertex coordinates of every triangle this
+// way (Gauss: 3 GetPoint/triangle; Mean: 6 GetPoint/triangle). For the dominant
+// AOS float/double point storage, resolve the raw contiguous coordinate buffer
+// ONCE (vtkFloatArray/vtkDoubleArray FastDownCast + GetPointer(0)) and read each
+// vertex's coords inline from ptr + 3*id. For any other storage the cached pointer
+// stays null and Read falls back to the original vtkPolyData::GetPoint path.
+//
+// Bit-exactness: GetPoint copies the exact stored coordinates (double storage:
+// dst[c] = ptr[3*id+c]; float storage: dst[c] = static_cast<double>(ptr[3*id+c]),
+// the identical float->double widening GetTuple performs). No arithmetic is
+// introduced, so every consumed coordinate is byte-identical to the GetPoint value.
+class CurvPointReader
+{
+public:
+  explicit CurvPointReader(vtkPolyData* pd)
+    : PolyData(pd)
+  {
+    if (vtkPoints* pts = pd->GetPoints())
+    {
+      if (auto* da = vtkDoubleArray::FastDownCast(pts->GetData()))
+      {
+        this->DPtr = da->GetPointer(0);
+      }
+      else if (auto* fa = vtkFloatArray::FastDownCast(pts->GetData()))
+      {
+        this->FPtr = fa->GetPointer(0);
+      }
+    }
+  }
+
+  // Equivalent to PolyData->GetPoint(id, x).
+  inline void Read(vtkIdType id, double x[3]) const
+  {
+    if (this->DPtr)
+    {
+      const double* p = this->DPtr + 3 * id;
+      x[0] = p[0];
+      x[1] = p[1];
+      x[2] = p[2];
+    }
+    else if (this->FPtr)
+    {
+      const float* p = this->FPtr + 3 * id;
+      x[0] = static_cast<double>(p[0]);
+      x[1] = static_cast<double>(p[1]);
+      x[2] = static_cast<double>(p[2]);
+    }
+    else
+    {
+      this->PolyData->GetPoint(id, x);
+    }
+  }
+
+private:
+  vtkPolyData* PolyData;
+  const double* DPtr = nullptr;
+  const float* FPtr = nullptr;
+};
+
+//------------------------------------------------------------------------------
+// Devirtualized cell-connectivity reader for a vtkCellArray.
+//
+// vtkCellArray::GetNextCell / GetCellPoints end in the virtual, cross-shared-library
+// vtkCellArray::GetCellAtId (libvtkCommon), which re-runs the cell array's storage
+// switch on every cell. The connectivity layout is invariant for the whole array, so
+// resolve the typed offsets/connectivity raw pointers ONCE (Int32 or Int64 storage)
+// and read each cell's vertex-id span inline -- exactly GetCellAtId's zero-copy
+// branch (npts = offsets[id+1]-offsets[id]; ids = connectivity + offsets[id]). For any
+// other storage the cached pointers stay null and Get falls back to GetCellAtId.
+//
+// Bit-exactness: this only changes how the SAME vertex ids are fetched; the ids and
+// their order are identical to GetCellAtId, so downstream coordinate reads and all
+// curvature arithmetic/accumulation are unchanged.
+class CurvCellReader
+{
+public:
+  explicit CurvCellReader(vtkCellArray* ca)
+  {
+    if (ca->GetStorageType() == vtkCellArray::StorageTypes::Int64)
+    {
+      if (auto* offs = ca->GetOffsetsArray64())
+      {
+        if (auto* conn = ca->GetConnectivityArray64())
+        {
+          this->Off64 = offs->GetPointer(0);
+          this->Conn64 = conn->GetPointer(0);
+        }
+      }
+    }
+    else if (ca->GetStorageType() == vtkCellArray::StorageTypes::Int32)
+    {
+      if (auto* offs = ca->GetOffsetsArray32())
+      {
+        if (auto* conn = ca->GetConnectivityArray32())
+        {
+          this->Off32 = offs->GetPointer(0);
+          this->Conn32 = conn->GetPointer(0);
+        }
+      }
+    }
+  }
+
+  bool Fast() const { return this->Off64 != nullptr || this->Off32 != nullptr; }
+
+  // Fast-path span accessor (only valid when Fast()): fills npts and a per-call
+  // vtkIdType id buffer with the cell's connectivity, identical to GetCellAtId.
+  inline void Get(vtkIdType cellId, vtkIdType& npts, vtkIdType ids[3]) const
+  {
+    if (this->Off64)
+    {
+      const vtkTypeInt64 begin = this->Off64[cellId];
+      npts = static_cast<vtkIdType>(this->Off64[cellId + 1] - begin);
+      const vtkTypeInt64* c = this->Conn64 + begin;
+      for (vtkIdType i = 0; i < npts && i < 3; ++i)
+      {
+        ids[i] = static_cast<vtkIdType>(c[i]);
+      }
+    }
+    else
+    {
+      const vtkTypeInt32 begin = this->Off32[cellId];
+      npts = static_cast<vtkIdType>(this->Off32[cellId + 1] - begin);
+      const vtkTypeInt32* c = this->Conn32 + begin;
+      for (vtkIdType i = 0; i < npts && i < 3; ++i)
+      {
+        ids[i] = static_cast<vtkIdType>(c[i]);
+      }
+    }
+  }
+
+private:
+  const vtkTypeInt64* Off64 = nullptr;
+  const vtkTypeInt64* Conn64 = nullptr;
+  const vtkTypeInt32* Off32 = nullptr;
+  const vtkTypeInt32* Conn32 = nullptr;
+};
+} // anonymous namespace
+
 vtkStandardNewMacro(vtkCurvatures);
 
 //-------------------------------------------------------//
@@ -88,6 +237,13 @@ void vtkCurvatures::GetMeanCurvature(vtkPolyData* mesh)
   double e[3]; // edge (oriented)
 
   polyData->BuildLinks();
+
+  // Devirtualized coordinate access (see CurvPointReader above). Reads the exact
+  // stored coordinates inline from the typed AOS point buffer instead of via the
+  // virtual cross-shared-library vtkPolyData::GetPoint, so every consumed
+  // coordinate is byte-identical and the curvature arithmetic is unchanged.
+  const CurvPointReader pointReader(polyData);
+
   // data init
   const int F = polyData->GetNumberOfCells();
   // init, preallocate the mean curvature
@@ -129,9 +285,9 @@ void vtkCurvatures::GetMeanCurvature(vtkPolyData* mesh)
         double Hf; // temporary store
 
         // find 3 corners of f: in order!
-        polyData->GetPoint(v_l, ore);
-        polyData->GetPoint(v_r, end);
-        polyData->GetPoint(v_o, oth);
+        pointReader.Read(v_l, ore);
+        pointReader.Read(v_r, end);
+        pointReader.Read(v_o, oth);
         // compute normal of f
         vtkTriangle::ComputeNormal(ore, end, oth, n_f);
         // compute common edge
@@ -145,9 +301,9 @@ void vtkCurvatures::GetMeanCurvature(vtkPolyData* mesh)
         double Af = vtkTriangle::TriangleArea(ore, end, oth);
         // find 3 corners of n: in order!
         polyData->GetCellPoints(n, vertices_n);
-        polyData->GetPoint(vertices_n->GetId(0), vn0);
-        polyData->GetPoint(vertices_n->GetId(1), vn1);
-        polyData->GetPoint(vertices_n->GetId(2), vn2);
+        pointReader.Read(vertices_n->GetId(0), vn0);
+        pointReader.Read(vertices_n->GetId(1), vn1);
+        pointReader.Read(vertices_n->GetId(2), vn2);
         Af += vtkTriangle::TriangleArea(vn0, vn1, vn2);
         // compute normal of n
         vtkTriangle::ComputeNormal(vn0, vn1, vn2, n_n);
@@ -280,16 +436,35 @@ void vtkCurvatures::ComputeGaussCurvature(
     dA[k] = 0.0;
   }
 
+  // Devirtualized coordinate and connectivity access (see helpers above). These
+  // only change HOW the same vertex ids / coordinates are fetched, not their
+  // values or order, so the curvature arithmetic stays byte-identical.
+  const CurvPointReader pointReader(output);
+  const CurvCellReader cellReader(facets);
+
+  const vtkIdType numFacets = facets->GetNumberOfCells();
+  vtkIdType fastIds[3];
   facets->InitTraversal();
-  while (facets->GetNextCell(f, vert))
+  for (vtkIdType cid = 0; cid < numFacets; ++cid)
   {
+    if (cellReader.Fast())
+    {
+      vtkIdType nverts;
+      cellReader.Get(cid, nverts, fastIds);
+      static_cast<void>(nverts);
+      vert = fastIds;
+    }
+    else
+    {
+      facets->GetNextCell(f, vert);
+    }
     if (this->CheckAbort())
     {
       break;
     }
-    output->GetPoint(vert[0], v0);
-    output->GetPoint(vert[1], v1);
-    output->GetPoint(vert[2], v2);
+    pointReader.Read(vert[0], v0);
+    pointReader.Read(vert[1], v1);
+    pointReader.Read(vert[2], v2);
     // edges
     e0[0] = v1[0];
     e0[1] = v1[1];
