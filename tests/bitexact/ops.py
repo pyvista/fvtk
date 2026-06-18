@@ -61,8 +61,10 @@ try:
         vtkPointLocator,
         vtkPolyData,
         vtkStaticPointLocator,
+        vtkStructuredGrid,
         vtkUnstructuredGrid,
     )
+    from vtkmodules.vtkFiltersExtraction import vtkExtractGrid
     from vtkmodules.vtkFiltersCore import (
         vtkCellCenters,
         vtkCellDataToPointData,
@@ -333,6 +335,49 @@ def make_wedge_pyramid_ugrid(nrep=3, dtype=np.float64):
     scal.SetName("v")
     ug.GetPointData().SetScalars(scal)
     return ug
+
+
+def make_structured_grid(n=24, dtype=np.float64):
+    """A curvilinear vtkStructuredGrid on an n*n*n lattice carrying explicit
+    per-point coordinates (so vtkExtractGrid's CopyPointsAndPointData copies real
+    points, not implicit uniform-grid points) plus two deterministic point-data
+    arrays. Coordinates use only integer/half-integer algebra (no trig) so the two
+    backends start byte-identical. The requested dtype drives the point array
+    precision, exercising both the float and double typed-pointer copy paths."""
+    lin = np.arange(n, dtype=np.float64)
+    gi, gj, gk = np.meshgrid(lin, lin, lin, indexing="ij")
+    # Mild curvilinear warp via integer-fraction algebra (no transcendentals).
+    x = gi + 0.25 * (gj % 3)
+    y = gj + 0.5 * (gk % 2)
+    z = gk + 0.125 * (gi % 4)
+    # VTK structured-grid point order is x fastest, then y, then z.
+    coords = np.stack(
+        [
+            x.transpose(2, 1, 0).ravel(),
+            y.transpose(2, 1, 0).ravel(),
+            z.transpose(2, 1, 0).ravel(),
+        ],
+        axis=1,
+    ).astype(dtype)
+    vp = vtkPoints()
+    vp.SetData(numpy_to_vtk(np.ascontiguousarray(coords), deep=1))
+    sg = vtkStructuredGrid()
+    sg.SetDimensions(n, n, n)
+    sg.SetPoints(vp)
+
+    npts = n * n * n
+    idx = np.arange(npts, dtype=np.int64)
+    scal = numpy_to_vtk(np.ascontiguousarray((idx % 251).astype(dtype)), deep=1)
+    scal.SetName("v")
+    sg.GetPointData().SetScalars(scal)
+    vec = np.empty((npts, 3), dtype=dtype)
+    vec[:, 0] = (idx % 17).astype(dtype)
+    vec[:, 1] = (idx % 13).astype(dtype)
+    vec[:, 2] = (idx % 7).astype(dtype)
+    va = numpy_to_vtk(np.ascontiguousarray(vec), deep=1)
+    va.SetName("vec")
+    sg.GetPointData().AddArray(va)
+    return sg
 
 
 def build_inputs_digest(dtype=np.float64):
@@ -1719,6 +1764,47 @@ def _ply_roundtrip(dtype, size, file_type):
             pass
 
 
+def op_extract_grid(dtype, size):
+    """vtkExtractGrid on a curvilinear vtkStructuredGrid with a non-trivial VOI
+    AND a non-unit sample rate. This drives vtkExtractStructuredGridHelper::
+    CopyPointsAndPointData through BOTH its mapped (downsampling) point-copy path
+    and the per-row point-data batch copy. The point array is float32/float64 to
+    exercise the typed-pointer copy fast path on both precisions; capture compares
+    output points + both point-data arrays + extracted cell extent byte-for-byte."""
+    sg = make_structured_grid(size, dtype)
+    n = size
+    eg = vtkExtractGrid()
+    eg.SetInputData(sg)
+    # Non-trivial VOI strictly inside the whole extent [0, n-1]^3, asymmetric
+    # per-axis so the i/j/k mapping differs across dimensions.
+    lo_i, hi_i = 2, n - 2
+    lo_j, hi_j = 1, n - 3
+    lo_k, hi_k = 3, n - 1
+    eg.SetVOI(lo_i, hi_i, lo_j, hi_j, lo_k, hi_k)
+    # Non-unit, per-axis sample rate -> exercises the useMapping branch.
+    eg.SetSampleRate(2, 3, 2)
+    eg.SetIncludeBoundary(1)
+    eg.Update()
+    return eg.GetOutput()
+
+
+def op_extract_grid_rowcopy(dtype, size):
+    """vtkExtractGrid with a non-trivial VOI but I-sample-rate == 1, so the helper
+    takes the canCopyRange path: a contiguous per-row point copy (the std::copy /
+    InsertPoints(dstStart,num,srcStart) fast path) with J/K still downsampled
+    through the mapping. Complements op_extract_grid (which has I-rate != 1 and so
+    takes the per-element mapped path)."""
+    sg = make_structured_grid(size, dtype)
+    n = size
+    eg = vtkExtractGrid()
+    eg.SetInputData(sg)
+    eg.SetVOI(1, n - 2, 2, n - 1, 1, n - 3)
+    eg.SetSampleRate(1, 2, 3)  # I-rate 1 -> canCopyRange contiguous copy
+    eg.SetIncludeBoundary(1)
+    eg.Update()
+    return eg.GetOutput()
+
+
 def op_ply_roundtrip_binary(dtype, size):
     return _ply_roundtrip(dtype, size, 1)  # VTK_BINARY
 
@@ -1790,6 +1876,8 @@ OPS = {
     "tableclip_ugrid": dict(fn=op_tableclip_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "contour_wedgepyr": dict(fn=op_contour_wedgepyr, group="filter", dtypes=["float32", "float64"], sizes=[2, 4]),
     "clip_multicomp": dict(fn=op_clip_multicomp, group="filter", dtypes=["float32", "float64"], sizes=[12, 18]),
+    "extract_grid": dict(fn=op_extract_grid, group="filter", dtypes=["float32", "float64"], sizes=[16, 24]),
+    "extract_grid_rowcopy": dict(fn=op_extract_grid_rowcopy, group="filter", dtypes=["float32", "float64"], sizes=[16, 24]),
     "locator_celllocator": dict(fn=op_locator_celllocator, group="common", dtypes=["float64"], sizes=[6, 10]),
     "polydata_celltypes": dict(fn=op_polydata_celltypes, group="common", dtypes=["float64"], sizes=[6, 12]),
     # --- vtkCommon ops (explicitly requested) ---

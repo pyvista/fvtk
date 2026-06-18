@@ -5,6 +5,8 @@
 // VTK includes
 #include "vtkBoundingBox.h"
 #include "vtkCellData.h"
+#include "vtkDoubleArray.h"
+#include "vtkFloatArray.h"
 #include "vtkIdList.h"
 #include "vtkMath.h"
 #include "vtkNew.h"
@@ -336,9 +338,67 @@ void vtkExtractStructuredGridHelper::CopyPointsAndPointData(int inExt[6], int ou
   {
     assert("pre: output points data-structure is nullptr!" && (outpnts != nullptr));
     outpnts->SetDataType(inpnts->GetDataType());
+    // Presize the output points to the exact output point count so the copy
+    // below never triggers an InsertNext-style growth reallocation.
     outpnts->SetNumberOfPoints(outSize);
   }
+  // Presize the output point-data arrays to the known output size.
   outPD->CopyAllocate(pd, outSize, outSize);
+
+  // Devirtualize the index mapping: hoist the precomputed mapped-extent index
+  // vectors to raw pointers ONCE, plus the per-dimension extent offsets, so the
+  // inner i/j/k loop performs plain array indexing instead of a method call per
+  // element. GetMappedExtentValue(dim, v) is, by definition,
+  //   IndexMap->Mapping[dim][v - OutputWholeExtent[2*dim]] + InputWholeExtent[2*dim]
+  // so the hoisted form below is bit-identical integer arithmetic.
+  const int* mapI = this->IndexMap->Mapping[0].data();
+  const int* mapJ = this->IndexMap->Mapping[1].data();
+  const int* mapK = this->IndexMap->Mapping[2].data();
+  const int outOffI = this->OutputWholeExtent[0];
+  const int outOffJ = this->OutputWholeExtent[2];
+  const int outOffK = this->OutputWholeExtent[4];
+  const int inOffI = this->InputWholeExtent[0];
+  const int inOffJ = this->InputWholeExtent[2];
+  const int inOffK = this->InputWholeExtent[4];
+
+  // Devirtualize the point COPY for AOS float/double points: when both the input
+  // and output point arrays are the same plain float (or double) AOS array, copy
+  // coordinates component-for-component through raw pointers. This stores exactly
+  // the same bytes as vtkPoints::InsertPoints (a same-type tuple memcpy), so it is
+  // byte-identical; it only removes virtual dispatch. Anything else (mismatched /
+  // non-AOS / unsupported storage) falls back to the generic vtkPoints copy.
+  const double* srcPtsD = nullptr;
+  double* dstPtsD = nullptr;
+  const float* srcPtsF = nullptr;
+  float* dstPtsF = nullptr;
+  if (inpnts != nullptr)
+  {
+    vtkDataArray* inArr = inpnts->GetData();
+    vtkDataArray* outArr = outpnts->GetData();
+    if (auto* sd = vtkDoubleArray::FastDownCast(inArr))
+    {
+      if (auto* dd = vtkDoubleArray::FastDownCast(outArr))
+      {
+        if (sd->GetNumberOfComponents() == 3 && dd->GetNumberOfComponents() == 3)
+        {
+          srcPtsD = sd->GetPointer(0);
+          dstPtsD = dd->GetPointer(0);
+        }
+      }
+    }
+    else if (auto* sf = vtkFloatArray::FastDownCast(inArr))
+    {
+      if (auto* df = vtkFloatArray::FastDownCast(outArr))
+      {
+        if (sf->GetNumberOfComponents() == 3 && df->GetNumberOfComponents() == 3)
+        {
+          srcPtsF = sf->GetPointer(0);
+          dstPtsF = df->GetPointer(0);
+        }
+      }
+    }
+  }
+  const bool typedPoints = (srcPtsD != nullptr) || (srcPtsF != nullptr);
 
   // Lists for batching copy operations:
   vtkNew<vtkIdList> srcIds;
@@ -354,11 +414,11 @@ void vtkExtractStructuredGridHelper::CopyPointsAndPointData(int inExt[6], int ou
   int src_ijk[3];
   for (K(ijk) = KMIN(outExt); K(ijk) <= KMAX(outExt); ++K(ijk))
   {
-    K(src_ijk) = useMapping ? this->GetMappedExtentValue(2, K(ijk)) : K(ijk);
+    K(src_ijk) = useMapping ? (mapK[K(ijk) - outOffK] + inOffK) : K(ijk);
 
     for (J(ijk) = JMIN(outExt); J(ijk) <= JMAX(outExt); ++J(ijk))
     {
-      J(src_ijk) = useMapping ? this->GetMappedExtentValue(1, J(ijk)) : J(ijk);
+      J(src_ijk) = useMapping ? (mapJ[J(ijk) - outOffJ] + inOffJ) : J(ijk);
 
       if (canCopyRange)
       {
@@ -376,7 +436,18 @@ void vtkExtractStructuredGridHelper::CopyPointsAndPointData(int inExt[6], int ou
 
         if (inpnts != nullptr)
         {
-          outpnts->InsertPoints(dstStart, num, srcStart, inpnts);
+          if (srcPtsD != nullptr)
+          {
+            std::copy(srcPtsD + 3 * srcStart, srcPtsD + 3 * (srcStart + num), dstPtsD + 3 * dstStart);
+          }
+          else if (srcPtsF != nullptr)
+          {
+            std::copy(srcPtsF + 3 * srcStart, srcPtsF + 3 * (srcStart + num), dstPtsF + 3 * dstStart);
+          }
+          else
+          {
+            outpnts->InsertPoints(dstStart, num, srcStart, inpnts);
+          }
         }
         outPD->CopyData(pd, dstStart, num, srcStart);
       }
@@ -384,7 +455,7 @@ void vtkExtractStructuredGridHelper::CopyPointsAndPointData(int inExt[6], int ou
       {
         for (I(ijk) = IMIN(outExt); I(ijk) <= IMAX(outExt); ++I(ijk))
         {
-          I(src_ijk) = useMapping ? this->GetMappedExtentValue(0, I(ijk)) : I(ijk);
+          I(src_ijk) = useMapping ? (mapI[I(ijk) - outOffI] + inOffI) : I(ijk);
 
           vtkIdType srcIdx = vtkStructuredData::ComputePointIdForExtent(inExt, src_ijk);
           vtkIdType targetIdx = vtkStructuredData::ComputePointIdForExtent(outExt, ijk);
@@ -393,12 +464,28 @@ void vtkExtractStructuredGridHelper::CopyPointsAndPointData(int inExt[6], int ou
           assert("pre: srcIdx out of bounds" && (srcIdx >= 0) && (srcIdx < inSize));
           assert("pre: targetIdx out of bounds" && (targetIdx >= 0) && (targetIdx < outSize));
 
+          if (typedPoints)
+          {
+            if (srcPtsD != nullptr)
+            {
+              dstPtsD[3 * targetIdx] = srcPtsD[3 * srcIdx];
+              dstPtsD[3 * targetIdx + 1] = srcPtsD[3 * srcIdx + 1];
+              dstPtsD[3 * targetIdx + 2] = srcPtsD[3 * srcIdx + 2];
+            }
+            else
+            {
+              dstPtsF[3 * targetIdx] = srcPtsF[3 * srcIdx];
+              dstPtsF[3 * targetIdx + 1] = srcPtsF[3 * srcIdx + 1];
+              dstPtsF[3 * targetIdx + 2] = srcPtsF[3 * srcIdx + 2];
+            }
+          }
+
           srcIds->InsertNextId(srcIdx);
           dstIds->InsertNextId(targetIdx);
 
         } // END for all i
 
-        if (inpnts != nullptr)
+        if (inpnts != nullptr && !typedPoints)
         {
           outpnts->InsertPoints(dstIds, srcIds, inpnts);
         } // END if
