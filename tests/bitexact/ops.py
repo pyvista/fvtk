@@ -88,6 +88,7 @@ try:
         vtkElevationFilter,
         vtkProbeFilter,
         vtkTubeFilter,
+        vtkVectorNorm,
     )
     from vtkmodules.vtkFiltersGeneral import (
         vtkClipDataSet,
@@ -205,6 +206,23 @@ def make_sphere_with_vectors(theta=40, phi=40, dtype=np.float64):
     out.GetPointData().AddArray(va)
     out.GetPointData().SetVectors(va)
     return out
+
+
+def make_sphere_with_cell_vectors(theta=40, phi=40, dtype=np.float64):
+    """Sphere carrying a deterministic 3-component CELL vector array (the cell
+    centers, computed purely from the bit-identical point coordinates) so the
+    cell-data branch of vtkVectorNorm is exercised. The vector array dtype is
+    ``dtype`` so the float32 vs float64 accumulation path differs per case."""
+    s = make_sphere(theta, phi)
+    cc = vtkCellCenters()
+    cc.SetInputData(s)
+    cc.Update()
+    centers = vtk_to_numpy(cc.GetOutput().GetPoints().GetData()).astype(dtype)
+    va = numpy_to_vtk(np.ascontiguousarray(centers), deep=1)
+    va.SetName("cvec")
+    s.GetCellData().AddArray(va)
+    s.GetCellData().SetVectors(va)
+    return s
 
 
 def make_points_array(n=2000, dtype=np.float64):
@@ -754,6 +772,45 @@ def op_warpvector(dtype, size):
     w.SetScaleFactor(0.3)
     w.Update()
     return w.GetOutput()
+
+
+def op_vectornorm_point(dtype, size):
+    # vtkVectorNorm over a polydata POINT vector array. RequestData dispatches on
+    # the array type (float32/float64) and per tuple computes
+    # mag = v0*v0 + v1*v1 + v2*v2 in the array's API precision, then
+    # sqrt(double(mag)) cast back to float. Output is a presized vtkFloatArray.
+    f = vtkVectorNorm()
+    f.SetInputData(make_sphere_with_vectors(size, size, dtype))
+    f.SetNormalize(0)
+    f.Update()
+    return f.GetOutput()
+
+
+def op_vectornorm_point_normalized(dtype, size):
+    # Same point-vector path but with Normalize on -> exercises the two-pass
+    # max rollup + per-tuple division branch.
+    f = vtkVectorNorm()
+    f.SetInputData(make_sphere_with_vectors(size, size, dtype))
+    f.SetNormalize(1)
+    f.Update()
+    return f.GetOutput()
+
+
+def op_vectornorm_cell(dtype, size):
+    # vtkVectorNorm over a CELL vector array (cell-data dispatch branch).
+    f = vtkVectorNorm()
+    f.SetInputData(make_sphere_with_cell_vectors(size, size, dtype))
+    f.SetNormalize(0)
+    f.Update()
+    return f.GetOutput()
+
+
+def op_vectornorm_cell_normalized(dtype, size):
+    f = vtkVectorNorm()
+    f.SetInputData(make_sphere_with_cell_vectors(size, size, dtype))
+    f.SetNormalize(1)
+    f.Update()
+    return f.GetOutput()
 
 
 def op_transform(dtype, size):
@@ -1837,6 +1894,10 @@ OPS = {
     "point2cell_ugrid": dict(fn=op_point2cell_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
     "elevation": dict(fn=op_elevation, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "warpvector": dict(fn=op_warpvector, group="filter", dtypes=["float64"], sizes=[24, 40]),
+    "vectornorm_point": dict(fn=op_vectornorm_point, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]),
+    "vectornorm_point_normalized": dict(fn=op_vectornorm_point_normalized, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]),
+    "vectornorm_cell": dict(fn=op_vectornorm_cell, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]),
+    "vectornorm_cell_normalized": dict(fn=op_vectornorm_cell_normalized, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]),
     "transform": dict(
         fn=op_transform, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]
     ),
