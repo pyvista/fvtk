@@ -594,6 +594,54 @@ def op_glyph_arrays(dtype, size):
     return g.GetOutput()
 
 
+def _mixed_cell_glyph_source():
+    """A tiny glyph source polydata carrying VTK_VERTEX, VTK_LINE and a triangle
+    cell, so a vtkGlyph3D over it routes output cells into THREE different
+    vtkPolyData target cell arrays (Verts, Lines, Polys). This exercises the
+    multi-target routing + per-target typed append of vtkPolyData::
+    InsertNextCellBlock (the batched glyph cell-append path); the plain arrow/
+    quad sources are single-target (Polys/Lines) only."""
+    src = vtkPolyData()
+    pts = vtkPoints()
+    pts.SetDataTypeToDouble()
+    pts.InsertNextPoint(0.0, 0.0, 0.0)
+    pts.InsertNextPoint(1.0, 0.0, 0.0)
+    pts.InsertNextPoint(1.0, 1.0, 0.0)
+    pts.InsertNextPoint(0.0, 1.0, 0.0)
+    src.SetPoints(pts)
+
+    verts = vtkCellArray()
+    verts.InsertNextCell(1)
+    verts.InsertCellPoint(0)
+    src.SetVerts(verts)
+
+    lines = vtkCellArray()
+    lines.InsertNextCell(2)
+    lines.InsertCellPoint(1)
+    lines.InsertCellPoint(2)
+    src.SetLines(lines)
+
+    polys = vtkCellArray()
+    polys.InsertNextCell(3)
+    for k in (0, 2, 3):
+        polys.InsertCellPoint(k)
+    src.SetPolys(polys)
+    return src
+
+
+def op_glyph_mixedcells(dtype, size):
+    """vtkGlyph3D over a source whose cells span Verts+Lines+Polys, so the output
+    cell append routes into all three target cell arrays. Makes vtkPolyData::
+    InsertNextCellBlock's multi-target typed append non-vacuously covered (the
+    plain ``glyph`` op uses an all-triangle arrow -> Polys only)."""
+    g = vtkGlyph3D()
+    g.SetInputData(make_sphere(size, size))
+    g.SetSourceData(_mixed_cell_glyph_source())
+    g.SetScaleFactor(0.1)
+    g.Update()
+    return g.GetOutput()
+
+
 def op_cell2point(dtype, size):
     vol = make_volume(size, dtype)
     nc = vol.GetNumberOfCells()
@@ -1366,6 +1414,7 @@ OPS = {
     "stripper": dict(fn=op_stripper, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "vertexglyph": dict(fn=op_vertexglyph, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "glyph_arrays": dict(fn=op_glyph_arrays, group="filter", dtypes=["float64"], sizes=[20, 32]),
+    "glyph_mixedcells": dict(fn=op_glyph_mixedcells, group="filter", dtypes=["float64"], sizes=[20, 32]),
     "decimatepro": dict(fn=op_decimatepro, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "cone": dict(fn=op_cone_triangulate, group="filter", dtypes=["float64"], sizes=[12, 30]),
     "tube": dict(fn=op_tube, group="filter", dtypes=["float32", "float64"], sizes=[16, 32]),
