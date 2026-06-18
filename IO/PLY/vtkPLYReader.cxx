@@ -361,6 +361,20 @@ int vtkPLYReader::RequestData(vtkInformation* vtkNotUsed(request),
       pts->SetDataTypeToFloat();
       pts->SetNumberOfPoints(numPts);
 
+      // Devirtualized point scatter: pts->SetPoint(j, vertex.x) resolves to a
+      // virtual vtkDataArray::SetTuple(j, const float*), which for the float
+      // point array above stores static_cast<float>(static_cast<double>(src[c]))
+      // == src[c] per component. Grab the raw float pointer ONCE (the points
+      // array is always vtkFloatArray here) and copy the 3 coordinates inline;
+      // the bytes written are identical. Fall back to the virtual path if the
+      // FastDownCast ever fails to hold (it never should given the SetDataType
+      // above).
+      float* rawPts = nullptr;
+      if (auto* fa = vtkFloatArray::FastDownCast(pts->GetData()))
+      {
+        rawPts = fa->GetPointer(0);
+      }
+
       // Setup to read the PLY elements
       vtkPLY::ply_get_property(ply, elemName, &vertProps[0]);
       vtkPLY::ply_get_property(ply, elemName, &vertProps[1]);
@@ -397,7 +411,17 @@ int vtkPLYReader::RequestData(vtkInformation* vtkNotUsed(request),
       for (int j = 0; j < numPts; j++)
       {
         vtkPLY::ply_get_element(ply, (void*)&vertex);
-        pts->SetPoint(j, vertex.x);
+        if (rawPts)
+        {
+          float* p = rawPts + 3 * j;
+          p[0] = vertex.x[0];
+          p[1] = vertex.x[1];
+          p[2] = vertex.x[2];
+        }
+        else
+        {
+          pts->SetPoint(j, vertex.x);
+        }
         if (texCoordsPointsAvailable)
         {
           texCoordsPoints->SetTuple2(j, vertex.tex[0], vertex.tex[1]);

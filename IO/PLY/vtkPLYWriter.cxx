@@ -4,6 +4,7 @@
 
 #include "vtkCellArray.h"
 #include "vtkCellData.h"
+#include "vtkDoubleArray.h"
 #include "vtkErrorCode.h"
 #include "vtkFloatArray.h"
 #include "vtkInformation.h"
@@ -16,6 +17,68 @@
 #include "vtkUnsignedCharArray.h"
 
 #include <cstddef>
+
+namespace
+{
+// Devirtualized per-point coordinate reader for the PLY writer's vertex loop.
+// The loop reads every point's three coordinates via vtkPoints::GetPoint(i, x),
+// which resolves to a virtual vtkDataArray::GetTuple(i, double*) -- an
+// out-of-line call across the libvtkCommonCore boundary for every point. The
+// point array is almost always an AOS float or double array. This helper
+// FastDownCasts the array ONCE and, for those two storage types, reads the
+// three coordinates inline from the raw typed pointer, applying the exact same
+// per-component static_cast<double> that GetTuple performs (a no-op copy for
+// double, the identical float->double widening for float). The result is
+// byte-for-byte identical to GetPoint. Any other storage type (or no array)
+// falls back to the original virtual vtkPoints::GetPoint path.
+struct PLYFastPointReader
+{
+  vtkPoints* Points = nullptr;
+  const float* FloatPts = nullptr;
+  const double* DoublePts = nullptr;
+
+  explicit PLYFastPointReader(vtkPoints* pts)
+    : Points(pts)
+  {
+    if (pts)
+    {
+      vtkDataArray* data = pts->GetData();
+      if (auto* fa = vtkFloatArray::FastDownCast(data))
+      {
+        this->FloatPts = fa->GetPointer(0);
+      }
+      else if (auto* da = vtkDoubleArray::FastDownCast(data))
+      {
+        this->DoublePts = da->GetPointer(0);
+      }
+    }
+  }
+
+  // Read the 3 coordinates of point id into x. Byte-identical to
+  // vtkPoints::GetPoint(id, x) for AOS float/double point arrays.
+  inline void GetPoint(vtkIdType id, double x[3]) const
+  {
+    if (this->FloatPts)
+    {
+      const float* p = this->FloatPts + 3 * id;
+      x[0] = static_cast<double>(p[0]);
+      x[1] = static_cast<double>(p[1]);
+      x[2] = static_cast<double>(p[2]);
+    }
+    else if (this->DoublePts)
+    {
+      const double* p = this->DoublePts + 3 * id;
+      x[0] = p[0];
+      x[1] = p[1];
+      x[2] = p[2];
+    }
+    else
+    {
+      this->Points->GetPoint(id, x);
+    }
+  }
+};
+}
 
 VTK_ABI_NAMESPACE_BEGIN
 vtkStandardNewMacro(vtkPLYWriter);
@@ -217,9 +280,10 @@ void vtkPLYWriter::WriteData()
   plyVertex vert;
   vtkPLY::ply_put_element_setup(ply, "vertex");
   double dpoint[3];
+  const PLYFastPointReader fastPts(inPts);
   for (i = 0; i < numPts; i++)
   {
-    inPts->GetPoint(i, dpoint);
+    fastPts.GetPoint(i, dpoint);
     vert.x[0] = static_cast<float>(dpoint[0]);
     vert.x[1] = static_cast<float>(dpoint[1]);
     vert.x[2] = static_cast<float>(dpoint[2]);

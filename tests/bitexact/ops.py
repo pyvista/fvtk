@@ -31,6 +31,8 @@ hard gate while still exercising broad coverage.
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
 
 import numpy as np
 
@@ -96,6 +98,10 @@ try:
         vtkWarpVector,
     )
     from vtkmodules.vtkCommonTransforms import vtkTransform
+    from vtkmodules.vtkIOPLY import (
+        vtkPLYReader,
+        vtkPLYWriter,
+    )
     from vtkmodules.vtkFiltersGeometry import (
         vtkDataSetSurfaceFilter,
         vtkGeometryFilter,
@@ -1377,6 +1383,92 @@ def op_locator_mergepoints(dtype, size):
     }
 
 
+def _ply_roundtrip_mesh(dtype, size):
+    """Build a triangulated sphere carrying deterministic point coordinates,
+    float point normals, and unsigned-char RGB point colors -- the three vertex
+    properties the PLY writer gathers per point and the reader scatters back.
+
+    The point array is forced to the requested precision (float32/float64) so the
+    writer's per-point coordinate gather exercises BOTH the float and double
+    FastDownCast branches; the writer always narrows coordinates to float for the
+    PLY 'x/y/z' properties, so the read-back points are float32 either way."""
+    s = make_sphere(size, size)
+    # Force the point array to the requested precision.
+    pts_np = vtk_to_numpy(s.GetPoints().GetData()).astype(dtype)
+    pa = numpy_to_vtk(np.ascontiguousarray(pts_np), deep=1)
+    newpts = vtkPoints()
+    newpts.SetData(pa)
+    mesh = vtkPolyData()
+    mesh.SetPoints(newpts)
+    mesh.SetPolys(s.GetPolys())
+
+    npts = mesh.GetNumberOfPoints()
+
+    # Float point normals (writer requires float normals).
+    nfn = vtkPolyDataNormals()
+    nfn.SetInputData(mesh)
+    nfn.SetComputePointNormals(True)
+    nfn.Update()
+    normals = vtk_to_numpy(nfn.GetOutput().GetPointData().GetNormals()).astype(
+        np.float32
+    )
+    fa = numpy_to_vtk(np.ascontiguousarray(normals), deep=1)
+    fa.SetName("Normals")
+    mesh.GetPointData().SetNormals(fa)
+
+    # Deterministic unsigned-char RGB point colors (pure integer arithmetic).
+    idx = np.arange(npts, dtype=np.int64)
+    rgb = np.empty((npts, 3), dtype=np.uint8)
+    rgb[:, 0] = (idx * 7) % 256
+    rgb[:, 1] = (idx * 13 + 5) % 256
+    rgb[:, 2] = (idx * 29 + 17) % 256
+    # uint8 numpy maps to VTK_UNSIGNED_CHAR automatically.
+    ca = numpy_to_vtk(np.ascontiguousarray(rgb), deep=1)
+    ca.SetName("RGB")
+    mesh.GetPointData().SetScalars(ca)
+    return mesh
+
+
+def _ply_roundtrip(dtype, size, file_type):
+    """Write `mesh` to a temp .ply (binary or ascii) and read it back, returning
+    the read-back vtkPolyData. capture_dataobject then proves the read-back
+    points / normals / RGB scalars / face connectivity are byte-identical between
+    fvtk and stock VTK -- which only holds if the writer's per-point gather and
+    the reader's per-point scatter emit/store identical bytes."""
+    mesh = _ply_roundtrip_mesh(dtype, size)
+
+    fd, path = tempfile.mkstemp(suffix=".ply")
+    os.close(fd)
+    try:
+        w = vtkPLYWriter()
+        w.SetFileName(path)
+        w.SetFileType(file_type)  # 1 = VTK_BINARY, 2 = VTK_ASCII
+        w.SetColorModeToDefault()
+        w.SetArrayName("RGB")
+        # Little-endian binary so the byte layout is fixed across runners.
+        w.SetDataByteOrderToLittleEndian()
+        w.SetInputData(mesh)
+        w.Write()
+
+        r = vtkPLYReader()
+        r.SetFileName(path)
+        r.Update()
+        return capture_dataobject(r.GetOutput())
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def op_ply_roundtrip_binary(dtype, size):
+    return _ply_roundtrip(dtype, size, 1)  # VTK_BINARY
+
+
+def op_ply_roundtrip_ascii(dtype, size):
+    return _ply_roundtrip(dtype, size, 2)  # VTK_ASCII
+
+
 # ===========================================================================
 # REGISTRY
 # ===========================================================================
@@ -1446,6 +1538,9 @@ OPS = {
     "locator_pointlocator": dict(fn=op_locator_pointlocator, group="common", dtypes=["float64"], sizes=[6, 9]),
     "locator_staticpointlocator": dict(fn=op_locator_staticpointlocator, group="common", dtypes=["float64"], sizes=[6, 9]),
     "locator_mergepoints": dict(fn=op_locator_mergepoints, group="common", dtypes=["float64"], sizes=[10, 16]),
+    # --- IO round-trips (PLY writer gather + reader scatter, byte-for-byte) ---
+    "ply_roundtrip_binary": dict(fn=op_ply_roundtrip_binary, group="io", dtypes=["float32", "float64"], sizes=[12, 24]),
+    "ply_roundtrip_ascii": dict(fn=op_ply_roundtrip_ascii, group="io", dtypes=["float32", "float64"], sizes=[12, 24]),
 }
 
 MODIFIED_OPS = {k for k, v in OPS.items() if v["group"] == "modified"}
