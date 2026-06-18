@@ -93,8 +93,17 @@ namespace
 // contracts to vfmadd, holding maxULP=0 vs stock VTK. NB: warp is
 // bandwidth-bound (2 read + 1 write per ~2 FLOP) so the SIMD win is real only
 // cache-resident; the FMV stays portable/bit-exact either way.
+// fvtk PORTABILITY: target_clones("default","avx2") is GCC x86-only function
+// multiversioning; AppleClang (Apple Silicon) and MSVC reject it. Guard to real
+// GCC-on-x86 and no-op elsewhere (those targets compile the same bit-exact
+// baseline kernel without the AVX2 clone). See vtkLinearTransform.cxx.
+#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
+#define FVTK_AVX2_TARGET_CLONES __attribute__((target_clones("default", "avx2")))
+#else
+#define FVTK_AVX2_TARGET_CLONES
+#endif
 template <typename IptsRange, typename OptsRange, typename VecsRange>
-__attribute__((target_clones("default", "avx2"))) void fvtkWarpVectorRange(
+FVTK_AVX2_TARGET_CLONES void fvtkWarpVectorRange(
   const IptsRange& ipts, OptsRange& opts, const VecsRange& vecs, double sf, vtkIdType begin,
   vtkIdType end)
 {

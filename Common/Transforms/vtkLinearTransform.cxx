@@ -92,8 +92,21 @@ inline void vtkLinearTransformNormal(T1 mat[4][4], T2 in[3], T3 out[3])
 // VTK by 1 ULP on adversarial data. target_clones controls ISA only; the
 // off-contract flag governs all clones. The fvtk-prefixed name keeps the
 // symbol distinct for objdump verification.
+//
+// fvtk PORTABILITY: target_clones("default","avx2") is GCC x86-only function
+// multiversioning. AppleClang (Apple Silicon / non-x86) rejects it ("function
+// multiversioning is not supported on the current target") and MSVC has no such
+// attribute, so guard it to real GCC-on-x86 and expand to nothing elsewhere.
+// Those targets build the same plain baseline kernel (still -ffp-contract=off
+// and thus bit-exact) without the runtime AVX2 clone — the Linux bitexact gate
+// exercises the AVX2 path; macOS/Windows wheels use the portable baseline.
+#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
+#define FVTK_AVX2_TARGET_CLONES __attribute__((target_clones("default", "avx2")))
+#else
+#define FVTK_AVX2_TARGET_CLONES
+#endif
 template <class TIn, class TOut, class T>
-__attribute__((target_clones("default", "avx2"))) void fvtkLinearTransformPointRange(
+FVTK_AVX2_TARGET_CLONES void fvtkLinearTransformPointRange(
   T matrix[4][4], const TIn* pin, TOut* pout, vtkIdType count)
 {
   for (vtkIdType i = 0; i < count; ++i, pin += 3, pout += 3)
