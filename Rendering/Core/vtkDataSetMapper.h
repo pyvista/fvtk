@@ -65,6 +65,12 @@ protected:
   vtkGeometryFilter* GeometryExtractor;
   vtkPolyDataMapper* PolyDataMapper;
 
+  // fvtk: timestamp of the last push of this mapper's state onto the internal
+  // PolyDataMapper (input connection, lookup table, scalar range/mode, coincident
+  // topology, ...). Render() re-pushes only when this mapper has been Modified
+  // since, instead of every frame — see vtkDataSetMapper::Render.
+  vtkTimeStamp InternalSyncTime;
+
   void ReportReferences(vtkGarbageCollector*) override;
 
   // see algorithm for more info

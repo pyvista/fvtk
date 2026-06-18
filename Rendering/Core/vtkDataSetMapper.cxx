@@ -90,56 +90,72 @@ void vtkDataSetMapper::Render(vtkRenderer* ren, vtkActor* act)
     this->PolyDataMapper = pm;
   }
 
-  // share clipping planes with the PolyDataMapper
-  //
-  if (this->ClippingPlanes != this->PolyDataMapper->GetClippingPlanes())
+  // fvtk: push this mapper's state onto the internal PolyDataMapper only when
+  // something on THIS mapper has changed since the last push, not every frame.
+  // The pushes below are all idempotent vtkSetMacro calls (no Modified() when the
+  // value is unchanged), so re-applying them every frame leaves the internal
+  // mapper byte-identical — but each costs a virtual call, and SetInputConnection
+  // in particular walks the executive's vtkInformationVector every frame (a
+  // measurable per-actor cost in many-actor scenes). vtkMapper::GetMTime folds in
+  // the LookupTable's MTime, so a LUT/scalar-range change (e.g. pyvista re-setting
+  // scalar_range) still re-syncs; an input DATA-content change keeps the same
+  // connection and flows through the internal mapper's own Update, so it needs no
+  // re-push here. BIT-EXACT: identical internal-mapper state, identical draw.
+  if (this->GetMTime() > this->InternalSyncTime)
   {
-    this->PolyDataMapper->SetClippingPlanes(this->ClippingPlanes);
-  }
-
-  // For efficiency: if input type is vtkPolyData, there's no need to
-  // pass it through the geometry filter.
-  //
-  if (this->GetInput()->GetDataObjectType() == VTK_POLY_DATA)
-  {
-    this->PolyDataMapper->SetInputConnection(this->GetInputConnection(0, 0));
-  }
-  else
-  {
-    this->GeometryExtractor->SetInputData(this->GetInput());
-    this->PolyDataMapper->SetInputConnection(this->GeometryExtractor->GetOutputPort());
-  }
-
-  // update ourselves in case something has changed
-  this->PolyDataMapper->SetLookupTable(this->GetLookupTable());
-  this->PolyDataMapper->SetScalarVisibility(this->GetScalarVisibility());
-  this->PolyDataMapper->SetUseLookupTableScalarRange(this->GetUseLookupTableScalarRange());
-  this->PolyDataMapper->SetScalarRange(this->GetScalarRange());
-
-  this->PolyDataMapper->SetColorMode(this->GetColorMode());
-  this->PolyDataMapper->SetInterpolateScalarsBeforeMapping(
-    this->GetInterpolateScalarsBeforeMapping());
-
-  double f, u;
-  this->GetRelativeCoincidentTopologyPolygonOffsetParameters(f, u);
-  this->PolyDataMapper->SetRelativeCoincidentTopologyPolygonOffsetParameters(f, u);
-  this->GetRelativeCoincidentTopologyLineOffsetParameters(f, u);
-  this->PolyDataMapper->SetRelativeCoincidentTopologyLineOffsetParameters(f, u);
-  this->GetRelativeCoincidentTopologyPointOffsetParameter(u);
-  this->PolyDataMapper->SetRelativeCoincidentTopologyPointOffsetParameter(u);
-
-  this->PolyDataMapper->SetScalarMode(this->GetScalarMode());
-  if (this->ScalarMode == VTK_SCALAR_MODE_USE_POINT_FIELD_DATA ||
-    this->ScalarMode == VTK_SCALAR_MODE_USE_CELL_FIELD_DATA)
-  {
-    if (this->ArrayAccessMode == VTK_GET_ARRAY_BY_ID)
+    // share clipping planes with the PolyDataMapper
+    //
+    if (this->ClippingPlanes != this->PolyDataMapper->GetClippingPlanes())
     {
-      this->PolyDataMapper->ColorByArrayComponent(this->ArrayId, ArrayComponent);
+      this->PolyDataMapper->SetClippingPlanes(this->ClippingPlanes);
+    }
+
+    // For efficiency: if input type is vtkPolyData, there's no need to
+    // pass it through the geometry filter.
+    //
+    if (this->GetInput()->GetDataObjectType() == VTK_POLY_DATA)
+    {
+      this->PolyDataMapper->SetInputConnection(this->GetInputConnection(0, 0));
     }
     else
     {
-      this->PolyDataMapper->ColorByArrayComponent(this->ArrayName, ArrayComponent);
+      this->GeometryExtractor->SetInputData(this->GetInput());
+      this->PolyDataMapper->SetInputConnection(this->GeometryExtractor->GetOutputPort());
     }
+
+    // update ourselves in case something has changed
+    this->PolyDataMapper->SetLookupTable(this->GetLookupTable());
+    this->PolyDataMapper->SetScalarVisibility(this->GetScalarVisibility());
+    this->PolyDataMapper->SetUseLookupTableScalarRange(this->GetUseLookupTableScalarRange());
+    this->PolyDataMapper->SetScalarRange(this->GetScalarRange());
+
+    this->PolyDataMapper->SetColorMode(this->GetColorMode());
+    this->PolyDataMapper->SetInterpolateScalarsBeforeMapping(
+      this->GetInterpolateScalarsBeforeMapping());
+
+    double f, u;
+    this->GetRelativeCoincidentTopologyPolygonOffsetParameters(f, u);
+    this->PolyDataMapper->SetRelativeCoincidentTopologyPolygonOffsetParameters(f, u);
+    this->GetRelativeCoincidentTopologyLineOffsetParameters(f, u);
+    this->PolyDataMapper->SetRelativeCoincidentTopologyLineOffsetParameters(f, u);
+    this->GetRelativeCoincidentTopologyPointOffsetParameter(u);
+    this->PolyDataMapper->SetRelativeCoincidentTopologyPointOffsetParameter(u);
+
+    this->PolyDataMapper->SetScalarMode(this->GetScalarMode());
+    if (this->ScalarMode == VTK_SCALAR_MODE_USE_POINT_FIELD_DATA ||
+      this->ScalarMode == VTK_SCALAR_MODE_USE_CELL_FIELD_DATA)
+    {
+      if (this->ArrayAccessMode == VTK_GET_ARRAY_BY_ID)
+      {
+        this->PolyDataMapper->ColorByArrayComponent(this->ArrayId, ArrayComponent);
+      }
+      else
+      {
+        this->PolyDataMapper->ColorByArrayComponent(this->ArrayName, ArrayComponent);
+      }
+    }
+
+    this->InternalSyncTime.Modified();
   }
 
   this->PolyDataMapper->Render(ren, act);
