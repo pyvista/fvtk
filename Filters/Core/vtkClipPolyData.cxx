@@ -7,6 +7,7 @@
 #include "vtkExecutive.h"
 #include "vtkFloatArray.h"
 #include "vtkGenericCell.h"
+#include "vtkIdList.h"
 #include "vtkImplicitFunction.h"
 #include "vtkIncrementalPointLocator.h"
 #include "vtkInformation.h"
@@ -15,14 +16,58 @@
 #include "vtkMergePoints.h"
 #include "vtkObjectFactory.h"
 #include "vtkPointData.h"
+#include "vtkPoints.h"
 #include "vtkPolyData.h"
 #include "vtkTriangle.h"
+#include "vtkTypeInt64Array.h"
 
 #include <cmath>
 
 VTK_ABI_NAMESPACE_BEGIN
 vtkStandardNewMacro(vtkClipPolyData);
 vtkCxxSetObjectMacro(vtkClipPolyData, ClipFunction, vtkImplicitFunction);
+
+namespace
+{
+//------------------------------------------------------------------------------
+// One vtkPolyData cell-array target (Verts/Lines/Polys/Strips) resolved to raw
+// typed pointers for the dominant Int64-AOS storage (vtkCellArray's default), so
+// the per-cell clip loop can read a cell's point ids inline instead of calling
+// the out-of-line, cross-shared-library vtkPolyData::GetCell -> vtkCellArray::
+// GetCellAtId once per cell (which also re-runs vtkCellArray's StorageType switch
+// every cell). The inline reads are byte-identical to GetCellAtId's vtkIdList
+// copy (numberOfPoints = offsets[local+1]-offsets[local]; ids copied from
+// connectivity), in the same order; no FP. When Conn64 is null (non-Int64
+// storage, or no cells in this target) the caller falls back to GetCellAtId.
+struct ClipCellArrayView
+{
+  vtkCellArray* Array = nullptr;       // the target cell array (never null when used)
+  const vtkTypeInt64* Offsets64 = nullptr;
+  const vtkTypeInt64* Conn64 = nullptr;
+  vtkIdType NumberOfCells = 0;         // cells in this target
+  vtkIdType GlobalBegin = 0;           // global cellId of this target's first cell
+
+  void Initialize(vtkCellArray* array, vtkIdType globalBegin)
+  {
+    this->Array = array;
+    this->GlobalBegin = globalBegin;
+    this->NumberOfCells = array ? array->GetNumberOfCells() : 0;
+    this->Offsets64 = nullptr;
+    this->Conn64 = nullptr;
+    if (array && array->GetStorageType() == vtkCellArray::StorageTypes::Int64)
+    {
+      if (auto* offs = array->GetOffsetsArray64())
+      {
+        if (auto* cn = array->GetConnectivityArray64())
+        {
+          this->Offsets64 = offs->GetPointer(0);
+          this->Conn64 = cn->GetPointer(0);
+        }
+      }
+    }
+  }
+};
+} // anonymous namespace
 
 //------------------------------------------------------------------------------
 // Construct with user-specified implicit function; InsideOut turned off; value
@@ -226,13 +271,100 @@ int vtkClipPolyData::RequestData(vtkInformation* vtkNotUsed(request),
   cellScalars = vtkFloatArray::New();
   cellScalars->Allocate(VTK_CELL_SIZE);
 
+  // Resolve the four vtkPolyData cell-array targets to raw Int64-AOS pointers so
+  // the per-cell loop below can read each cell's point ids inline instead of
+  // calling the virtual, cross-shared-library vtkPolyData::GetCell(cellId, cell)
+  // once per cell. vtkPolyData lays out global cell ids in the order
+  // Verts, Lines, Polys, Strips (see vtkPolyData::BuildCells), with the local id
+  // within a target equal to (globalCellId - target's GlobalBegin); we reproduce
+  // exactly that mapping. The inline ids/points read below are byte-identical to
+  // GetCell's GetCellAtId + vtkPoints::GetPoints, in the same order; no FP.
+  ClipCellArrayView clipViews[4];
+  {
+    vtkCellArray* targets[4] = { input->GetVerts(), input->GetLines(), input->GetPolys(),
+      input->GetStrips() };
+    vtkIdType globalBegin = 0;
+    for (int t = 0; t < 4; ++t)
+    {
+      clipViews[t].Initialize(targets[t], globalBegin);
+      globalBegin += clipViews[t].NumberOfCells;
+    }
+  }
+  // Cursor into clipViews: clipViews[viewIdx] is the target owning the current
+  // cellId, and viewEnd is its one-past-the-last global cellId. Advancing the
+  // cursor in lockstep with cellId avoids a per-cell search for the owning array.
+  int viewIdx = 0;
+  vtkIdType viewEnd = clipViews[0].NumberOfCells;
+
   // perform clipping on cells
   bool abort = false;
   updateTime = numCells / 20 + 1; // update roughly every 5%
   cell = vtkGenericCell::New();
   for (cellId = 0; cellId < numCells && !abort; cellId++)
   {
-    input->GetCell(cellId, cell);
+    // Advance to the cell-array target that owns this global cellId (skipping
+    // any empty targets). Matches vtkPolyData's Verts/Lines/Polys/Strips order.
+    while (viewIdx < 3 && cellId >= viewEnd)
+    {
+      ++viewIdx;
+      viewEnd += clipViews[viewIdx].NumberOfCells;
+    }
+    const ClipCellArrayView& view = clipViews[viewIdx];
+
+    // Devirtualized equivalent of input->GetCell(cellId, cell). GetCellType()
+    // reads the cell-map tag inline (no cross-library call, no StorageType
+    // switch) and, exactly like GetCell's switch, returns VTK_EMPTY_CELL for
+    // deleted/unsupported cells -- in which case GetCell sets the generic cell to
+    // an empty cell and leaves its Points/PointIds untouched (stale). We
+    // reproduce that here, then fill the ids/points inline for the live case.
+    const int cellType = input->GetCellType(cellId);
+    bool live;
+    switch (cellType)
+    {
+      case VTK_VERTEX:
+      case VTK_POLY_VERTEX:
+      case VTK_LINE:
+      case VTK_POLY_LINE:
+      case VTK_TRIANGLE:
+      case VTK_QUAD:
+      case VTK_POLYGON:
+      case VTK_TRIANGLE_STRIP:
+        cell->SetCellType(cellType);
+        live = true;
+        break;
+      default:
+        cell->SetCellTypeToEmptyCell();
+        live = false;
+        break;
+    }
+    if (live)
+    {
+      vtkIdList* cellPtIds = cell->GetPointIds();
+      const vtkIdType localId = cellId - view.GlobalBegin;
+      if (view.Conn64)
+      {
+        // Inline the zero-copy Int64-AOS GetCellAtId path (byte-identical to
+        // vtkCellArray::GetCellAtId(localId, vtkIdList*) for Int64 storage):
+        // numberOfPoints = offsets[localId+1]-offsets[localId]; ids copied from
+        // connectivity. Avoids the per-cell cross-library call + StorageType
+        // switch.
+        const vtkTypeInt64 begin = view.Offsets64[localId];
+        const vtkIdType n = static_cast<vtkIdType>(view.Offsets64[localId + 1] - begin);
+        cellPtIds->SetNumberOfIds(n);
+        vtkIdType* idPtr = cellPtIds->GetPointer(0);
+        const vtkTypeInt64* connPtr = view.Conn64 + begin;
+        for (vtkIdType k = 0; k < n; ++k)
+        {
+          idPtr[k] = static_cast<vtkIdType>(connPtr[k]);
+        }
+      }
+      else
+      {
+        // Non-Int64 storage: fall back to the same call GetCell makes.
+        view.Array->GetCellAtId(localId, cellPtIds);
+      }
+      inPts->GetPoints(cellPtIds, cell->GetPoints());
+    }
     cellPts = cell->GetPoints();
     cellIds = cell->GetPointIds();
     numberOfPoints = cellPts->GetNumberOfPoints();
