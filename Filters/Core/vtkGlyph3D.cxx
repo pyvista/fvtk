@@ -165,9 +165,12 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
   // identical, so the output is bit-for-bit unchanged.
   vtkPolyData* cachedSource = nullptr;
   std::vector<int> cachedCellTypes;
-  std::vector<vtkIdType> cachedCellOffsets; // size = numCachedCells + 1
-  std::vector<vtkIdType> cachedCellConn;    // flattened source-local point ids
-  std::vector<vtkIdType> cellConnScratch;   // reusable per-cell buffer (ids + ptIncr)
+  std::vector<unsigned char> cachedCellTypesU8; // VTK cell type per cell, as bytes
+  std::vector<vtkIdType> cachedCellSizes;       // point count per cell
+  std::vector<vtkIdType> cachedCellOffsets;     // size = numCachedCells + 1
+  std::vector<vtkIdType> cachedCellConn;        // flattened source-local point ids
+  std::vector<vtkIdType> cellConnScratch;       // reusable per-cell buffer (ids + ptIncr)
+  bool cachedBlockOk = false;                   // true => InsertNextCellBlock fast path usable
 
   vtkDebugMacro(<< "Generating glyphs");
 
@@ -574,15 +577,21 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
       cachedSource = source;
       vtkIdType numCells = source->GetNumberOfCells();
       cachedCellTypes.resize(numCells);
+      cachedCellTypesU8.resize(numCells);
+      cachedCellSizes.resize(numCells);
       cachedCellOffsets.resize(numCells + 1);
       cachedCellConn.clear();
+      cachedBlockOk = true;
       vtkIdType maxNpts = 0;
       vtkIdType off = 0;
       for (vtkIdType c = 0; c < numCells; ++c)
       {
         source->GetCellPoints(c, pointIdList);
         vtkIdType cnpts = pointIdList->GetNumberOfIds();
-        cachedCellTypes[c] = source->GetCellType(c);
+        int ct = source->GetCellType(c);
+        cachedCellTypes[c] = ct;
+        cachedCellTypesU8[c] = static_cast<unsigned char>(ct);
+        cachedCellSizes[c] = cnpts;
         cachedCellOffsets[c] = off;
         for (vtkIdType k = 0; k < cnpts; ++k)
         {
@@ -593,22 +602,43 @@ bool vtkGlyph3D::Execute(vtkDataSet* input, vtkInformationVector* sourceVector, 
         {
           maxNpts = cnpts;
         }
+        // VTK_PIXEL needs the InsertNextCell QUAD-reorder path; if any source
+        // cell is a pixel, fall back to the per-cell append so behavior is
+        // byte-identical.
+        if (ct == VTK_PIXEL)
+        {
+          cachedBlockOk = false;
+        }
       }
       cachedCellOffsets[numCells] = off;
       cellConnScratch.resize(maxNpts);
     }
 
-    for (cellId = 0; cellId < numSourceCells; cellId++)
+    // Append this glyph instance's cells. The cached source topology is constant
+    // across input points; only the point-id base (ptIncr) changes. The block
+    // append hoists the per-cell vtkCellArray storage-type dispatch out of the
+    // loop, building the output offsets/connectivity through one typed pass per
+    // target cell array while producing byte-identical cells, types, and cell
+    // ordering to the per-cell InsertNextCell loop below.
+    if (cachedBlockOk)
     {
-      vtkIdType cellBegin = cachedCellOffsets[cellId];
-      npts = static_cast<int>(cachedCellOffsets[cellId + 1] - cellBegin);
-      const vtkIdType* srcIds = cachedCellConn.data() + cellBegin;
-      vtkIdType* dstIds = cellConnScratch.data();
-      for (i = 0; i < npts; i++)
+      output->InsertNextCellBlock(numSourceCells, cachedCellTypesU8.data(),
+        cachedCellSizes.data(), cachedCellConn.data(), ptIncr);
+    }
+    else
+    {
+      for (cellId = 0; cellId < numSourceCells; cellId++)
       {
-        dstIds[i] = srcIds[i] + ptIncr;
+        vtkIdType cellBegin = cachedCellOffsets[cellId];
+        npts = static_cast<int>(cachedCellOffsets[cellId + 1] - cellBegin);
+        const vtkIdType* srcIds = cachedCellConn.data() + cellBegin;
+        vtkIdType* dstIds = cellConnScratch.data();
+        for (i = 0; i < npts; i++)
+        {
+          dstIds[i] = srcIds[i] + ptIncr;
+        }
+        output->InsertNextCell(cachedCellTypes[cellId], npts, dstIds);
       }
-      output->InsertNextCell(cachedCellTypes[cellId], npts, dstIds);
     }
 
     // translate Source to Input point

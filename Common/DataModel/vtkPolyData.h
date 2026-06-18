@@ -342,6 +342,30 @@ public:
   vtkIdType InsertNextCell(int type, vtkIdList* pts);
 
   /**
+   * Append a block of `numCells` cells whose topology is described by a flat
+   * (type, size, connectivity) layout, applying a constant `pointIdOffset` to
+   * every connectivity entry.
+   *
+   * `types[c]` is the VTK cell type of cell c; `sizes[c]` its point count; the
+   * source-local point ids of cell c are `connectivity[offset .. offset+sizes[c])`
+   * where the running offset is the sum of the preceding sizes (i.e. the
+   * connectivity buffer is the cells laid end to end). Each appended cell stores
+   * `connectivity[k] + pointIdOffset`.
+   *
+   * This is exactly equivalent to calling
+   * `InsertNextCell(types[c], sizes[c], shiftedPts)` for c in [0, numCells) in
+   * order, but it hoists the per-cell `switch(StorageType)` dispatch on the
+   * target cell array out of the loop and grows the cell-map / target arrays in
+   * bulk. The cell types must already be valid for vtkPolyData (the same set
+   * accepted by InsertNextCell); VTK_PIXEL is NOT accepted here (callers that may
+   * see pixels must use the per-cell InsertNextCell path). Intended for filters
+   * (e.g. vtkGlyph3D) that append the same source topology many times at
+   * different point-id offsets.
+   */
+  void InsertNextCellBlock(vtkIdType numCells, const unsigned char* types, const vtkIdType* sizes,
+    const vtkIdType* connectivity, vtkIdType pointIdOffset);
+
+  /**
    * Begin inserting data all over again. Memory is not freed but otherwise
    * objects are returned to their initial state.
    */

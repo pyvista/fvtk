@@ -22,6 +22,7 @@
 #include "vtkUnsignedCharArray.h"
 
 #include <stdexcept>
+#include <vector>
 
 // vtkPolyDataInternals.h methods:
 namespace vtkPolyData_detail
@@ -1034,6 +1035,124 @@ vtkIdType vtkPolyData::InsertNextCell(int type, int npts, const vtkIdType ptsIn[
 vtkIdType vtkPolyData::InsertNextCell(int type, vtkIdList* pts)
 {
   return this->InsertNextCell(type, static_cast<int>(pts->GetNumberOfIds()), pts->GetPointer(0));
+}
+
+namespace
+{
+// Functor used by vtkPolyData::InsertNextCellBlock. For one target vtkCellArray
+// (identified by targetIndex), it appends every cell of the block that routes to
+// that array, in increasing block-cell order. The storage-type switch is resolved
+// ONCE (by vtkCellArray::Dispatch) instead of once per cell, and the typed
+// offsets/connectivity accessors are non-virtual.
+//
+// The (offset, connectivity) values written for cell c are exactly what the
+// per-cell InsertNextCell path would write: one offset entry equal to
+// (connectivity-size-so-far + npts) and npts connectivity entries equal to
+// (source point id + pointIdOffset). No per-call heap allocation: the routing and
+// per-cell connectivity start are recomputed inline from the flat layout.
+struct AppendCellBlockToTarget : public vtkCellArray::DispatchUtilities
+{
+  template <class OffsetsT, class ConnectivityT>
+  void operator()(OffsetsT* offsets, ConnectivityT* conn, vtkIdType numCells,
+    std::size_t targetIndex, const unsigned char* types, const vtkIdType* sizes,
+    const vtkIdType* connectivity, vtkIdType pointIdOffset)
+  {
+    using ValueType = GetAPIType<OffsetsT>;
+    vtkDataArrayAccessor<OffsetsT> offsetsAccessor(offsets);
+    vtkDataArrayAccessor<ConnectivityT> connAccessor(conn);
+
+    vtkIdType connBegin = 0;
+    for (vtkIdType c = 0; c < numCells; ++c)
+    {
+      const vtkIdType npts = sizes[c];
+      const vtkPolyData_detail::TaggedCellId tag(
+        vtkIdType(0), static_cast<VTKCellType>(types[c]));
+      if (tag.GetTargetIndex() == targetIndex)
+      {
+        offsetsAccessor.InsertNext(static_cast<ValueType>(conn->GetNumberOfValues() + npts));
+        const vtkIdType* srcIds = connectivity + connBegin;
+        for (vtkIdType i = 0; i < npts; ++i)
+        {
+          connAccessor.InsertNext(static_cast<ValueType>(srcIds[i] + pointIdOffset));
+        }
+      }
+      connBegin += npts;
+    }
+  }
+};
+} // anonymous namespace
+
+//------------------------------------------------------------------------------
+void vtkPolyData::InsertNextCellBlock(vtkIdType numCells, const unsigned char* types,
+  const vtkIdType* sizes, const vtkIdType* connectivity, vtkIdType pointIdOffset)
+{
+  if (numCells <= 0)
+  {
+    return;
+  }
+  if (!this->Cells)
+  {
+    this->BuildCells();
+  }
+
+  // If any cell type is unsupported (or VTK_PIXEL, which the per-cell path
+  // silently rewrites to a reordered VTK_QUAD), fall back to the exact per-cell
+  // InsertNextCell path so behavior is byte-identical. This scan touches only the
+  // small per-source `types` buffer.
+  for (vtkIdType c = 0; c < numCells; ++c)
+  {
+    const VTKCellType ct = static_cast<VTKCellType>(types[c]);
+    if (ct == VTK_PIXEL || !CellMap::ValidateCellType(ct))
+    {
+      vtkIdType connBegin = 0;
+      vtkNew<vtkIdList> shifted;
+      for (vtkIdType cc = 0; cc < numCells; ++cc)
+      {
+        const vtkIdType npts = sizes[cc];
+        shifted->SetNumberOfIds(npts);
+        vtkIdType* dst = shifted->GetPointer(0);
+        const vtkIdType* srcIds = connectivity + connBegin;
+        for (vtkIdType i = 0; i < npts; ++i)
+        {
+          dst[i] = srcIds[i] + pointIdOffset;
+        }
+        this->InsertNextCell(static_cast<int>(types[cc]), shifted);
+        connBegin += npts;
+      }
+      return;
+    }
+  }
+
+  // Append each target array's cells with a single storage-type dispatch. Targets
+  // are (Verts=0, Lines=1, Polys=2, Strips=3), the same order/index as
+  // GetCellArrayInternal()'s target table (tag.GetTargetIndex()). Capture each
+  // target's pre-block cell count first: it is the internal cell id the per-cell
+  // path would assign to that target's first cell in this block.
+  vtkCellArray* const targets[4] = { this->Verts, this->Lines, this->Polys, this->Strips };
+  vtkIdType perTargetNext[4];
+  for (int t = 0; t < 4; ++t)
+  {
+    perTargetNext[t] = targets[t]->GetNumberOfCells();
+  }
+  for (std::size_t t = 0; t < 4; ++t)
+  {
+    targets[t]->Dispatch(AppendCellBlockToTarget{}, numCells, t, types, sizes, connectivity,
+      pointIdOffset);
+  }
+
+  // Stamp the cell-map tags in global (block) cell order, matching the per-cell
+  // InsertNextCell path: each cell becomes a TaggedCellId(internalCellId, type)
+  // emplaced at the end of the map. The internal (target-local) cell id assigned
+  // to a cell equals that target's pre-block count plus the number of same-target
+  // block cells already stamped (perTargetNext walks up exactly as InsertNextCell
+  // would have).
+  for (vtkIdType c = 0; c < numCells; ++c)
+  {
+    const TaggedCellId probe(vtkIdType(0), static_cast<VTKCellType>(types[c]));
+    const std::size_t ti = probe.GetTargetIndex();
+    this->Cells->InsertNextCell(perTargetNext[ti], static_cast<VTKCellType>(types[c]));
+    perTargetNext[ti]++;
+  }
 }
 
 //------------------------------------------------------------------------------
