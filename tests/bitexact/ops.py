@@ -75,6 +75,7 @@ try:
         vtkGlyph3D,
         vtkPolyDataNormals,
         vtkQuadricDecimation,
+        vtkSimpleElevationFilter,
         vtkSmoothPolyDataFilter,
         vtkStripper,
         vtkThreshold,
@@ -831,10 +832,30 @@ def op_point2cell_ugrid(dtype, size):
 
 
 def op_elevation(dtype, size):
+    # Force the input POINT array to the requested precision so BOTH the float32
+    # and float64 typed point-array branches of the vtkArrayDispatch fast path in
+    # vtkElevationFilter are exercised (vtkSphereSource alone emits float32 only).
+    # Non-trivial, non-axis-aligned LowPoint/HighPoint so the projection/clamp/
+    # normalize arithmetic is exercised with all three diffVector components and a
+    # genuine [0,1] clamp on both ends of the sphere.
     f = vtkElevationFilter()
-    f.SetInputData(make_sphere(size, size))
-    f.SetLowPoint(0, 0, -0.5)
-    f.SetHighPoint(0, 0, 0.5)
+    f.SetInputData(_sphere_with_precision(size, size, dtype))
+    f.SetLowPoint(-0.3, -0.2, -0.5)
+    f.SetHighPoint(0.4, 0.25, 0.5)
+    f.SetScalarRange(0.0, 7.0)
+    f.Update()
+    return f.GetOutput()
+
+
+def op_simple_elevation(dtype, size):
+    # vtkSimpleElevationFilter: per-point scalar = dot(point, Vector). Force the
+    # input point precision to `dtype` so both the float32 and float64 typed
+    # point-array branches of the vtkArrayDispatch fast path are exercised. A
+    # non-axis-aligned Vector with all three components nonzero makes the dot
+    # product non-trivial (v[0]*p[0] + v[1]*p[1] + v[2]*p[2] in that exact order).
+    f = vtkSimpleElevationFilter()
+    f.SetInputData(_sphere_with_precision(size, size, dtype))
+    f.SetVector(0.3, -0.5, 0.81)
     f.Update()
     return f.GetOutput()
 
@@ -2050,7 +2071,8 @@ OPS = {
     "normals_smooth": dict(fn=op_normals_smooth, group="filter", dtypes=["float32", "float64"], sizes=[24, 48]),
     "point2cell": dict(fn=op_point2cell, group="filter", dtypes=["float32", "float64"], sizes=[20, 28]),
     "point2cell_ugrid": dict(fn=op_point2cell_ugrid, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),
-    "elevation": dict(fn=op_elevation, group="filter", dtypes=["float64"], sizes=[24, 40]),
+    "elevation": dict(fn=op_elevation, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]),
+    "simple_elevation": dict(fn=op_simple_elevation, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]),
     "warpvector": dict(
         fn=op_warpvector, group="filter", dtypes=["float32", "float64"], sizes=[24, 40]
     ),
