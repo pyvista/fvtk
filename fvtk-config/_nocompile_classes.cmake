@@ -1,4 +1,10 @@
 # fvtk Lever B (expanded 2026-06-14): 564 original + 178 ref-closure-safe additions = 742.
+# 2026-06-18: +1 (vtkHyperTreeGridGenerateFieldStrategy) = 743. It is the abstract
+# base of the GenerateFields strategy family whose concrete subclasses
+# (vtkHyperTreeGridCellCenter/CellSize/TotalVisibleVolume/ValidCellStrategy) and the
+# vtkHyperTreeGridGenerateFields filter that drives them are ALL already nocompiled,
+# leaving this base a pure orphan: zero kept-source includers, zero kept subclasses,
+# no ::New()/factory (abstract, vtkObject-derived), not an object-factory override.
 # Closure: C++ source ref-scan + transitive ::New() bases. Generated-code refs (the
 # per-module vtk*ObjectFactory.cxx override registrations) are NOT in source, so 2
 # factory-override classes (vtkPAxisAlignedReflectionFilter, vtkPResampleWithDataSet)
@@ -270,6 +276,7 @@ set(FVTK_NOCOMPILE_CLASSES
   vtkHyperTreeGridExtractGhostCells
   vtkHyperTreeGridFeatureEdges
   vtkHyperTreeGridGenerateFields
+  vtkHyperTreeGridGenerateFieldStrategy
   vtkHyperTreeGridGenerateGlobalIds
   vtkHyperTreeGridGenerateProcessIds
   vtkHyperTreeGridGradient
