@@ -5,6 +5,7 @@
 #include "vtkArrayDispatch.h"
 #include "vtkArrayDispatchDataSetArrayList.h"
 #include "vtkDataArray.h"
+#include "vtkFVTKSMPDefaults.h" // fvtk: opt into default multithreading (bit-exact)
 #include "vtkMath.h"
 #include "vtkMatrix4x4.h"
 #include "vtkPoints.h"
@@ -274,23 +275,29 @@ void vtkLinearTransform::TransformPoints(vtkPoints* inPts, vtkPoints* outPts)
   vtkDataArray* outArray = outPts->GetData();
   outArray->WriteVoidPointer(3 * m, 3 * n);
 
-  vtkLinearTransformPointsWorker worker;
-  if (!vtkArrayDispatch::Dispatch2ByArray<vtkArrayDispatch::AOSPointArrays,
-        vtkArrayDispatch::AOSPointArrays>::Execute(inArray, outArray, worker, m, matrix))
-  {
-    // for anything that isn't float or double
-    vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
-      [&](vtkIdType ptId, vtkIdType endPtId)
+  // fvtk: run the (pre-sized, per-tuple-independent => bit-exact under any thread
+  // count) transform under the default-threading policy.
+  fvtk::RunSafeFilterParallel(
+    [&]()
+    {
+      vtkLinearTransformPointsWorker worker;
+      if (!vtkArrayDispatch::Dispatch2ByArray<vtkArrayDispatch::AOSPointArrays,
+            vtkArrayDispatch::AOSPointArrays>::Execute(inArray, outArray, worker, m, matrix))
       {
-        double point[3];
-        for (; ptId < endPtId; ++ptId)
-        {
-          inPts->GetPoint(ptId, point);
-          vtkLinearTransformPoint(matrix, point, point);
-          outPts->SetPoint(m + ptId, point);
-        }
-      });
-  }
+        // for anything that isn't float or double
+        vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
+          [&](vtkIdType ptId, vtkIdType endPtId)
+          {
+            double point[3];
+            for (; ptId < endPtId; ++ptId)
+            {
+              inPts->GetPoint(ptId, point);
+              vtkLinearTransformPoint(matrix, point, point);
+              outPts->SetPoint(m + ptId, point);
+            }
+          });
+      }
+    });
 }
 
 //------------------------------------------------------------------------------
@@ -310,25 +317,29 @@ void vtkLinearTransform::TransformNormals(vtkDataArray* inNms, vtkDataArray* out
   // operate directly on the memory to avoid GetTuple()/SetPoint() calls.
   outNms->WriteVoidPointer(3 * m, 3 * n);
 
-  vtkLinearTransformNormalsWorker worker;
-  if (!vtkArrayDispatch::Dispatch2ByArray<vtkArrayDispatch::AOSPointArrays,
-        vtkArrayDispatch::AOSPointArrays>::Execute(inNms, outNms, worker, m, matrix))
-  {
-    // for anything that isn't float or double
-    vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
-      [&](vtkIdType ptId, vtkIdType endPtId)
+  fvtk::RunSafeFilterParallel(
+    [&]()
+    {
+      vtkLinearTransformNormalsWorker worker;
+      if (!vtkArrayDispatch::Dispatch2ByArray<vtkArrayDispatch::AOSPointArrays,
+            vtkArrayDispatch::AOSPointArrays>::Execute(inNms, outNms, worker, m, matrix))
       {
-        double norm[3];
-        for (; ptId < endPtId; ++ptId)
-        {
-          inNms->GetTuple(ptId, norm);
-          // use TransformVector because matrix is already transposed & inverted
-          vtkLinearTransformVector(matrix, norm, norm);
-          vtkMath::Normalize(norm);
-          outNms->SetTuple(m + ptId, norm);
-        }
-      });
-  }
+        // for anything that isn't float or double
+        vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
+          [&](vtkIdType ptId, vtkIdType endPtId)
+          {
+            double norm[3];
+            for (; ptId < endPtId; ++ptId)
+            {
+              inNms->GetTuple(ptId, norm);
+              // use TransformVector because matrix is already transposed & inverted
+              vtkLinearTransformVector(matrix, norm, norm);
+              vtkMath::Normalize(norm);
+              outNms->SetTuple(m + ptId, norm);
+            }
+          });
+      }
+    });
 }
 
 //------------------------------------------------------------------------------
@@ -344,22 +355,26 @@ void vtkLinearTransform::TransformVectors(vtkDataArray* inVrs, vtkDataArray* out
   // operate directly on the memory to avoid GetTuple()/SetTuple() calls.
   outVrs->WriteVoidPointer(3 * m, 3 * n);
 
-  vtkLinearTransformVectorsWorker worker;
-  if (!vtkArrayDispatch::Dispatch2ByArray<vtkArrayDispatch::AOSPointArrays,
-        vtkArrayDispatch::AOSPointArrays>::Execute(inVrs, outVrs, worker, m, matrix))
-  {
-    // for anything that isn't float or double
-    vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
-      [&](vtkIdType ptId, vtkIdType endPtId)
+  fvtk::RunSafeFilterParallel(
+    [&]()
+    {
+      vtkLinearTransformVectorsWorker worker;
+      if (!vtkArrayDispatch::Dispatch2ByArray<vtkArrayDispatch::AOSPointArrays,
+            vtkArrayDispatch::AOSPointArrays>::Execute(inVrs, outVrs, worker, m, matrix))
       {
-        double vec[3];
-        for (; ptId < endPtId; ++ptId)
-        {
-          inVrs->GetTuple(ptId, vec);
-          vtkLinearTransformVector(matrix, vec, vec);
-          outVrs->SetTuple(m + ptId, vec);
-        }
-      });
-  }
+        // for anything that isn't float or double
+        vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
+          [&](vtkIdType ptId, vtkIdType endPtId)
+          {
+            double vec[3];
+            for (; ptId < endPtId; ++ptId)
+            {
+              inVrs->GetTuple(ptId, vec);
+              vtkLinearTransformVector(matrix, vec, vec);
+              outVrs->SetTuple(m + ptId, vec);
+            }
+          });
+      }
+    });
 }
 VTK_ABI_NAMESPACE_END

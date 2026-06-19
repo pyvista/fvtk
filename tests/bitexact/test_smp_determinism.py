@@ -146,3 +146,76 @@ def test_large_warp_threaded_path_is_deterministic(large_warp_digests, nthreads)
         f"large warp output digest at {nthreads} threads ({got[:16]}) != "
         f"1-thread reference ({ref[:16]}) -- threading is non-deterministic"
     )
+
+
+# A large-mesh script that forces the vtkLinearTransform threaded path:
+# TransformPoints/TransformNormals parallelize with grain = vtkSMPTools::THRESHOLD
+# (100k), so per-suite cases (<10k points) run serial regardless of thread count.
+# This drives >THRESHOLD points so the multithreaded transform branch is actually
+# exercised, applying a non-trivial rotate+scale+translate and carrying normals
+# through (TransformAllInputVectorsOn). We hash the transformed points AND normals
+# so determinism across thread counts is checked directly.
+_LARGE_TRANSFORM_SCRIPT = r"""
+import os, sys, hashlib
+sys.path = [p for p in sys.path if p not in ("", os.getcwd())]
+import numpy as np
+from vtkmodules.util.numpy_support import vtk_to_numpy
+from vtkmodules.vtkCommonTransforms import vtkTransform
+from vtkmodules.vtkFiltersGeneral import vtkTransformFilter
+from vtkmodules.vtkFiltersSources import vtkSphereSource
+from vtkmodules.vtkFiltersCore import vtkTriangleFilter, vtkPolyDataNormals
+s = vtkSphereSource(); s.SetThetaResolution(700); s.SetPhiResolution(700)
+t = vtkTriangleFilter(); t.SetInputConnection(s.GetOutputPort()); t.Update()
+nf = vtkPolyDataNormals(); nf.SetInputData(t.GetOutput())
+nf.ComputePointNormalsOn(); nf.SplittingOff(); nf.Update()
+poly = nf.GetOutput(); n = poly.GetNumberOfPoints()
+assert n > 100000, n  # ensure we exceed the transform THRESHOLD grain
+xf = vtkTransform()
+xf.Translate(1.25, -3.5, 7.0)
+xf.RotateWXYZ(37.0, 0.3, 0.6, 0.8)
+xf.Scale(1.7, 0.4, 2.3)
+tf = vtkTransformFilter()
+tf.SetTransform(xf)
+tf.TransformAllInputVectorsOn()
+tf.SetInputData(poly)
+tf.Update()
+out = tf.GetOutput()
+h = hashlib.sha256()
+h.update(np.ascontiguousarray(vtk_to_numpy(out.GetPoints().GetData())).tobytes())
+h.update(np.ascontiguousarray(vtk_to_numpy(out.GetPointData().GetNormals())).tobytes())
+print(h.hexdigest())
+"""
+
+
+@pytest.fixture(scope="module")
+def large_transform_digests(tmp_path_factory):
+    fvtk_py = os.environ.get("BITEXACT_FVTK_PY")
+    if not fvtk_py:
+        pytest.skip("BITEXACT_FVTK_PY not set.")
+    script = tmp_path_factory.mktemp("large_transform") / "large_transform.py"
+    script.write_text(_LARGE_TRANSFORM_SCRIPT)
+    digests = {}
+    for n in THREAD_COUNTS:
+        proc = subprocess.run(
+            [fvtk_py, str(script)],
+            env=_env(os.environ.get("BITEXACT_FVTK_LDLP", ""), n),
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        digests[n] = proc.stdout.strip().splitlines()[-1]
+    return digests
+
+
+@pytest.mark.parametrize("nthreads", [n for n in THREAD_COUNTS if n != 1])
+def test_large_transform_threaded_path_is_deterministic(
+    large_transform_digests, nthreads
+):
+    """The >THRESHOLD vtkLinearTransform path (genuinely multithreaded) hashes
+    identically at 1 vs N threads."""
+    ref = large_transform_digests[1]
+    got = large_transform_digests[nthreads]
+    assert got == ref, (
+        f"large transform output digest at {nthreads} threads ({got[:16]}) != "
+        f"1-thread reference ({ref[:16]}) -- threading is non-deterministic"
+    )
