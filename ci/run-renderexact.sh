@@ -58,3 +58,12 @@ cd "$SRC/tests/renderexact"
 # Pixel-exact diff + GL-driver-match gate (exits non-zero on any diff / mismatch).
 # Use the stock venv's python — compare_render.py needs numpy.
 /tmp/rx-stock/bin/python compare_render.py "$OUT/stock" "$OUT/fvtk"
+
+# Hardware-selection (picking) parity: prove the GPU selection path remaps picked
+# point ids through the width-relaxed int32 vtkOriginalPointIds array to the SAME
+# original ids as stock VTK's int64 array. This path is invisible to the pixel
+# gate above, so it gets its own selected-id comparison under the same EGL driver.
+mkdir -p "$OUT/sel-stock" "$OUT/sel-fvtk"
+/tmp/rx-stock/bin/python run_select.py "$OUT/sel-stock"
+/tmp/rx-fvtk/bin/python  run_select.py "$OUT/sel-fvtk"
+/tmp/rx-stock/bin/python compare_select.py "$OUT/sel-stock" "$OUT/sel-fvtk"

@@ -514,8 +514,10 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
   // do we need to do anything to the point id data?
   if (currPass == vtkHardwareSelector::POINT_ID_LOW24)
   {
-    vtkIdTypeArray* pointArrayId = this->PointIdArrayName
-      ? vtkArrayDownCast<vtkIdTypeArray>(pd->GetArray(this->PointIdArrayName))
+    // fvtk: width-agnostic id read (int32-or-int64 passthrough array); see
+    // vtkOpenGLPolyDataMapper for the bit-exactness argument.
+    vtkDataArray* pointArrayId = this->PointIdArrayName
+      ? vtkDataArray::SafeDownCast(pd->GetArray(this->PointIdArrayName))
       : nullptr;
 
     // do we need to do anything to the point id data?
@@ -545,7 +547,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
           vtkIdType outval = inval;
           if (pointArrayId && static_cast<vtkIdType>(inval) <= pointArrayId->GetMaxId())
           {
-            outval = pointArrayId->GetValue(inval);
+            outval = static_cast<vtkIdType>(pointArrayId->GetComponent(inval, 0));
           }
           plowdata[pos] = outval & 0xff;
           plowdata[pos + 1] = (outval & 0xff00) >> 8;
@@ -557,8 +559,10 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
 
   if (currPass == vtkHardwareSelector::POINT_ID_HIGH24)
   {
-    vtkIdTypeArray* pointArrayId = this->PointIdArrayName
-      ? vtkArrayDownCast<vtkIdTypeArray>(pd->GetArray(this->PointIdArrayName))
+    // fvtk: width-agnostic id read (int32-or-int64 passthrough array); see
+    // vtkOpenGLPolyDataMapper for the bit-exactness argument.
+    vtkDataArray* pointArrayId = this->PointIdArrayName
+      ? vtkDataArray::SafeDownCast(pd->GetArray(this->PointIdArrayName))
       : nullptr;
 
     // do we need to do anything to the point id data?
@@ -580,7 +584,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
         vtkIdType outval = inval;
         if (pointArrayId)
         {
-          outval = pointArrayId->GetValue(inval);
+          outval = static_cast<vtkIdType>(pointArrayId->GetComponent(inval, 0));
         }
         phighdata[pos] = (outval & 0xff000000) >> 24;
         phighdata[pos + 1] = (outval & 0xff00000000) >> 32;
@@ -617,8 +621,9 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
 
   if (currPass == vtkHardwareSelector::CELL_ID_LOW24)
   {
-    vtkIdTypeArray* cellArrayId = this->CellIdArrayName
-      ? vtkArrayDownCast<vtkIdTypeArray>(cd->GetArray(this->CellIdArrayName))
+    // fvtk: width-agnostic id read (see point-id note above).
+    vtkDataArray* cellArrayId = this->CellIdArrayName
+      ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;
     unsigned char* clowdata = sel->GetPixelBuffer(vtkHardwareSelector::CELL_ID_LOW24);
     bool hasHighCellIds = sel->HasHighCellIds();
@@ -647,7 +652,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
           vtkIdType outval = inval;
           if (cellArrayId && outval <= cellArrayId->GetMaxId())
           {
-            outval = cellArrayId->GetValue(outval);
+            outval = static_cast<vtkIdType>(cellArrayId->GetComponent(outval, 0));
           }
           clowdata[pos] = outval & 0xff;
           clowdata[pos + 1] = (outval & 0xff00) >> 8;
@@ -659,8 +664,9 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
 
   if (currPass == vtkHardwareSelector::CELL_ID_HIGH24)
   {
-    vtkIdTypeArray* cellArrayId = this->CellIdArrayName
-      ? vtkArrayDownCast<vtkIdTypeArray>(cd->GetArray(this->CellIdArrayName))
+    // fvtk: width-agnostic id read (see point-id note above).
+    vtkDataArray* cellArrayId = this->CellIdArrayName
+      ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;
     unsigned char* chighdata = sel->GetPixelBuffer(vtkHardwareSelector::CELL_ID_HIGH24);
 
@@ -680,7 +686,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
         vtkIdType outval = inval;
         if (cellArrayId)
         {
-          outval = cellArrayId->GetValue(outval);
+          outval = static_cast<vtkIdType>(cellArrayId->GetComponent(outval, 0));
         }
         chighdata[pos] = (outval & 0xff000000) >> 24;
         chighdata[pos + 1] = (outval & 0xff00000000) >> 32;

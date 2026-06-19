@@ -32,6 +32,7 @@
 #include "vtkStructuredData.h"
 #include "vtkStructuredGrid.h"
 #include "vtkTetra.h"
+#include "vtkTypeInt32Array.h" // fvtk: width-relaxed int32 OriginalPointIds storage
 #include "vtkUniformGrid.h"
 #include "vtkUnsignedCharArray.h"
 #include "vtkUnstructuredGrid.h"
@@ -2808,19 +2809,11 @@ struct CharacterizeGrid
 };
 
 //------------------------------------------------------------------------------
-// Threaded creation to generate array of originating point ids.
-template <typename TInputIdType>
-void PassPointIds(const char* name, vtkIdType numInputPts, vtkIdType numOutputPts,
-  TInputIdType* ptMap, vtkPointData* outPD)
+// Threaded populate of the originating-point-id array (templated on the output
+// container's value type so the same scatter drives int32 or int64 storage).
+template <typename TOutId, typename TInputIdType>
+void PassPointIdsFill(TOutId* origIds, vtkIdType numInputPts, TInputIdType* ptMap)
 {
-  vtkNew<vtkIdTypeArray> origPtIds;
-  origPtIds->SetName(name);
-  origPtIds->SetNumberOfComponents(1);
-  origPtIds->SetNumberOfTuples(numOutputPts);
-  outPD->AddArray(origPtIds);
-  vtkIdType* origIds = origPtIds->GetPointer(0);
-
-  // Now threaded populate the array
   vtkSMPTools::For(0, numInputPts,
     [&origIds, &ptMap](vtkIdType ptId, vtkIdType endPtId)
     {
@@ -2828,10 +2821,41 @@ void PassPointIds(const char* name, vtkIdType numInputPts, vtkIdType numOutputPt
       {
         if (ptMap[ptId] >= 0)
         {
-          origIds[ptMap[ptId]] = ptId;
+          origIds[ptMap[ptId]] = static_cast<TOutId>(ptId);
         }
       }
     });
+}
+
+//------------------------------------------------------------------------------
+// Threaded creation to generate array of originating point ids.
+template <typename TInputIdType>
+void PassPointIds(const char* name, vtkIdType numInputPts, vtkIdType numOutputPts,
+  TInputIdType* ptMap, vtkPointData* outPD)
+{
+  // fvtk: width-relaxed storage. The values are input point ids (sacred); the
+  // CONTAINER is int32 when every id fits in 0x7FFFFFFF, else int64. Halves the
+  // array footprint on large extracted surfaces. The bitexact gate width-
+  // normalizes integer arrays, and the render hardware-selection path reads this
+  // passthrough array width-agnostically (vtkOpenGL*PolyDataMapper).
+  if (numInputPts <= static_cast<vtkIdType>(0x7FFFFFFF))
+  {
+    vtkNew<vtkTypeInt32Array> origPtIds;
+    origPtIds->SetName(name);
+    origPtIds->SetNumberOfComponents(1);
+    origPtIds->SetNumberOfTuples(numOutputPts);
+    outPD->AddArray(origPtIds);
+    PassPointIdsFill(origPtIds->GetPointer(0), numInputPts, ptMap);
+  }
+  else
+  {
+    vtkNew<vtkIdTypeArray> origPtIds;
+    origPtIds->SetName(name);
+    origPtIds->SetNumberOfComponents(1);
+    origPtIds->SetNumberOfTuples(numOutputPts);
+    outPD->AddArray(origPtIds);
+    PassPointIdsFill(origPtIds->GetPointer(0), numInputPts, ptMap);
+  }
 }
 
 //------------------------------------------------------------------------------

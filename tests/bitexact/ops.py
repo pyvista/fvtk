@@ -1195,6 +1195,10 @@ def op_triangle(dtype, size):
 def op_geometry(dtype, size):
     g = vtkGeometryFilter()
     g.SetInputData(make_volume(size, dtype))
+    # fvtk: emit vtkOriginalPointIds so the width-relaxed int32 id-array storage
+    # (vtkGeometryFilter::PassPointIds) is validated against stock (values match,
+    # int32 vs int64 container normalized by the compare gate).
+    g.PassThroughPointIdsOn()
     g.Update()
     return g.GetOutput()
 
@@ -1664,6 +1668,7 @@ def op_geometry_ugrid(dtype, size):
     # inline operator[] connectivity-read optimization in vtkCellArray.h).
     g = vtkGeometryFilter()
     g.SetInputData(make_hex_ugrid(size, dtype))
+    g.PassThroughPointIdsOn()  # fvtk: validate int32 vtkOriginalPointIds storage
     g.Update()
     return g.GetOutput()
 
@@ -1678,6 +1683,7 @@ def op_geometry_ugrid_mixed(dtype, size):
     # Run on float32 AND float64 to cover both typed point-copy paths.
     g = vtkGeometryFilter()
     g.SetInputData(make_mixed_ugrid(size, dtype))
+    g.PassThroughPointIdsOn()  # fvtk: validate int32 vtkOriginalPointIds storage
     g.Update()
     return g.GetOutput()
 
