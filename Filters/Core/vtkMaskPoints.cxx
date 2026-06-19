@@ -5,7 +5,11 @@
 
 #include "vtkBoundingBox.h"
 #include "vtkCellArray.h"
+#include "vtkDataArray.h"
 #include "vtkDataSet.h"
+#include "vtkDoubleArray.h"
+#include "vtkFloatArray.h"
+#include "vtkIdList.h"
 #include "vtkInformation.h"
 #include "vtkInformationVector.h"
 #include "vtkMath.h"
@@ -13,6 +17,7 @@
 #include "vtkObjectFactory.h"
 #include "vtkOctreePointLocator.h"
 #include "vtkPointData.h"
+#include "vtkPointSet.h"
 #include "vtkPoints.h"
 #include "vtkPolyData.h"
 #include "vtkTetra.h"
@@ -754,16 +759,113 @@ int vtkMaskPoints::RequestData(vtkInformation* vtkNotUsed(request),
   }
   else // striding mode
   {
-    for (vtkIdType ptId = this->Offset; (ptId < numPts) && (id < localMaxPts) && !abort;
-         ptId += this->OnRatio)
+    // Fast path for the deterministic stride (ON_RATIO / every-Nth, with Offset)
+    // mode. The set of selected point ids, their output order, and every copied
+    // coordinate / point-data value are byte-identical to the generic path
+    // below; we only remove virtual point dispatch and reallocation growth.
+    //
+    // Requirements: the input must be a vtkPointSet whose points are stored as a
+    // contiguous AOS vtkFloatArray/vtkDoubleArray, and the output point array
+    // must be the same concrete AOS float/double type. We presize the output
+    // points and copy the selected coordinate tuples through raw typed pointers,
+    // then copy the matching point-data tuples in a single batched call. Anything
+    // that does not satisfy these conditions falls through to the original loop.
+    vtkPointSet* inputPS = vtkPointSet::SafeDownCast(input);
+    vtkPoints* inputPts = inputPS ? inputPS->GetPoints() : nullptr;
+    vtkDataArray* inDA = inputPts ? inputPts->GetData() : nullptr;
+    vtkDataArray* outDA = newPts->GetData();
+
+    bool fastDone = false;
+    if (inDA && outDA && inDA->GetDataType() == outDA->GetDataType() &&
+      inDA->GetNumberOfComponents() == 3 && outDA->GetNumberOfComponents() == 3)
     {
-      input->GetPoint(ptId, x);
-      id = newPts->InsertNextPoint(x);
-      outputPD->CopyData(pd, ptId, id);
-      if (!(id % progressInterval)) // abort/progress
+      // Replicate the EXACT original selection: ptId = Offset, Offset+OnRatio,
+      // ... while ptId < numPts and id < localMaxPts (the same off-by-one
+      // bound). This loop touches no point data, so it is cheap and cannot
+      // change which ids are selected or their order.
+      vtkNew<vtkIdList> selIds;
       {
-        this->UpdateProgress(0.5 * id / numPts);
+        vtkIdType probeId = 0;
+        for (vtkIdType ptId = this->Offset; (ptId < numPts) && (probeId < localMaxPts);
+             ptId += this->OnRatio)
+        {
+          selIds->InsertNextId(ptId);
+          probeId = selIds->GetNumberOfIds() - 1;
+        }
+      }
+      const vtkIdType nSel = selIds->GetNumberOfIds();
+
+      vtkFloatArray* inF = vtkArrayDownCast<vtkFloatArray>(inDA);
+      vtkFloatArray* outF = vtkArrayDownCast<vtkFloatArray>(outDA);
+      vtkDoubleArray* inD = vtkArrayDownCast<vtkDoubleArray>(inDA);
+      vtkDoubleArray* outD = vtkArrayDownCast<vtkDoubleArray>(outDA);
+
+      if ((inF && outF) || (inD && outD))
+      {
+        // Presize output points to the known selected count and copy the
+        // selected coordinate tuples through raw typed AOS pointers.
+        const vtkIdType* sel = selIds->GetPointer(0);
+        if (inF && outF)
+        {
+          outF->SetNumberOfTuples(nSel);
+          const float* src = inF->GetPointer(0);
+          float* dst = outF->GetPointer(0);
+          for (vtkIdType i = 0; i < nSel; ++i)
+          {
+            const float* s = src + 3 * sel[i];
+            float* d = dst + 3 * i;
+            d[0] = s[0];
+            d[1] = s[1];
+            d[2] = s[2];
+          }
+        }
+        else
+        {
+          outD->SetNumberOfTuples(nSel);
+          const double* src = inD->GetPointer(0);
+          double* dst = outD->GetPointer(0);
+          for (vtkIdType i = 0; i < nSel; ++i)
+          {
+            const double* s = src + 3 * sel[i];
+            double* d = dst + 3 * i;
+            d[0] = s[0];
+            d[1] = s[1];
+            d[2] = s[2];
+          }
+        }
+
+        // Copy the matching point-data tuples in one batched call. This uses
+        // the same per-tuple copy as the scalar CopyData(pd, ptId, id) loop, so
+        // every copied value is byte-identical; only the realloc growth is gone.
+        if (nSel > 0)
+        {
+          outputPD->CopyData(pd, selIds, vtkIdType(0));
+        }
+
+        // Preserve the generic path's final `id`: it ends at (count - 1), or
+        // stays 0 when nothing was inserted. Downstream vertex generation and
+        // the debug message both read `id`/`id + 1`.
+        id = (nSel > 0) ? (nSel - 1) : 0;
+
+        this->UpdateProgress(0.5);
         abort = this->CheckAbort();
+        fastDone = true;
+      }
+    }
+
+    if (!fastDone)
+    {
+      for (vtkIdType ptId = this->Offset; (ptId < numPts) && (id < localMaxPts) && !abort;
+           ptId += this->OnRatio)
+      {
+        input->GetPoint(ptId, x);
+        id = newPts->InsertNextPoint(x);
+        outputPD->CopyData(pd, ptId, id);
+        if (!(id % progressInterval)) // abort/progress
+        {
+          this->UpdateProgress(0.5 * id / numPts);
+          abort = this->CheckAbort();
+        }
       }
     }
   }

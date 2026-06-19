@@ -88,6 +88,7 @@ try:
         vtkCutter,
         vtkDecimatePro,
         vtkElevationFilter,
+        vtkMaskPoints,
         vtkProbeFilter,
         vtkTubeFilter,
     )
@@ -221,6 +222,30 @@ def make_points_array(n=2000, dtype=np.float64):
     gx, gy, gz = np.meshgrid(lin, lin, lin, indexing="ij")
     pts = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=1)[:n]
     return np.ascontiguousarray(pts).astype(dtype)
+
+
+def make_point_cloud_polydata(n=400, dtype=np.float64):
+    """A vtkPolyData point cloud (AOS points of `dtype`) carrying deterministic
+    per-point scalar + 3-vector point data. Used to drive vtkMaskPoints' stride
+    (ON_RATIO) fast path, which copies selected points AND their point data."""
+    pts = make_points_array(n, dtype)  # (m, 3) contiguous, m may be < n
+    m = pts.shape[0]
+    pd = vtkPolyData()
+    vp = vtkPoints()
+    vp.SetData(numpy_to_vtk(np.ascontiguousarray(pts), deep=1))
+    pd.SetPoints(vp)
+    idx = np.arange(m, dtype=np.int64)
+    scal = numpy_to_vtk(np.ascontiguousarray((1.0 + (idx % 7)).astype(dtype)), deep=1)
+    scal.SetName("s")
+    pd.GetPointData().SetScalars(scal)
+    vec = np.empty((m, 3), dtype=dtype)
+    vec[:, 0] = (idx % 5).astype(dtype)
+    vec[:, 1] = (idx % 3).astype(dtype)
+    vec[:, 2] = (idx % 2).astype(dtype)
+    va = numpy_to_vtk(np.ascontiguousarray(vec), deep=1)
+    va.SetName("v")
+    pd.GetPointData().SetVectors(va)
+    return pd
 
 
 def make_polylines(nlines=6, length=20, dtype=np.float64):
@@ -1223,6 +1248,23 @@ def op_vertexglyph(dtype, size):
     f.SetInputData(make_sphere(size, size))
     f.Update()
     return f.GetOutput()
+
+
+def op_maskpoints_stride(dtype, size):
+    """vtkMaskPoints in the deterministic ON_RATIO / stride mode (RandomMode off),
+    with a non-zero Offset. Exercises the typed AOS fast path: selected points and
+    their point data (scalar 's' + vector 'v') are subsampled every Nth id. Output
+    point precision is left DEFAULT so it tracks the input dtype (float32/float64),
+    keeping input and output point arrays the same concrete AOS type."""
+    npts = size * size
+    m = vtkMaskPoints()
+    m.SetInputData(make_point_cloud_polydata(npts, DTYPES[dtype]))
+    m.RandomModeOff()
+    m.SetOnRatio(3)
+    m.SetOffset(2)
+    m.GenerateVerticesOn()
+    m.Update()
+    return m.GetOutput()
 
 
 def op_decimatepro(dtype, size):
@@ -2255,6 +2297,7 @@ OPS = {
     "featureedges": dict(fn=op_featureedges, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "stripper": dict(fn=op_stripper, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "vertexglyph": dict(fn=op_vertexglyph, group="filter", dtypes=["float64"], sizes=[24, 40]),
+    "maskpoints_stride": dict(fn=op_maskpoints_stride, group="filter", dtypes=["float32", "float64"], sizes=[12, 20]),
     "glyph_arrays": dict(fn=op_glyph_arrays, group="filter", dtypes=["float64"], sizes=[20, 32]),
     "glyph_mixedcells": dict(fn=op_glyph_mixedcells, group="filter", dtypes=["float64"], sizes=[20, 32]),
     "decimatepro": dict(fn=op_decimatepro, group="filter", dtypes=["float64"], sizes=[24, 40]),
