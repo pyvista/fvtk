@@ -23,6 +23,40 @@ from fvtk.vtkCommonDataModel import (
     vtkPartitionedDataSetCollection,
 )
 
+# --- fvtk drop-in shim -------------------------------------------------------
+# Stock VTK's wrapped classes report a ``vtkmodules.*`` ``__module__``; the fvtk
+# fork builds them under ``fvtk.*``. Downstream libraries key behavior on this
+# string -- notably PyVista removes VTK 9.6's known-broken data-model
+# ``@override`` classes only for bases whose ``__module__`` starts with
+# ``vtkmodules.`` (pyvista.core._vtk_utilities.vtkPyVistaOverride). Relabel the
+# data-model classes to their stock module path so unmodified PyVista (and any
+# other ``__module__``-keyed consumer) treats fvtk exactly like stock VTK. This
+# runs during the same eager import that registers the overrides below, so it
+# precedes PyVista's subclass definitions -- reproducing stock's
+# register-then-remove ordering. The import shim maps ``vtkmodules.*`` back to
+# ``fvtk.*`` so pickling/imports still resolve, and the overrides stay
+# registered for direct (non-PyVista) users.
+for _vtk_dm_cls in (
+    vtkCellArray,
+    vtkDataObject,
+    vtkFieldData,
+    vtkDataSetAttributes,
+    vtkPointData,
+    vtkCellData,
+    vtkImageData,
+    vtkMultiBlockDataSet,
+    vtkPolyData,
+    vtkStructuredGrid,
+    vtkRectilinearGrid,
+    vtkUnstructuredGrid,
+    vtkOverlappingAMR,
+    vtkPartitionedDataSet,
+    vtkPartitionedDataSetCollection,
+):
+    if _vtk_dm_cls.__module__.startswith("fvtk."):
+        _vtk_dm_cls.__module__ = "vtkmodules." + _vtk_dm_cls.__module__[len("fvtk.") :]
+del _vtk_dm_cls
+
 import weakref
 
 NUMPY_AVAILABLE = False
