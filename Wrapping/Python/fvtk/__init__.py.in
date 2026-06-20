@@ -112,6 +112,33 @@ __all__ = [
     @_fvtk_all@
 ]
 #------------------------------------------------------------------------------
+# Opt-in NON-EXACT fast mode (fvtk extension).
+#
+# Some fvtk filters have a multithreaded fast path whose output is NOT byte-exact
+# vs stock VTK -- e.g. order-relaxed topology emission, where the SAME cells are
+# produced but their ORDER (and thus the raw connectivity bytes) depends on thread
+# scheduling. These stay OFF by default so fvtk is a byte-exact drop-in. Call
+# EnableFast() to opt in; points / point-data / the cell set stay correct, only
+# cell ORDER becomes non-deterministic. Backed by the FVTK_FAST env var, which the
+# native filters read live, so this can be toggled at runtime.
+import os as _os
+
+def EnableFast():
+    """Opt in to fvtk's non-exact multithreaded fast paths (see module docs)."""
+    _os.environ["FVTK_FAST"] = "1"
+
+def DisableFast():
+    """Turn the non-exact fast paths back off (the default)."""
+    _os.environ.pop("FVTK_FAST", None)
+
+def IsFastEnabled():
+    """True if the non-exact fast mode is currently enabled."""
+    return _os.environ.get("FVTK_FAST", "").lower() in ("1", "on", "true", "yes")
+
+# Expose the fast-mode toggles for `from fvtk import *` and discoverability.
+__all__ += ["EnableFast", "DisableFast", "IsFastEnabled"]
+
+#------------------------------------------------------------------------------
 # get the version
 __version__ = "@VTK_MAJOR_VERSION@.@VTK_MINOR_VERSION@.@VTK_BUILD_VERSION@"
 

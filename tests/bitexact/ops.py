@@ -1881,6 +1881,51 @@ def op_cutter(dtype, size):
     return cut.GetOutput()
 
 
+def op_cutter_linear(dtype, size):
+    # Plane cut of a LARGE linear hex unstructured grid with triangle generation
+    # ON (the default). vtkCutter routes this to vtk3DLinearGridPlaneCutter -- the
+    # threaded fast path that fvtk runs under the OPT-IN non-exact fast mode.
+    #
+    # Fast mode is gated by the FVTK_FAST env var (the fvtk.EnableFast() Python
+    # API just sets this). We set it here so the fvtk side actually threads; stock
+    # VTK ignores the variable, so it still produces the sequential reference. The
+    # mesh is sized so the parallel vtkSMPTools::For batch-splits, so the threaded
+    # triangle emission reorders cells relative to the sequential reference. Output
+    # points + interpolated point scalars + the (constant) plane normal are
+    # thread-INVARIANT; only cell EMISSION ORDER differs. Hence this op is compared
+    # ORDER-RELAXED: same points/point-data (strict) and the same multiset of
+    # triangles carrying their cell-data, cell order negotiable.
+    os.environ["FVTK_FAST"] = "1"  # fvtk: opt in to the threaded cutter; stock: ignored
+    p = vtkPlane()
+    c = (size - 1) / 2.0
+    p.SetOrigin(c, c, c)
+    p.SetNormal(1, 1, 0)
+    cut = vtkCutter()
+    cut.SetInputData(make_hex_ugrid(size, dtype))
+    cut.SetCutFunction(p)
+    cut.SetValue(0, 0.0)  # GenerateTriangles ON (default) -> linear-grid fast path
+    cut.Update()
+    return cut.GetOutput()
+
+
+def op_contour_linear(dtype, size):
+    # Isocontour of a LARGE linear hex unstructured grid with ComputeNormals OFF.
+    # vtkContourFilter routes a linear UG to vtkContour3DLinearGrid -- the threaded
+    # fast path fvtk runs under the OPT-IN non-exact fast mode (FVTK_FAST, set by
+    # fvtk.EnableFast()). With ComputeNormals OFF the merge path produces
+    # thread-INVARIANT points + interpolated point scalars; only triangle EMISSION
+    # ORDER differs, so the case is compared ORDER-RELAXED. ComputeNormals ON is
+    # NOT order-relaxable (normal averaging is reduction-order-dependent) and the
+    # filter keeps it serial / byte-exact -- this op deliberately leaves it off.
+    os.environ["FVTK_FAST"] = "1"  # fvtk: opt in to the threaded contour; stock: ignored
+    c = vtkContourFilter()
+    c.SetInputData(make_hex_ugrid(size, dtype))
+    c.SetComputeNormals(0)
+    c.SetValue(0, 0.25 * (size ** 2))
+    c.Update()
+    return c.GetOutput()
+
+
 def op_cutter_polydata(dtype, size):
     # vtkCutter on a vtkPolyData (triangle sphere) with GenerateTriangles OFF.
     # A polydata input that is NOT eligible for the plane-cutter fast path routes
@@ -2356,6 +2401,12 @@ OPS = {
     "tube_vec": dict(fn=op_tube_vec, group="filter", dtypes=["float32", "float64"], sizes=[16, 32]),
     "gradient": dict(fn=op_gradient, group="filter", dtypes=["float32", "float64"], sizes=[16, 24]),
     "cutter": dict(fn=op_cutter, group="filter", dtypes=["float64"], sizes=[8, 12]),
+    # Large linear-grid plane cut: threaded vtk3DLinearGridPlaneCutter, ORDER-RELAXED
+    # (same points/point-data + same triangle multiset; cell order may permute).
+    "cutter_linear": dict(fn=op_cutter_linear, group="filter", dtypes=["float32", "float64"], sizes=[30, 40], order_relaxed=True),
+    # Large linear-grid isocontour (ComputeNormals OFF): threaded vtkContour3DLinearGrid,
+    # ORDER-RELAXED. Normals-ON stays serial/byte-exact (reduction-order-dependent).
+    "contour_linear": dict(fn=op_contour_linear, group="filter", dtypes=["float32", "float64"], sizes=[30, 40], order_relaxed=True),
     "cutter_polydata": dict(fn=op_cutter_polydata, group="filter", dtypes=["float64"], sizes=[12, 20]),
     "cutter_polydata_bycell": dict(fn=op_cutter_polydata_bycell, group="filter", dtypes=["float64"], sizes=[12, 20]),
     "cellcenters": dict(fn=op_cellcenters, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),

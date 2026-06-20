@@ -23,6 +23,7 @@
 #include "vtkObjectFactory.h"
 #include "vtkPointData.h"
 #include "vtkPolyData.h"
+#include "vtkFVTKSMPDefaults.h"
 #include "vtkSMPTools.h"
 #include "vtkSmartPointer.h"
 #include "vtkSpanSpace.h"
@@ -59,7 +60,7 @@ vtkCxxSetObjectMacro(vtkContour3DLinearGrid, ScalarTree, vtkScalarTree);
   {                                                                                                \
     if (!_seq)                                                                                     \
     {                                                                                              \
-      vtkSMPTools::For(0, _num, _op);                                                              \
+      fvtk::RunFastFilterParallel([&]() { vtkSMPTools::For(0, _num, _op); });                                                              \
     }                                                                                              \
     else                                                                                           \
     {                                                                                              \
@@ -72,7 +73,7 @@ vtkCxxSetObjectMacro(vtkContour3DLinearGrid, ScalarTree, vtkScalarTree);
   {                                                                                                \
     if (!_seq)                                                                                     \
     {                                                                                              \
-      vtkSMPTools::For(0, _num, _op);                                                              \
+      fvtk::RunFastFilterParallel([&]() { vtkSMPTools::For(0, _num, _op); });                                                              \
     }                                                                                              \
     else                                                                                           \
     {                                                                                              \
@@ -255,11 +256,11 @@ struct ContourCellsBase
     // Copy points output to VTK structures. Only point coordinates are
     // copied for now; later we'll define the triangle topology.
     ProducePoints producePts(localPts, localPtOffsets, this->NewPts);
-    EXECUTE_SMPFOR(this->Filter->GetSequentialProcessing(), this->NumThreadsUsed, producePts);
+    EXECUTE_SMPFOR((this->Filter->GetSequentialProcessing() || this->Filter->GetComputeNormals()), this->NumThreadsUsed, producePts);
 
     // Now produce the output triangles (topology) for this contour n parallel
     ProduceTriangles produceTris(this->TotalTris, this->NewPolys);
-    EXECUTE_SMPFOR(this->Filter->GetSequentialProcessing(), this->NumTris, produceTris);
+    EXECUTE_SMPFOR((this->Filter->GetSequentialProcessing() || this->Filter->GetComputeNormals()), this->NumTris, produceTris);
   } // Reduce
 };  // ContourCellsBase
 
@@ -452,14 +453,14 @@ struct ProcessFastPathWorker
       TContourCellsST contour(
         filter, inPts, outPts, scalars, cellIter, isoValue, st, tris, totalPts, totalTris);
       EXECUTE_REDUCED_SMPFOR(
-        filter->GetSequentialProcessing(), contour.NumBatches, contour, numThreads);
+        (filter->GetSequentialProcessing() || filter->GetComputeNormals()), contour.NumBatches, contour, numThreads);
     }
     else
     {
       using TContourCells = ContourCells<TInputPointsArray, TOutputPointsArray, TScalarsArray>;
       TContourCells contour(
         filter, inPts, outPts, scalars, cellIter, isoValue, tris, totalPts, totalTris);
-      EXECUTE_REDUCED_SMPFOR(filter->GetSequentialProcessing(), numCells, contour, numThreads);
+      EXECUTE_REDUCED_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numCells, contour, numThreads);
     }
   }
 };
@@ -619,7 +620,7 @@ struct ExtractEdgesBase
     this->Edges =
       new EdgeTuple<IDType, EdgeDataType<IDType>>[3 * this->NumTris]; // three edges per triangle
     ProduceEdges<IDType> produceEdges(localEdges, localTriOffsets, this->Edges, this->Filter);
-    EXECUTE_SMPFOR(this->Filter->GetSequentialProcessing(), this->NumThreadsUsed, produceEdges);
+    EXECUTE_SMPFOR((this->Filter->GetSequentialProcessing() || this->Filter->GetComputeNormals()), this->NumThreadsUsed, produceEdges);
   } // Reduce
 };  // ExtractEdgesBase
 
@@ -818,7 +819,7 @@ struct ExtractEdgesWorker
       TExtractEdgesST extractEdges(
         filter, scalars, cellIter, isoValue, st, newPolys, totalTris, originalCellIds);
       EXECUTE_REDUCED_SMPFOR(
-        filter->GetSequentialProcessing(), extractEdges.NumBatches, extractEdges, numThreads);
+        (filter->GetSequentialProcessing() || filter->GetComputeNormals()), extractEdges.NumBatches, extractEdges, numThreads);
       numTris = extractEdges.NumTris;
       mergeEdges = extractEdges.Edges;
     }
@@ -827,7 +828,7 @@ struct ExtractEdgesWorker
       using TExtractEdges = ExtractEdges<TIds, TScalarArray>;
       TExtractEdges extractEdges(
         filter, scalars, cellIter, isoValue, newPolys, totalTris, originalCellIds);
-      EXECUTE_REDUCED_SMPFOR(filter->GetSequentialProcessing(), numCells, extractEdges, numThreads);
+      EXECUTE_REDUCED_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numCells, extractEdges, numThreads);
       numTris = extractEdges.NumTris;
       mergeEdges = extractEdges.Edges;
     }
@@ -983,7 +984,7 @@ struct ProduceMergedPointsWorker
   {
     ProduceMergedPoints<TInputPointsArray, TOutputPointsArray, TIds> produceMergedPoints(
       filter, inputPointsArray, outputPointsArray, mergeArray, offsets, totalPoints);
-    EXECUTE_SMPFOR(filter->GetSequentialProcessing(), numPts, produceMergedPoints);
+    EXECUTE_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numPts, produceMergedPoints);
   }
 };
 
@@ -1121,7 +1122,7 @@ int ProcessMerged(vtkContour3DLinearGrid* filter, vtkPoints* inPts, vtkPoints* o
   // Generate triangles.
   ProduceMergedTriangles<TIds> produceTris(
     mergeEdges, offsets, numTris, newPolys, totalPts, totalTris, filter);
-  EXECUTE_SMPFOR(filter->GetSequentialProcessing(), numPts, produceTris);
+  EXECUTE_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numPts, produceTris);
   numThreads = nt;
 
   // Generate points (one per unique edge)
@@ -1159,7 +1160,7 @@ int ProcessMerged(vtkContour3DLinearGrid* filter, vtkPoints* inPts, vtkPoints* o
       pointArrays->Realloc(totalPts + numPts);
     }
     ProducePointAttributes<TIds> interpolate(mergeEdges, offsets, pointArrays, totalPts, filter);
-    EXECUTE_SMPFOR(filter->GetSequentialProcessing(), numPts, interpolate);
+    EXECUTE_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numPts, interpolate);
 
     // interpolate cell data
     if (totalTris <= 0) // first contour value generating output
@@ -1172,7 +1173,7 @@ int ProcessMerged(vtkContour3DLinearGrid* filter, vtkPoints* inPts, vtkPoints* o
       cellArrays->Realloc(totalTris + numTris);
     }
     ProduceCellAttributes<TIds> interpolateCell(originalCellIds, cellArrays, totalTris, filter);
-    EXECUTE_SMPFOR(filter->GetSequentialProcessing(), numTris, interpolateCell);
+    EXECUTE_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numTris, interpolateCell);
   }
 
   // Clean up
@@ -1246,7 +1247,7 @@ vtkSmartPointer<vtkFloatArray> GenerateTriNormals(
 
   // Execute functor over all triangles
   ComputeCellNormals computeNormals(pts, tris, n, filter);
-  EXECUTE_SMPFOR(filter->GetSequentialProcessing(), numTris, computeNormals);
+  EXECUTE_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numTris, computeNormals);
 
   return cellNormals;
 }
@@ -1331,7 +1332,7 @@ void GeneratePointNormals(vtkPoints* pts, vtkCellArray* tris, vtkFloatArray* cel
 
   // Process all points, averaging normals
   AverageNormals<TId> average(&links, triN, ptN, filter);
-  EXECUTE_SMPFOR(filter->GetSequentialProcessing(), numPts, average);
+  EXECUTE_SMPFOR((filter->GetSequentialProcessing() || filter->GetComputeNormals()), numPts, average);
 
   // Clean up and get out
   pd->SetNormals(ptNormals);
