@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "vtkConnectivityFilter.h"
 
+#include "fvtkFastConnectivity.h" // fvtk opt-in parallel union-find region labeling
 #include "vtkCell.h"
 #include "vtkCellData.h"
 #include "vtkDataSet.h"
@@ -217,32 +218,48 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
     this->ExtractionMode != VTK_EXTRACT_CELL_SEEDED_REGIONS &&
     this->ExtractionMode != VTK_EXTRACT_CLOSEST_POINT_REGION)
   { // visit all cells marking with region number
-    for (cellId = 0; cellId < numCells; cellId++)
+    // fvtk opt-in fast lane: for ALL_REGIONS + geometric connectivity, replace
+    // the serial wave-BFS (TraverseAndMark, the measured #1 self-time hotspot)
+    // with a parallel union-find. Region ids are bit-identical (both number by
+    // increasing min cell index); only output point order relaxes. No-op unless
+    // fvtk::FastModeEnabled() and the supported regime -> falls through to the
+    // stock BFS below otherwise.
+    bool fastDone = false;
+    if (this->ExtractionMode == VTK_EXTRACT_ALL_REGIONS)
     {
-      if (cellId && !(cellId % 5000))
+      fastDone = fvtk::FastConnectivityAllRegions(input, numPts, numCells,
+        this->InScalars != nullptr, this->Visited, this->PointMap, this->NewScalars,
+        this->NewCellScalars, this->RegionSizes, this->PointNumber, this->RegionNumber);
+    }
+    if (!fastDone)
+    {
+      for (cellId = 0; cellId < numCells; cellId++)
       {
-        if (this->CheckAbort())
+        if (cellId && !(cellId % 5000))
         {
-          break;
-        }
-        this->UpdateProgress(0.1 + 0.8 * cellId / numCells);
-      }
-
-      if (this->Visited[cellId] < 0)
-      {
-        this->NumCellsInRegion = 0;
-        this->Wave->InsertNextId(cellId);
-        this->TraverseAndMark(input);
-
-        if (this->NumCellsInRegion > maxCellsInRegion)
-        {
-          maxCellsInRegion = this->NumCellsInRegion;
-          largestRegionId = this->RegionNumber;
+          if (this->CheckAbort())
+          {
+            break;
+          }
+          this->UpdateProgress(0.1 + 0.8 * cellId / numCells);
         }
 
-        this->RegionSizes->InsertValue(this->RegionNumber++, this->NumCellsInRegion);
-        this->Wave->Reset();
-        this->Wave2->Reset();
+        if (this->Visited[cellId] < 0)
+        {
+          this->NumCellsInRegion = 0;
+          this->Wave->InsertNextId(cellId);
+          this->TraverseAndMark(input);
+
+          if (this->NumCellsInRegion > maxCellsInRegion)
+          {
+            maxCellsInRegion = this->NumCellsInRegion;
+            largestRegionId = this->RegionNumber;
+          }
+
+          this->RegionSizes->InsertValue(this->RegionNumber++, this->NumCellsInRegion);
+          this->Wave->Reset();
+          this->Wave2->Reset();
+        }
       }
     }
   }
