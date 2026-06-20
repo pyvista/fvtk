@@ -176,7 +176,11 @@ archs = ["arm64"]
 # ccache is NOT on PyPI (no wheel) — install it via Homebrew (preinstalled on the
 # macos-14 runner). cmake/ninja/setuptools/wheel come from pip into the build env.
 before-build = "brew install ccache && python -m pip install 'cmake>=3.22,<4.2' 'ninja>=1.11' 'setuptools<81' wheel"
-repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+# delocate-wheel bundles the dylibs but does NOT strip symbols; repair_macos.py
+# runs delocate then strips local symbol tables (strip -x) + re-signs ad-hoc,
+# mirroring the Linux `auditwheel repair --strip` size win. Set FVTK_STRIP=0 to
+# fall back to a plain delocate repair.
+repair-wheel-command = "python ci/cibw/repair_macos.py {delocate_archs} {dest_dir} {wheel}"
 # macOS ships a native Cocoa GL backend with no headless display on CI, so the
 # global xvfb offscreen-render smoke is Linux-only. Use the minimal import+compute
 # smoke (no render, no xvfb) instead.
