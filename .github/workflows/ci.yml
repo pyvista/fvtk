@@ -228,6 +228,32 @@ jobs:
           path: /tmp/bx-out
           if-no-files-found: ignore
 
+  regression:
+    name: fvtk behavior regressions (py${{ matrix.python }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The one cp312-abi3 wheel is tag-compatible on both interpreters.
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          # ONLY the Linux build leg; pip --find-links picks the cp312-abi3
+          # wheel. macOS/Windows artifacts are a disjoint prefix.
+          pattern: fvtk-wheels-linux-*
+          merge-multiple: true
+          path: dist
+      - name: Behavior regression suite (built fvtk wheel)
+        run: ci/run-regression.sh dist python
+
   renderexact:
     name: fvtk == stock VTK 9.6.2 (pixel-exact render, py${{ matrix.python }})
     needs: build

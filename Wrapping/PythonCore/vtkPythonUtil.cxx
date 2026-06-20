@@ -92,6 +92,11 @@ struct vtkPythonPointerHash
 
 //------------------------------------------------------------------------------
 // A ghost object, can be used to recreate a deleted PyVTKObject
+// The PyObject pointers are intentionally raw: the references they
+// represent are managed by the GhostMap code, and this class must stay
+// trivially destructible with respect to them (FindObject copies a ghost
+// out of the map and erases the node before releasing the references, so
+// an ownership-releasing destructor here would cause a double release).
 class PyVTKObjectGhost
 {
 public:
@@ -464,13 +469,23 @@ PyObject* vtkPythonUtil::FindObject(vtkObjectBase* ptr)
   vtkPythonGhostMap::iterator j = vtkPythonMap->GhostMap->find(ptr);
   if (j != vtkPythonMap->GhostMap->end())
   {
-    if (j->second.vtk_ptr.GetPointer())
-    {
-      obj = PyVTKObject_FromPointer(j->second.vtk_class, j->second.vtk_dict, ptr);
-    }
-    Py_DECREF(j->second.vtk_class);
-    Py_DECREF(j->second.vtk_dict);
+    // Resurrecting the object and releasing the ghost's references can run
+    // arbitrary Python code (resurrection allocates, which can trigger
+    // garbage collection, and the ghost may hold the last reference to its
+    // dict), which can re-enter RemoveObjectFromMap.  That method both adds
+    // ghosts to this map and sweeps expired ghosts out of it, so it can
+    // erase this very node and invalidate the iterator.  Copy the ghost and
+    // erase the node before any of that can happen; the plain copy moves
+    // the class and dict references without touching their refcounts.
+    PyVTKObjectGhost ghost = j->second;
     vtkPythonMap->GhostMap->erase(j);
+    if (ghost.vtk_ptr.GetPointer())
+    {
+      obj = PyVTKObject_FromPointer(ghost.vtk_class, ghost.vtk_dict, ptr);
+    }
+    // Release the references that the ghost held.  Must be done at the end.
+    Py_DECREF(ghost.vtk_class);
+    Py_DECREF(ghost.vtk_dict);
   }
 
   return obj;
