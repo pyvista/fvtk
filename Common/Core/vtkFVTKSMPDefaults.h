@@ -79,6 +79,31 @@ inline void RunSafeFilterParallel(Body&& body)
   vtkSMPTools::LocalScope(GetSafeFilterThreadingConfig(), std::forward<Body>(body));
 }
 
+/**
+ * True when the opt-in NON-EXACT fast mode is enabled (env FVTK_FAST, set by the
+ * Python fvtk.EnableFast()). Default OFF. Read live so it can be toggled at
+ * runtime. Filters whose threaded path is not byte-exact gate on this.
+ */
+VTKCOMMONCORE_EXPORT bool FastModeEnabled();
+
+/**
+ * Like RunSafeFilterParallel(), but ONLY threads when FastModeEnabled(). When
+ * fast mode is off (the default), @p body runs serially so the filter stays
+ * byte-exact vs stock. Use this -- not RunSafeFilterParallel() -- for parallel
+ * regions whose output is NOT byte-exact (e.g. order-relaxed topology emission
+ * whose cell order depends on thread scheduling).
+ */
+template <typename Body>
+inline void RunFastFilterParallel(Body&& body)
+{
+  if (!FastModeEnabled())
+  {
+    body();
+    return;
+  }
+  RunSafeFilterParallel(std::forward<Body>(body));
+}
+
 VTK_ABI_NAMESPACE_END
 } // namespace fvtk
 

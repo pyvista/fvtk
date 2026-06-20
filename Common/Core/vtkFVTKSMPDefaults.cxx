@@ -30,6 +30,25 @@ bool DefaultThreadingDisabledByEnv()
 }
 
 //------------------------------------------------------------------------------
+// Opt-in NON-EXACT fast mode. Default OFF: filters whose threaded path is not
+// byte-exact (e.g. order-relaxed topology emission) stay serial unless the user
+// opts in. Read live from the FVTK_FAST env var (which fvtk.EnableFast() sets),
+// so it can be toggled at runtime. Truthy: 1/on/true/yes (any case).
+bool FastModeEnabled()
+{
+  const char* v = std::getenv("FVTK_FAST");
+  if (!v || v[0] == '\0')
+  {
+    return false;
+  }
+  return std::strcmp(v, "1") == 0 || std::strcmp(v, "on") == 0 ||
+    std::strcmp(v, "ON") == 0 || std::strcmp(v, "On") == 0 ||
+    std::strcmp(v, "true") == 0 || std::strcmp(v, "True") == 0 ||
+    std::strcmp(v, "TRUE") == 0 || std::strcmp(v, "yes") == 0 ||
+    std::strcmp(v, "YES") == 0;
+}
+
+//------------------------------------------------------------------------------
 // Precedence (first match wins):
 //   1. opt-out env FVTK_SMP_DEFAULT=0/off/serial  -> stay Sequential (serial).
 //   2. global backend already != Sequential (user SetBackend / VTK_SMP_BACKEND_IN_USE)

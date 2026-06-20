@@ -45,13 +45,17 @@ def _assert_case(results, case_key):
         detail = case["detail"]
         # Build a focused failure message listing the non-equal arrays + ULP.
         msg = [f"BIT DIFFERENCE in {case_key}:"]
+        if detail.get("order_relaxed"):
+            msg.append("  (order-relaxed mesh comparison)")
         if "arrays" in detail:
             for name, info in detail["arrays"].items():
-                if not info["equal"]:
+                if not info.get("equal", True):
                     msg.append(
-                        f"  array {name}: equal=False dtype={info['dtype']} "
-                        f"shape_stock={info['shape_stock']} "
-                        f"shape_fvtk={info['shape_fvtk']} ulp={info['ulp']}"
+                        f"  array {name}: equal=False mode={info.get('mode', 'strict')} "
+                        f"dtype={info.get('dtype', '?')} "
+                        f"shape_stock={info.get('shape_stock', '?')} "
+                        f"shape_fvtk={info.get('shape_fvtk', '?')} "
+                        f"ulp={info.get('ulp')} reason={info.get('reason', '')}"
                     )
         else:
             msg.append(f"  {detail}")

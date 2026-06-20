@@ -26,7 +26,11 @@ import compare as _compare  # noqa: E402
 
 # Ops whose filters opt into fvtk default-on threading. Exercising any of these
 # at >1 thread must produce byte-identical output to the 1-thread run.
-THREADED_OPS = ["warp", "warpvector", "normals", "elevation"]
+# cutter_linear is ORDER-RELAXED (threaded vtk3DLinearGridPlaneCutter): its cell
+# emission order varies with thread count, so compare_all compares it order-relaxed
+# (same points/point-data + same triangle multiset). The assertion below thus
+# checks thread-count invariance of the MESH, not the byte layout.
+THREADED_OPS = ["warp", "warpvector", "normals", "elevation", "cutter_linear"]
 
 THREAD_COUNTS = [1, 4, 8]
 
