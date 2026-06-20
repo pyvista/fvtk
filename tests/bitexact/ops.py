@@ -1202,6 +1202,75 @@ def op_clean(dtype, size):
     return c.GetOutput()
 
 
+def make_coincident_poly_cd(n, dtype):
+    """Like make_coincident_mesh (per-triangle duplicated corners -> coincident
+    points the cleaner MUST merge), but with COORDINATE-DERIVED point data so every
+    coincident copy carries identical values. This isolates the fast-clean
+    comparison from canonical-point-selection ambiguity (with differing data at
+    coincident points vtkCleanPolyData keeps the first-inserted point, which is a
+    genuine non-exactness of the opt-in fast lane, not a correctness bug). Each
+    triangle's 3 corners are distinct lattice vertices, so no cell degenerates."""
+    lin = np.linspace(0.0, 1.0, n)
+    lattice = [(lin[i], lin[j], 0.0) for i in range(n) for j in range(n)]
+    coords = []
+    conn = []
+    for i in range(n - 1):
+        for j in range(n - 1):
+            a = i * n + j
+            b = (i + 1) * n + j
+            c = i * n + (j + 1)
+            d = (i + 1) * n + (j + 1)
+            for tri in ((a, b, c), (b, d, c)):
+                base = len(coords)
+                for v in tri:
+                    coords.append(lattice[v])
+                conn.append((base, base + 1, base + 2))
+    coords = np.ascontiguousarray(np.array(coords), dtype=dtype)
+
+    pd = vtkPolyData()
+    vp = vtkPoints()
+    vp.SetData(numpy_to_vtk(coords, deep=1))
+    pd.SetPoints(vp)
+    polys = vtkCellArray()
+    for (p0, p1, p2) in conn:
+        ids = vtkIdList()
+        ids.InsertNextId(p0)
+        ids.InsertNextId(p1)
+        ids.InsertNextId(p2)
+        polys.InsertNextCell(ids)
+    pd.SetPolys(polys)
+
+    ps = numpy_to_vtk(
+        np.ascontiguousarray(
+            (coords[:, 0] * 100.0 + coords[:, 1] * 10.0 + coords[:, 2]).astype(dtype)),
+        deep=1)
+    ps.SetName("ps")
+    pd.GetPointData().SetScalars(ps)
+    ncells = len(conn)
+    cs = numpy_to_vtk(
+        np.ascontiguousarray((1000 + np.arange(ncells, dtype=np.int64)).astype(np.float64)),
+        deep=1)
+    cs.SetName("cs")
+    pd.GetCellData().SetScalars(cs)
+    return pd
+
+
+def op_cleanpoly_fast(dtype, size):
+    # Coincident-point merge of a polys-only triangle mesh via the OPT-IN vendored
+    # parallel OpenMP kernel (pyvista-algorithms clean), reached when
+    # fvtk.EnableFast()/FVTK_FAST is set. vtkCleanPolyData keeps polys 1:1 and
+    # copies the canonical point's data; the kernel renumbers merged points +
+    # connectivity in its own hash/thread-dependent order, so the case is compared
+    # POINTS-relaxed: same merged point set (coords + point-data) and same triangle
+    # multiset, point order negotiable. Stock VTK ignores FVTK_FAST and runs the
+    # reference vtkMergePoints clean.
+    c = vtkCleanPolyData()
+    c.SetInputData(make_coincident_poly_cd(size, dtype))
+    with fast_mode():
+        c.Update()
+    return c.GetOutput()
+
+
 def op_triangle(dtype, size):
     s = vtkSphereSource()
     s.SetThetaResolution(size)
@@ -2516,6 +2585,7 @@ OPS = {
     # POINTS-relaxed (surface points + cells both emitted in kernel order).
     "datasetsurface_fast": dict(fn=op_datasetsurface_fast, group="filter", dtypes=["float32", "float64"], sizes=[30, 40], order_relaxed=True, points_relaxed=True),
     "staticclean_fast": dict(fn=op_staticclean_fast, group="filter", dtypes=["float32", "float64"], sizes=[8, 12], order_relaxed=True, points_relaxed=True),
+    "cleanpoly_fast": dict(fn=op_cleanpoly_fast, group="filter", dtypes=["float32", "float64"], sizes=[12, 24], order_relaxed=True, points_relaxed=True),
     "cutter_polydata": dict(fn=op_cutter_polydata, group="filter", dtypes=["float64"], sizes=[12, 20]),
     "cutter_polydata_bycell": dict(fn=op_cutter_polydata_bycell, group="filter", dtypes=["float64"], sizes=[12, 20]),
     "cellcenters": dict(fn=op_cellcenters, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),

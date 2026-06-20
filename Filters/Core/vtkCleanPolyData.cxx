@@ -18,6 +18,8 @@
 #include "vtkStreamingDemandDrivenPipeline.h"
 #include "vtkUnsignedCharArray.h"
 
+#include "fvtkFastCleanPoly.h" // fvtk opt-in fast coincident-point merge
+
 #include <unordered_map>
 
 VTK_ABI_NAMESPACE_BEGIN
@@ -238,6 +240,21 @@ int vtkCleanPolyData::RequestData(vtkInformation* vtkNotUsed(request),
   {
     vtkDebugMacro(<< "No data to Operate On!");
     return 1;
+  }
+
+  // fvtk opt-in fast path: vendored OpenMP coincident-point merge for the common
+  // polys-only exact-merge case. Engages only under fvtk.EnableFast()/FVTK_FAST;
+  // returns false (and we fall through to the standard path) for anything it does
+  // not handle exactly (verts/lines/strips, real tolerance, global-ids/ghosts, or
+  // any cell that would degenerate to a line/vertex).
+  {
+    const double effTol =
+      (this->ToleranceIsAbsolute ? this->AbsoluteTolerance : this->Tolerance * input->GetLength());
+    if (fvtk::FastCleanPolyData(
+          input, output, this->PointMerging != 0, effTol, this->OutputPointsPrecision))
+    {
+      return 1;
+    }
   }
   // Hoist a typed raw-pointer reader for the input coordinates feeding the
   // merge. Bit-identical to inPts->GetPoint; only the dispatch is removed.
