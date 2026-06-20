@@ -85,31 +85,53 @@ def _cell_records(arrays):
     return keys, perm
 
 
-def _compare_order_relaxed(a, b):
-    """Order-invariant mesh equality: points + point-data strict; cells compared
-    as a multiset carrying their cell-data. Returns (ok, per_array_detail)."""
-    per = {}
-    ok = True
-    names = sorted(set(a.files) & set(b.files))
-    # 1) points + point-data: STRICT (points stay identical, so pd indices align).
+def _arr_names(x):
+    """Array names for either an NpzFile (.files) or a plain dict."""
+    return list(x.files) if hasattr(x, "files") else list(x)
+
+
+def _point_canonicalization(arrays, names):
+    """Return (perm, rank, key) canonicalizing POINTS by (coords, point-data).
+
+    perm = argsort of points into canonical order; rank[old_id] = canonical index
+    (used to remap connectivity); key = the per-point sort-key matrix. Lets us
+    compare meshes whose surface points are emitted in a different order (e.g. the
+    vendored extract_surface kernel's hash/thread-dependent compaction order).
+    """
+    pts = np.ascontiguousarray(arrays["points"]).astype(np.float64)
+    cols = [pts.reshape(len(pts), -1)]
     for name in names:
-        if name == "points" or name.startswith("pd:"):
-            x, y = a[name], b[name]
-            eq = bool(x.shape == y.shape and x.dtype == y.dtype and np.array_equal(x, y))
-            per[name] = {"equal": eq, "mode": "strict", "dtype": str(x.dtype)}
-            ok &= eq
-    # 2) cells: canonicalize both sides, compare keys (connectivity multiset).
+        if name.startswith("pd:"):
+            arr = np.asarray(arrays[name])
+            cols.append(arr.reshape(len(arr), -1).astype(np.float64))
+    key = np.concatenate(cols, axis=1)
+    perm = np.lexsort([key[:, j] for j in range(key.shape[1] - 1, -1, -1)])
+    rank = np.empty(len(perm), dtype=np.int64)
+    rank[perm] = np.arange(len(perm), dtype=np.int64)
+    return perm, rank, key
+
+
+def _remap_conn(arrays, rank):
+    """A dict copy of arrays with every conn[:]/conn:<tag> remapped through rank."""
+    d = {n: arrays[n] for n in (arrays.files if hasattr(arrays, "files") else arrays)}
+    for n in list(d):
+        if n == "conn" or n.startswith("conn:"):
+            d[n] = rank[np.asarray(d[n]).astype(np.int64)]
+    return d
+
+
+def _compare_cells(a, b, names, per, ok):
+    """Compare cells as a multiset keyed by (group/celltype, connectivity) carrying
+    their cell-data. a/b may be NpzFile or plain dict (post point-remap)."""
     ra, rb = _cell_records(a), _cell_records(b)
     if ra is None or rb is None:
         per["__cells__"] = {"equal": False, "reason": "no topology to canonicalize"}
-        return False, per
+        return False
     ka, pa = ra
     kb, pb = rb
     keys_eq = bool(len(ka) == len(kb) and [ka[i] for i in pa] == [kb[i] for i in pb])
     per["__cells__"] = {"equal": keys_eq, "mode": "order-relaxed", "ncells": len(ka)}
     ok &= keys_eq
-    # 3) cell-data: reorder each cd:* array by the canonical perm, compare (values
-    #    travel with their cell). Width-relaxed for integer cell-data.
     for name in names:
         if not name.startswith("cd:"):
             continue
@@ -125,10 +147,39 @@ def _compare_order_relaxed(a, b):
             eq = bool(xs.dtype == ys.dtype and np.array_equal(xs, ys))
         per[name] = {"equal": eq, "mode": "order-relaxed", "dtype": str(x.dtype)}
         ok &= eq
-    return ok, per
+    return ok
 
 
-def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False):
+def _compare_order_relaxed(a, b, relax_points=False):
+    """Order-invariant mesh equality. cells are always compared as a multiset
+    carrying their cell-data. Points + point-data are STRICT unless relax_points,
+    in which case points are canonicalized by (coords, point-data) and connectivity
+    is remapped accordingly (for filters whose surface points are reordered too)."""
+    per = {}
+    ok = True
+    names = sorted(set(_arr_names(a)) & set(_arr_names(b)))
+    if not relax_points:
+        # points + point-data STRICT (cutter/contour keep point order identical).
+        for name in names:
+            if name == "points" or name.startswith("pd:"):
+                x, y = a[name], b[name]
+                eq = bool(x.shape == y.shape and x.dtype == y.dtype and np.array_equal(x, y))
+                per[name] = {"equal": eq, "mode": "strict", "dtype": str(x.dtype)}
+                ok &= eq
+        ok = _compare_cells(a, b, names, per, ok)
+        return bool(ok), per
+    # relax_points: canonicalize points by (coords, point-data) on both sides.
+    pa_perm, ranka, ka = _point_canonicalization(a, names)
+    pb_perm, rankb, kb = _point_canonicalization(b, names)
+    pts_eq = bool(ka.shape == kb.shape and np.array_equal(ka[pa_perm], kb[pb_perm]))
+    per["__points__"] = {"equal": pts_eq, "mode": "points-relaxed", "npoints": int(ka.shape[0])}
+    ok &= pts_eq
+    # compare cells on point-remapped connectivity.
+    ok = _compare_cells(_remap_conn(a, ranka), _remap_conn(b, rankb), names, per, ok)
+    return bool(ok), per
+
+
+def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=False):
     """Return (ok: bool, detail: dict) for a single case key."""
     sp = os.path.join(stock_dir, key + ".npz")
     fp = os.path.join(fvtk_dir, key + ".npz")
@@ -143,12 +194,13 @@ def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False):
             "only_stock": sorted(names_a - names_b),
             "only_fvtk": sorted(names_b - names_a),
         }
-    if order_relaxed:
-        # Order-relaxed mesh equality: same points/point-data (strict) and the
-        # same multiset of cells carrying their cell-data, but cell ORDER may
-        # differ (e.g. thread-batched topology emission). See _compare_order_relaxed.
-        ok, per = _compare_order_relaxed(a, b)
-        return ok, {"arrays": per, "order_relaxed": True}
+    if order_relaxed or points_relaxed:
+        # Order-relaxed mesh equality: same multiset of cells carrying their
+        # cell-data, cell ORDER negotiable. With points_relaxed, surface POINT
+        # order is negotiable too (canonicalized by coords+point-data, connectivity
+        # remapped) -- for kernels that emit surface points in their own order.
+        ok, per = _compare_order_relaxed(a, b, relax_points=points_relaxed)
+        return ok, {"arrays": per, "order_relaxed": True, "points_relaxed": points_relaxed}
     per_array = {}
     ok = True
     for name in sorted(names_a):
@@ -218,9 +270,11 @@ def compare_all(stock_dir, fvtk_dir):
                 "group": cs.get("group"),
             }
             continue
-        # A case is order-relaxed if EITHER manifest marks it so (both should agree).
+        # A case is order/points-relaxed if EITHER manifest marks it (both agree).
         order_relaxed = bool(cs.get("order_relaxed") or cf.get("order_relaxed"))
-        ok, detail = compare_case(stock_dir, fvtk_dir, key, order_relaxed=order_relaxed)
+        points_relaxed = bool(cs.get("points_relaxed") or cf.get("points_relaxed"))
+        ok, detail = compare_case(
+            stock_dir, fvtk_dir, key, order_relaxed=order_relaxed, points_relaxed=points_relaxed)
         cases[key] = {"ok": ok, "detail": detail, "group": cs.get("group"),
-                      "order_relaxed": order_relaxed}
+                      "order_relaxed": order_relaxed or points_relaxed}
     return {"provenance": prov, "cases": cases, "keys": keys}

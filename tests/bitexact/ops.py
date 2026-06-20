@@ -30,11 +30,31 @@ hard gate while still exercising broad coverage.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import tempfile
 
 import numpy as np
+
+
+@contextlib.contextmanager
+def fast_mode():
+    """Opt into fvtk's non-exact fast path (env FVTK_FAST) for the duration, then
+    RESTORE the prior value. run_ops.py runs every op in one process, so a bare
+    ``os.environ["FVTK_FAST"]="1"`` would leak into later byte-exact ops sharing
+    that process (e.g. the standard datasetsurface_ugrid op would silently take the
+    reordering fast path and break its byte comparison vs stock). Always wrap the
+    filter Update() that needs fast mode in this manager."""
+    prev = os.environ.get("FVTK_FAST")
+    os.environ["FVTK_FAST"] = "1"
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("FVTK_FAST", None)
+        else:
+            os.environ["FVTK_FAST"] = prev
 
 # --- vtkmodules imports (resolve to stock vtk OR fvtk depending on the venv) ---
 # Guarded so this module imports cleanly on a runner python that has numpy but no
@@ -1895,7 +1915,6 @@ def op_cutter_linear(dtype, size):
     # thread-INVARIANT; only cell EMISSION ORDER differs. Hence this op is compared
     # ORDER-RELAXED: same points/point-data (strict) and the same multiset of
     # triangles carrying their cell-data, cell order negotiable.
-    os.environ["FVTK_FAST"] = "1"  # fvtk: opt in to the threaded cutter; stock: ignored
     p = vtkPlane()
     c = (size - 1) / 2.0
     p.SetOrigin(c, c, c)
@@ -1904,8 +1923,25 @@ def op_cutter_linear(dtype, size):
     cut.SetInputData(make_hex_ugrid(size, dtype))
     cut.SetCutFunction(p)
     cut.SetValue(0, 0.0)  # GenerateTriangles ON (default) -> linear-grid fast path
-    cut.Update()
+    with fast_mode():  # fvtk: opt in to the threaded cutter; stock: ignored
+        cut.Update()
     return cut.GetOutput()
+
+
+def op_datasetsurface_fast(dtype, size):
+    # Boundary surface of a LARGE linear hex unstructured grid via the OPT-IN
+    # vendored parallel OpenMP kernel (pyvista-algorithms extract_surface), reached
+    # when fvtk.EnableFast()/FVTK_FAST is set. The kernel emits surface POINTS and
+    # cells in its own hash/thread-dependent order, so this op is compared
+    # POINTS-relaxed: same point set (coords + point-data) and same face multiset,
+    # both point and cell order negotiable. Stock VTK ignores FVTK_FAST and runs
+    # the sequential vtkDataSetSurfaceFilter reference. Sizes 30/40 -> 24k/59k
+    # cells, above the kernel's 16384 parallel threshold.
+    f = vtkDataSetSurfaceFilter()
+    f.SetInputData(make_hex_ugrid(size, dtype))
+    with fast_mode():
+        f.Update()
+    return f.GetOutput()
 
 
 def op_contour_linear(dtype, size):
@@ -1917,12 +1953,12 @@ def op_contour_linear(dtype, size):
     # ORDER differs, so the case is compared ORDER-RELAXED. ComputeNormals ON is
     # NOT order-relaxable (normal averaging is reduction-order-dependent) and the
     # filter keeps it serial / byte-exact -- this op deliberately leaves it off.
-    os.environ["FVTK_FAST"] = "1"  # fvtk: opt in to the threaded contour; stock: ignored
     c = vtkContourFilter()
     c.SetInputData(make_hex_ugrid(size, dtype))
     c.SetComputeNormals(0)
     c.SetValue(0, 0.25 * (size ** 2))
-    c.Update()
+    with fast_mode():  # fvtk: opt in to the threaded contour; stock: ignored
+        c.Update()
     return c.GetOutput()
 
 
@@ -2407,6 +2443,9 @@ OPS = {
     # Large linear-grid isocontour (ComputeNormals OFF): threaded vtkContour3DLinearGrid,
     # ORDER-RELAXED. Normals-ON stays serial/byte-exact (reduction-order-dependent).
     "contour_linear": dict(fn=op_contour_linear, group="filter", dtypes=["float32", "float64"], sizes=[30, 40], order_relaxed=True),
+    # Vendored parallel boundary-surface kernel (pyvista-algorithms, MIT) via EnableFast;
+    # POINTS-relaxed (surface points + cells both emitted in kernel order).
+    "datasetsurface_fast": dict(fn=op_datasetsurface_fast, group="filter", dtypes=["float32", "float64"], sizes=[30, 40], order_relaxed=True, points_relaxed=True),
     "cutter_polydata": dict(fn=op_cutter_polydata, group="filter", dtypes=["float64"], sizes=[12, 20]),
     "cutter_polydata_bycell": dict(fn=op_cutter_polydata_bycell, group="filter", dtypes=["float64"], sizes=[12, 20]),
     "cellcenters": dict(fn=op_cellcenters, group="filter", dtypes=["float32", "float64"], sizes=[8, 12]),

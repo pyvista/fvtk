@@ -70,6 +70,7 @@ def main():
                 "size": size,
                 "group": ops.OPS[op_name]["group"],
                 "order_relaxed": bool(ops.OPS[op_name].get("order_relaxed", False)),
+                "points_relaxed": bool(ops.OPS[op_name].get("points_relaxed", False)),
                 "n_arrays": len(arrays),
                 "sha256": array_sha(arrays),
                 "arrays": {k: list(np.asarray(v).shape) for k, v in arrays.items()},
