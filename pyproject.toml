@@ -10,12 +10,26 @@
 # `pip install .` source-dist path (build_sdist raises) — that is intentional.
 
 [build-system]
-requires = ["setuptools<81", "wheel"]
-# cmake + ninja must already be on PATH (CIBW_BEFORE_ALL installs them); they are
-# NOT listed here because pip would then try to build them into the isolated
-# build env, and we want the system/CIBW-provided ones that match the toolchain.
+# setuptools_scm derives the tag-driven version (see [tool.setuptools_scm] and
+# fvtk_backend._version_suffix). cmake + ninja must already be on PATH (CIBW_BEFORE_ALL
+# installs them); they are NOT listed here because pip would then try to build them
+# into the isolated build env, and we want the system/CIBW-provided ones that match
+# the toolchain.
+requires = ["setuptools<81", "wheel", "setuptools_scm>=8"]
 build-backend = "fvtk_backend"
 backend-path = ["ci/cibw"]
+
+# Tag-driven PyPI versioning (start at post0). The base is pinned to the VTK
+# version this fork is a drop-in for (9.6.2); git tags add the post segment, so a
+# release tagged `9.6.2.post0` publishes `fvtk 9.6.2.post0`, `9.6.2.post1`, etc.
+# fvtk_backend reads this via setuptools_scm.get_version() and feeds the suffix
+# (everything past `9.6.2.`) to VTK's setup.py.in as VTK_VERSION_SUFFIX. Commits
+# between tags get `9.6.2.postN.devM` (never published — publish runs only on a
+# release tag). local_scheme = no-local-version keeps dev versions PyPI-clean.
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+fallback_version = "9.6.2.post0.dev0"
 
 [project]
 name = "fvtk"

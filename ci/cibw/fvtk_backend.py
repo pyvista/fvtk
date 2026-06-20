@@ -68,6 +68,56 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 ABI3_FLOOR_TAG = "cp312"  # mirrors FVTK_ABI3_VERSION 0x030c0000 in minimal.cmake
 ABI3_FLOOR_VERSION = (3, 12)  # mirrors 0x030c0000
 
+# Base version VTK's setup.py.in composes as `{base}.{VTK_VERSION_SUFFIX}`
+# (CMake/setup.py.in lines 88-91). Mirrors CMake/vtkVersion.cmake MAJOR.MINOR.BUILD.
+VTK_BASE_VERSION = "9.6.2"
+
+
+def _version_suffix() -> str:
+    """Tag-driven ``VTK_VERSION_SUFFIX`` via setuptools_scm (start at post0).
+
+    The PyPI version is driven by git tags: tag ``9.6.2.post0`` -> wheel
+    ``9.6.2.post0``; commits past a tag get ``9.6.2.post1.devN`` (never published,
+    publish only runs on a release tag). setuptools_scm derives the full PEP 440
+    version from the repo's tags (honouring ``SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FVTK``
+    if set); VTK's setup.py.in composes ``{VTK_BASE_VERSION}.{VTK_VERSION_SUFFIX}``,
+    so we hand it only the suffix (everything past the base + dot).
+
+    Falls back to the historic ``dev0`` suffix when scm/git is unavailable (no
+    history, shallow clone, setuptools_scm missing) so non-release builds never
+    break. Released wheels are always built on a tag, where the version is exact.
+    """
+    try:
+        from setuptools_scm import get_version
+
+        version = get_version(
+            root=REPO,
+            dist_name="fvtk",  # so SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FVTK is honoured
+            version_scheme="guess-next-dev",
+            local_scheme="no-local-version",  # keep dev versions PyPI-upload-clean
+            fallback_version=f"{VTK_BASE_VERSION}.post0.dev0",
+        )
+    except Exception as exc:  # noqa: BLE001 - any scm/git failure -> safe default
+        print(
+            f"fvtk_backend: setuptools_scm version unavailable ({exc}); "
+            f"falling back to VTK_VERSION_SUFFIX=dev0",
+            flush=True,
+        )
+        return "dev0"
+
+    if version == VTK_BASE_VERSION:
+        return ""  # tagged exactly 9.6.2 -> official release, no suffix
+    prefix = VTK_BASE_VERSION + "."
+    if not version.startswith(prefix):
+        raise RuntimeError(
+            f"fvtk_backend: scm version {version!r} does not start with the VTK "
+            f"base {VTK_BASE_VERSION!r}; tag releases as {VTK_BASE_VERSION}.postN "
+            f"(e.g. {VTK_BASE_VERSION}.post0)."
+        )
+    suffix = version[len(prefix):]
+    print(f"fvtk_backend: scm version {version} -> VTK_VERSION_SUFFIX={suffix}", flush=True)
+    return suffix
+
 
 def _abi3_enabled() -> bool:
     """Whether THIS build emits the abi3 (stable-ABI) wheel — the default.
@@ -243,6 +293,9 @@ def _configure_and_build():
         # Keep the backend's abi3 view and cmake's in lockstep: minimal.cmake
         # defaults FVTK_ABI3 ON, and FVTK_ABI3=0 in the env flips both off.
         f"-DFVTK_ABI3={'ON' if _abi3_enabled() else 'OFF'}",
+        # Tag-driven PyPI version: setup.py.in builds `{base}.{suffix}`; we drive
+        # the suffix from git tags via setuptools_scm (empty for an exact-base tag).
+        f"-DVTK_VERSION_SUFFIX={_version_suffix()}",
     ]
     if launcher_c:
         cfg.append(f"-DCMAKE_C_COMPILER_LAUNCHER={launcher_c}")
@@ -354,7 +407,7 @@ def get_requires_for_build_wheel(config_settings=None):
     # >=1.11 is needed for VTK's multiple-output wrapping edges. setuptools+wheel
     # are what the generated build-tree setup.py needs. auditwheel repair is done
     # by cibuildwheel afterwards.
-    return ["cmake>=3.22,<4.2", "ninja>=1.11", "setuptools<81", "wheel"]
+    return ["cmake>=3.22,<4.2", "ninja>=1.11", "setuptools<81", "wheel", "setuptools_scm>=8"]
 
 
 def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
