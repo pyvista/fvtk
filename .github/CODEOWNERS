@@ -1,0 +1,11 @@
+# CI / build infrastructure is owned by the CI admin team. Changes to anything
+# below require review from @pyvista/ci-reviewers. For this to be enforced,
+# branch protection on `main` must have "Require review from Code Owners" on.
+
+# All CI workflows.
+/.github/workflows/        @pyvista/ci-reviewers
+
+# CI docs + this ownership file itself.
+/.github/README.md         @pyvista/ci-reviewers
+/.github/CODEOWNERS        @pyvista/ci-reviewers
+/ci/BLACKSMITH.md          @pyvista/ci-reviewers
