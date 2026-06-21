@@ -222,8 +222,63 @@ def _compare_order_relaxed(a, b, relax_points=False, point_data_tol=0.0):
     return bool(ok), per
 
 
+def _compare_corrects_stock(a, b, input_dtype):
+    """Divergence-ledger comparison for filters fvtk deliberately CORRECTS.
+
+    Stock VTK 9.6.2 has a long-standing bug where ~30 point-producing filters
+    ignore OutputPointsPrecision==DEFAULT and emit float32 output points even for
+    float64 input. fvtk fixes them to preserve the input precision. For ops that
+    exercise such a filter directly the byte-exact-vs-stock gate is no longer the
+    right oracle (it would flag the correction as a regression); instead we assert
+    the CORRECTION without losing rigor:
+
+      * fvtk 'points' dtype == the input point dtype (the fix did its job),
+      * stock 'points' is the buggy narrower float type (the bug really existed),
+      * fvtk points DOWNCAST to stock's width are byte-identical to stock's
+        points -- i.e. ONLY the storage width widened, not a single VALUE changed,
+      * every other array (point/cell data, topology) is byte-identical, with the
+        usual width-relaxed comparison for integer (index/offset/celltype) arrays.
+
+    Returns (ok, per_array_detail).
+    """
+    per = {}
+    ok = True
+    want = np.dtype(input_dtype)
+    for name in sorted(set(a.files) & set(b.files)):
+        x, y = a[name], b[name]  # x = stock, y = fvtk
+        if name == "points":
+            fvtk_dtype_ok = y.dtype == want
+            # Stock is expected to be the buggy narrower float; if stock somehow
+            # already matches the input dtype there was nothing to correct and a
+            # plain byte-equal still holds.
+            stock_is_narrower = x.dtype.kind == "f" and x.dtype.itemsize < want.itemsize
+            values_preserved = bool(
+                x.shape == y.shape and np.array_equal(x, y.astype(x.dtype)))
+            eq = bool(fvtk_dtype_ok and values_preserved and
+                      (stock_is_narrower or x.dtype == want))
+            per[name] = {
+                "equal": eq, "mode": "corrects-stock",
+                "stock_dtype": str(x.dtype), "fvtk_dtype": str(y.dtype),
+                "expected_fvtk_dtype": str(want),
+                "values_preserved_on_downcast": values_preserved,
+                "stock_was_narrower": bool(stock_is_narrower),
+            }
+        elif x.dtype.kind in "iu" and y.dtype.kind in "iu":
+            eq = bool(x.shape == y.shape and
+                      np.array_equal(x.astype(np.int64), y.astype(np.int64)))
+            per[name] = {"equal": eq, "mode": "width-relaxed-int"}
+        else:
+            eq = bool(x.shape == y.shape and x.dtype == y.dtype and np.array_equal(x, y))
+            ulp = None
+            if x.dtype.kind == "f" and x.shape == y.shape and x.dtype == y.dtype:
+                ulp = _ulp_distance(x, y)
+            per[name] = {"equal": eq, "dtype": str(x.dtype), "ulp": ulp}
+        ok &= per[name]["equal"]
+    return bool(ok), per
+
+
 def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=False,
-                 point_data_tol=0.0):
+                 point_data_tol=0.0, corrects_stock=False, input_dtype=None):
     """Return (ok: bool, detail: dict) for a single case key."""
     sp = os.path.join(stock_dir, key + ".npz")
     fp = os.path.join(fvtk_dir, key + ".npz")
@@ -238,6 +293,12 @@ def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=F
             "only_stock": sorted(names_a - names_b),
             "only_fvtk": sorted(names_b - names_a),
         }
+    if corrects_stock:
+        # Divergence ledger: fvtk deliberately corrects a stock precision bug.
+        # Assert the corrected output precision + value-preservation instead of
+        # byte-matching stock's (buggy) downcast output. See _compare_corrects_stock.
+        ok, per = _compare_corrects_stock(a, b, input_dtype)
+        return ok, {"arrays": per, "corrects_stock": True, "input_dtype": str(input_dtype)}
     if order_relaxed or points_relaxed:
         # Order-relaxed mesh equality: same multiset of cells carrying their
         # cell-data, cell ORDER negotiable. With points_relaxed, surface POINT
@@ -320,13 +381,17 @@ def compare_all(stock_dir, fvtk_dir):
         # A case is order/points-relaxed if EITHER manifest marks it (both agree).
         order_relaxed = bool(cs.get("order_relaxed") or cf.get("order_relaxed"))
         points_relaxed = bool(cs.get("points_relaxed") or cf.get("points_relaxed"))
+        # Divergence ledger: fvtk corrects a stock precision bug for this op.
+        corrects_stock = bool(cs.get("corrects_stock") or cf.get("corrects_stock"))
         # Opt-in interpolated-point-data tolerance (clip fast lane). Both sides
         # carry the same flag; take the max so a 0 on one side can't loosen it.
         point_data_tol = max(
             float(cs.get("point_data_tol", 0.0)), float(cf.get("point_data_tol", 0.0)))
         ok, detail = compare_case(
             stock_dir, fvtk_dir, key, order_relaxed=order_relaxed, points_relaxed=points_relaxed,
-            point_data_tol=point_data_tol)
+            point_data_tol=point_data_tol, corrects_stock=corrects_stock,
+            input_dtype=cs.get("dtype"))
         cases[key] = {"ok": ok, "detail": detail, "group": cs.get("group"),
-                      "order_relaxed": order_relaxed or points_relaxed}
+                      "order_relaxed": order_relaxed or points_relaxed,
+                      "corrects_stock": corrects_stock}
     return {"provenance": prov, "cases": cases, "keys": keys}

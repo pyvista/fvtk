@@ -64,6 +64,7 @@ def fast_mode():
 # called without VTK present, it fails loudly via _require_vtk().
 try:
     from vtkmodules.vtkCommonCore import (
+        VTK_FLOAT,
         reference,
         vtkDoubleArray,
         vtkFloatArray,
@@ -345,11 +346,29 @@ def make_hex_ugrid(n=10, dtype=np.float64):
 def make_tet_ugrid(n=8, dtype=np.float64):
     """Tetrahedralize the hex grid deterministically (vtkDataSetTriangleFilter)
     so clip/contour exercise vtkTetra::Clip / vtkTetra::Contour. The tessellation
-    runs in the C++ backend identically on both sides, so it is a fair input."""
+    runs in the C++ backend identically on both sides, so it is a fair input.
+
+    PRECISION PIN: this is an INPUT builder, not the thing under test. fvtk's
+    OutputPointsPrecision fix makes vtkDataSetTriangleFilter preserve float64
+    input points where stock VTK 9.6.2 silently downcasts to float32 -- so the
+    raw tessellator output is no longer identical across backends (fvtk f64 vs
+    stock f32), which would perturb every DOWNSTREAM clip/contour gate. Since the
+    tet grid is only a deterministic input, pin its point coordinates to float32
+    on BOTH backends (no-op on stock's already-f32 output; on fvtk the f64 values
+    downcast to the same f32 bytes stock produced). This keeps the downstream
+    byte-exact gates honest; the datasettriangle precision fix itself is exercised
+    by the dedicated `datasettriangle` corrects-stock op below."""
     t = vtkDataSetTriangleFilter()
     t.SetInputData(make_hex_ugrid(n, dtype))
     t.Update()
-    return t.GetOutput()
+    out = t.GetOutput()
+    pts = out.GetPoints()
+    if pts is not None and pts.GetData().GetDataType() != VTK_FLOAT:
+        arr32 = vtk_to_numpy(pts.GetData()).astype(np.float32)
+        vp = vtkPoints()
+        vp.SetData(numpy_to_vtk(np.ascontiguousarray(arr32), deep=1))
+        out.SetPoints(vp)
+    return out
 
 
 def make_wedge_pyramid_ugrid(nrep=3, dtype=np.float64):
@@ -1324,11 +1343,40 @@ def op_geometry(dtype, size):
 
 
 def op_shrink(dtype, size):
+    # vtkImageData input has NO explicit vtkPoints, so DEFAULT_PRECISION output
+    # correctly falls back to single precision on BOTH backends -> byte-exact
+    # (not a divergence case; see op_shrink_ugrid for the precision-preserving one).
     f = vtkShrinkFilter()
     f.SetInputData(make_volume(size, dtype))
     f.SetShrinkFactor(0.8)
     f.Update()
     return f.GetOutput()
+
+
+def op_shrink_ugrid(dtype, size):
+    # Divergence-ledger op: shrink a float64 hex UNSTRUCTURED GRID (explicit
+    # vtkPoints). DEFAULT_PRECISION must preserve the input float64; stock VTK
+    # 9.6.2 downcasts to float32. corrects_stock gate asserts the correction +
+    # value-preservation (fvtk f64 downcast to f32 == stock's f32 bytes).
+    f = vtkShrinkFilter()
+    f.SetInputData(make_hex_ugrid(size, dtype))
+    f.SetShrinkFactor(0.8)
+    f.Update()
+    return f.GetOutput()
+
+
+def op_datasettriangle(dtype, size):
+    # Divergence-ledger op: vtkDataSetTriangleFilter on a float64 hex grid.
+    # Stock VTK 9.6.2 downcasts the tessellated output points to float32 (a bug
+    # -- DEFAULT_PRECISION should preserve the input precision); fvtk's
+    # OutputPointsPrecision fix preserves float64. Gated by `corrects_stock`: the
+    # comparator asserts fvtk's points are the input dtype AND that downcasting
+    # them to stock's width reproduces stock's bytes exactly (no value changed),
+    # while every other array stays byte-identical. See compare._compare_corrects_stock.
+    t = vtkDataSetTriangleFilter()
+    t.SetInputData(make_hex_ugrid(size, dtype))
+    t.Update()
+    return t.GetOutput()
 
 
 def op_connectivity(dtype, size):
@@ -2685,6 +2733,13 @@ OPS = {
     "triangle": dict(fn=op_triangle, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "geometry": dict(fn=op_geometry, group="filter", dtypes=["float64"], sizes=[18, 28]),
     "shrink": dict(fn=op_shrink, group="filter", dtypes=["float64"], sizes=[16, 24]),
+    # Divergence ledger: these exercise filters on float64 POINTSETS where fvtk
+    # preserves the input precision (stock downcasts to float32). corrects_stock
+    # => compared via the corrected-precision gate (dtype fixed + values preserved).
+    "shrink_ugrid": dict(fn=op_shrink_ugrid, group="filter", dtypes=["float64"],
+                         sizes=[8, 12], corrects_stock=True),
+    "datasettriangle": dict(fn=op_datasettriangle, group="filter", dtypes=["float64"],
+                            sizes=[6, 10], corrects_stock=True),
     "connectivity": dict(fn=op_connectivity, group="filter", dtypes=["float64"], sizes=[16, 24]),
     "connectivity_largest": dict(fn=op_connectivity_largest, group="filter", dtypes=["float64"], sizes=[8, 12]),
     "connectivity_fast": dict(fn=op_connectivity_fast, group="filter", dtypes=["float32", "float64"], sizes=[8, 12], order_relaxed=True, points_relaxed=True),

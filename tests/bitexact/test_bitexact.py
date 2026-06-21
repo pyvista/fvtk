@@ -47,6 +47,10 @@ def _assert_case(results, case_key):
         msg = [f"BIT DIFFERENCE in {case_key}:"]
         if detail.get("order_relaxed"):
             msg.append("  (order-relaxed mesh comparison)")
+        if detail.get("corrects_stock"):
+            msg.append(
+                f"  (divergence ledger: fvtk corrects stock precision bug; "
+                f"input_dtype={detail.get('input_dtype')})")
         if "arrays" in detail:
             for name, info in detail["arrays"].items():
                 if not info.get("equal", True):

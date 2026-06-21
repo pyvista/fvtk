@@ -71,6 +71,7 @@ def main():
                 "group": ops.OPS[op_name]["group"],
                 "order_relaxed": bool(ops.OPS[op_name].get("order_relaxed", False)),
                 "points_relaxed": bool(ops.OPS[op_name].get("points_relaxed", False)),
+                "corrects_stock": bool(ops.OPS[op_name].get("corrects_stock", False)),
                 "point_data_tol": float(ops.OPS[op_name].get("point_data_tol", 0.0)),
                 "n_arrays": len(arrays),
                 "sha256": array_sha(arrays),
