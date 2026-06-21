@@ -52,6 +52,11 @@ case "$(uname -s)" in
     FVTK_OS=windows
     INIT_CACHE="$SRC/ci/cmake/windows.cmake"
     PYBIN="${PYBIN:-$(dirname "$(command -v python)")}"
+    # vtkWrappingPythonCore is built Py_LIMITED_API and links the stable-ABI
+    # python3.lib by bare name; FindPython only resolves the versioned
+    # python3XX.lib (absolute path). Put the interpreter's libs/ dir on the MSVC
+    # linker search path (LIB) so link.exe finds python3.lib (else LNK1104).
+    export LIB="$(cygpath -w "$PYBIN/libs")${LIB:+;$LIB}"
     ;;
   *)
     echo "build-sdk: unsupported OS $(uname -s)" >&2
