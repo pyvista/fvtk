@@ -1272,6 +1272,34 @@ def op_cleanpoly_fast(dtype, size):
     return c.GetOutput()
 
 
+def op_cleanpoly_dupstress(dtype, size):
+    # Regression guard for the pvaClean Morton-radix dedup hash-collision bug
+    # (fixed 2026-06). At scale (~size^2 unique points) some coordinates' 32-bit
+    # hashes collide; with exact-duplicate multiplicity their copies interleave
+    # by orig_id, and the old consecutive-run grouping left them UN-merged (e.g.
+    # sphere(400) appended 2x: fast 159252 vs stock 159202, a deterministic +50).
+    # Appending a sphere K times gives every point exact duplicates, forcing the
+    # kernel to weld a large, collision-prone set. Compared POINTS-relaxed: the
+    # fast kernel must yield the SAME merged point set + triangle multiset as
+    # stock vtkCleanPolyData, with NO residual duplicate vertices. size must be
+    # large enough (>=~300) that 32-bit hash collisions actually occur.
+    s = vtkSphereSource()
+    s.SetThetaResolution(size)
+    s.SetPhiResolution(size)
+    # SINGLE_PRECISION=0, DOUBLE_PRECISION=1 -> drive both kernel type paths.
+    s.SetOutputPointsPrecision(1 if np.dtype(dtype) == np.float64 else 0)
+    s.Update()
+    ap = vtkAppendPolyData()
+    ap.AddInputData(s.GetOutput())
+    ap.AddInputData(s.GetOutput())
+    ap.Update()
+    c = vtkCleanPolyData()
+    c.SetInputData(ap.GetOutput())
+    with fast_mode():
+        c.Update()
+    return c.GetOutput()
+
+
 def op_triangle(dtype, size):
     s = vtkSphereSource()
     s.SetThetaResolution(size)
@@ -2685,6 +2713,11 @@ OPS = {
     "datasetsurface_fast": dict(fn=op_datasetsurface_fast, group="filter", dtypes=["float32", "float64"], sizes=[30, 40], order_relaxed=True, points_relaxed=True),
     "staticclean_fast": dict(fn=op_staticclean_fast, group="filter", dtypes=["float32", "float64"], sizes=[8, 12], order_relaxed=True, points_relaxed=True),
     "cleanpoly_fast": dict(fn=op_cleanpoly_fast, group="filter", dtypes=["float32", "float64"], sizes=[12, 24], order_relaxed=True, points_relaxed=True),
+    # Large duplicated mesh that triggers the pvaClean radix-dedup hash-collision
+    # path (size=400 -> ~160k unique points, reliably collision-prone). Guards
+    # against the un-merged-duplicate regression. Heavier than the smoke cases
+    # but kept to a single size since the bug is scale-dependent.
+    "cleanpoly_dupstress": dict(fn=op_cleanpoly_dupstress, group="filter", dtypes=["float32", "float64"], sizes=[400], order_relaxed=True, points_relaxed=True),
     # Parallel polys-only clip (Filters/Core/fvtkFastClipPoly) via EnableFast;
     # POINTS-relaxed (same point set + triangle multiset, threaded point numbering).
     # Sizes chosen large enough to span multiple SMP batches across thread counts.
