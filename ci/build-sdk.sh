@@ -124,17 +124,18 @@ rm -rf "$OUT"
 # scikit-build-core stamps the wheel py3-none (wheel.py-api in
 # CMake/wheel_sdks/pyproject.toml.in) plus the build platform. macOS
 # (macosx_11_0_arm64) and Windows (win_amd64) tags are PyPI-valid as-is, but the
-# Linux tag is a raw `linux_x86_64`, which PyPI rejects (400 "unsupported
-# platform tag"). The Linux build runs inside quay.io/pypa/manylinux_2_28_x86_64,
-# so relabel to manylinux_2_28_x86_64. We deliberately do NOT `auditwheel repair`:
-# the SDK exposes the VTK shared/import libs unvendored so downstream
-# `find_package(VTK)` links them by their real SONAMEs, and repair would rewrite
-# those with hashed names and break that contract.
+# Linux tag is a raw `linux_<arch>`, which PyPI rejects (400 "unsupported
+# platform tag"). The Linux build runs inside the manylinux_2_28 image for its
+# arch (x86_64 or aarch64), so relabel to manylinux_2_28_<arch>. We deliberately
+# do NOT `auditwheel repair`: the SDK exposes the VTK shared/import libs
+# unvendored so downstream `find_package(VTK)` links them by their real SONAMEs,
+# and repair would rewrite those with hashed names and break that contract.
 if [ "$FVTK_OS" = linux ]; then
-  WHEEL="$(ls "$OUT"/fvtk_sdk-*-linux_x86_64.whl)"
-  "$PYBIN/python" -m wheel tags --platform-tag manylinux_2_28_x86_64 --remove "$WHEEL"
-  if compgen -G "$OUT/*-linux_x86_64.whl" >/dev/null; then
-    echo "::error::fvtk-sdk wheel still has a raw linux_x86_64 platform tag; PyPI will 400 on upload"
+  ARCH="$(uname -m)"  # x86_64 | aarch64
+  WHEEL="$(ls "$OUT"/fvtk_sdk-*-linux_"$ARCH".whl)"
+  "$PYBIN/python" -m wheel tags --platform-tag "manylinux_2_28_$ARCH" --remove "$WHEEL"
+  if compgen -G "$OUT/*-linux_$ARCH.whl" >/dev/null; then
+    echo "::error::fvtk-sdk wheel still has a raw linux_$ARCH platform tag; PyPI will 400 on upload"
     exit 1
   fi
 fi

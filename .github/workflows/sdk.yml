@@ -51,6 +51,9 @@ jobs:
           - os: linux
             runner: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
             container: quay.io/pypa/manylinux_2_28_x86_64
+          - os: linux-arm64
+            runner: ${{ vars.FVTK_RUNNER_LINUX_ARM64 || 'ubuntu-24.04-arm' }}
+            container: quay.io/pypa/manylinux_2_28_aarch64
           - os: macos
             runner: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
             container: ''
@@ -65,7 +68,7 @@ jobs:
         with:
           fetch-depth: 0 # setuptools_scm needs full history for the version
       - name: Install rendering + build deps (Linux)
-        if: matrix.os == 'linux'
+        if: startsWith(matrix.os, 'linux')
         # Same AlmaLinux 8 package set as the runtime wheel build
         # (ci.yml -> [tool.cibuildwheel.linux] before-all).
         run: |
@@ -74,9 +77,9 @@ jobs:
             libXt-devel libXext-devel mesa-dri-drivers xorg-x11-server-Xvfb \
             ccache git mold lld
       - name: Set up Python (macOS/Windows)
-        # The manylinux container already ships /opt/python/cp312-cp312; the
-        # host runners need cpython 3.12 on PATH for the build script.
-        if: matrix.os != 'linux'
+        # The manylinux containers (x86_64 + aarch64) already ship
+        # /opt/python/cp312-cp312; the host runners need cpython 3.12 on PATH.
+        if: matrix.os == 'macos' || matrix.os == 'windows'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'

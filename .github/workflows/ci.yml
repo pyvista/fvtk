@@ -432,15 +432,62 @@ jobs:
           path: /tmp/rx-out
           if-no-files-found: ignore
 
+  # === Linux aarch64 shipped wheel (every PR + push + release) ===============
+  # The manylinux_2_28 aarch64 wheel shipped alongside x86_64. Like build-other-os
+  # (macOS/Windows), this is a SINGLE optimized build that runs on every PR — so an
+  # aarch64-specific break is caught BEFORE merge, not after — and whose artifact
+  # is what `publish` ships. No LTO/non-LTO split (that exists only for x86_64,
+  # whose fast wheel feeds the Linux-only bitexact/render gates); aarch64 has no
+  # such gates, so one fully-optimized build (FVTK_LTO/FVTK_GATE_O2 unset => -flto
+  # + -O3) both validates and ships. Native (not QEMU): the full VTK compile under
+  # emulation is prohibitively slow. Runner: the Blacksmith arm64 tier when
+  # FVTK_RUNNER_LINUX_ARM64 is set, else github-hosted ubuntu-24.04-arm.
+  # cibuildwheel's offscreen smoke (test-command, xvfb) proves the wheel imports
+  # and computes on its native platform.
+  build-arm:
+    name: build cp312-abi3 (manylinux_2_28 aarch64)
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_ARM64 || 'ubuntu-24.04-arm' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Make ccache dir world-writable (container build user differs)
+        run: mkdir -p /tmp/fvtk-cibw-ccache-arm && chmod 0777 /tmp/fvtk-cibw-ccache-arm
+      - name: Restore ccache seed (cross-run, arm64 namespace)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/fvtk-cibw-ccache-arm
+          key: fvtk-ccache-linux-arm64-cp312abi3-${{ github.run_id }}
+          restore-keys: |
+            fvtk-ccache-linux-arm64-cp312abi3-
+      - name: Build wheel + offscreen smoke (cibuildwheel)
+        uses: pypa/cibuildwheel@v3.1.4
+        env:
+          CIBW_BUILD: "cp312-* cp313-* cp314-*"
+          # Build aarch64 (overrides the pyproject [tool.cibuildwheel.linux]
+          # x86_64 archs/image/repair-plat) on the manylinux_2_28 aarch64 image.
+          # Optimized ship config (no FVTK_LTO=0 / FVTK_GATE_O2 override).
+          CIBW_ARCHS_LINUX: aarch64
+          CIBW_MANYLINUX_AARCH64_IMAGE: quay.io/pypa/manylinux_2_28_aarch64
+          CIBW_ENVIRONMENT: FVTK_SOURCE_UNITY=1
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --strip --plat manylinux_2_28_aarch64 -w {dest_dir} {wheel}"
+          CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/fvtk-cibw-ccache-arm:/ccache"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fvtk-wheels-linux-arm64-cp312abi3
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
   publish:
     name: Publish to PyPI (trusted publishing)
     # Only on a published GitHub Release, and only after the SHIPPED-config legs
-    # are green: build-lto (the -O3 + LTO Linux wheel that ships) validated by
-    # bitexact-lto + renderexact-lto, plus the optimized macOS/Windows wheels from
-    # build-other-os. The fast non-LTO gate (build/bitexact/renderexact) is not a
-    # dependency — its wheel is never published.
+    # are green: build-lto (the -O3 + LTO Linux x86_64 wheel that ships) validated
+    # by bitexact-lto + renderexact-lto, plus the optimized macOS/Windows wheels
+    # from build-other-os and the aarch64 wheel from build-arm. The fast non-LTO
+    # gate (build/bitexact/renderexact) is not a dependency — its wheel is never
+    # published.
     if: github.event_name == 'release'
-    needs: [build-lto, build-other-os, bitexact-lto, renderexact-lto]
+    needs: [build-lto, build-arm, build-other-os, bitexact-lto, renderexact-lto]
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     # Matches the PyPI trusted-publisher configuration (repo pyvista/fvtk,
     # workflow ci.yml, environment pypi). id-token: write mints the short-lived
@@ -451,14 +498,20 @@ jobs:
     permissions:
       id-token: write
     steps:
-      # Collect EXACTLY the three shipped wheels into dist/. We pull them by exact
-      # artifact name rather than a `fvtk-wheels-*` glob so the non-LTO gate wheel
-      # (fvtk-wheels-linux-cp312abi3) — which shares the LTO wheel's filename — can
-      # never sneak in and shadow the wheel we mean to ship.
-      - name: Download shipped Linux (LTO) wheel
+      # Collect EXACTLY the four shipped wheels into dist/ (Linux x86_64 + aarch64,
+      # macOS, Windows). We pull them by exact artifact name rather than a
+      # `fvtk-wheels-*` glob so the non-LTO gate wheel (fvtk-wheels-linux-cp312abi3)
+      # — which shares the LTO wheel's filename — can never sneak in and shadow the
+      # wheel we mean to ship.
+      - name: Download shipped Linux x86_64 (LTO) wheel
         uses: actions/download-artifact@v4
         with:
           name: fvtk-wheels-lto-linux-cp312abi3
+          path: dist
+      - name: Download shipped Linux aarch64 wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: fvtk-wheels-linux-arm64-cp312abi3
           path: dist
       - name: Download macOS wheel
         uses: actions/download-artifact@v4
