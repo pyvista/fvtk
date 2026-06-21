@@ -123,6 +123,21 @@ set(VTK_OPENGL_ENABLE_STREAM_ANNOTATIONS OFF CACHE BOOL "")
 set(VTK_DISPATCH_SCALED_SOA_ARRAYS OFF CACHE BOOL "")
 set(VTK_DISPATCH_SOA_ARRAYS OFF CACHE BOOL "")
 
+# SMP backend: default the WHOLE library to STDThread instead of VTK's stock
+# Sequential. Every vtkSMPTools::For loop across VTK (TableBasedClip, contour,
+# threshold, the geometry/clip/cutter families, ...) then runs multithreaded out
+# of the box -- profiling showed clip alone is ~95% of a volume pipeline and was
+# running single-threaded (TableBasedClip 202->94ms, 2.15x). STDThread is header-
+# only (std::thread, no external deps) and was already compiled in; this only
+# flips the DEFAULT backend. Sequential stays available and is runtime-selectable
+# (vtkSMPTools::SetBackend("Sequential") / VTK_SMP_MAX_THREADS=1) for users who
+# need stock serial behavior. This is BYTE-EXACT vs stock VTK 9.6.2: VTK's SMP
+# filters use deterministic batched merges, so threaded output == sequential
+# output (validated against stock across the full bit-exact suite). The lone
+# exception, vtkGeometryFilter's thread-order-dependent face emission, is fixed
+# in this same change (deterministic chunk ordering + serial face-hash build).
+set(VTK_SMP_IMPLEMENTATION_TYPE "STDThread" CACHE STRING "")
+
 # === 3-way toolchain gate for the compiler/linker levers below ================
 # All the levers from here through the ICF block are GNU-toolchain + ELF/gold
 # specific (-flto=auto/-fno-fat-lto-objects, -ffunction-sections + --gc-sections,
