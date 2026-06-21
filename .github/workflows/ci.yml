@@ -76,7 +76,12 @@ concurrency:
 jobs:
   build:
     name: build cp312-abi3 (manylinux_2_28)
-    runs-on: ubuntu-latest
+    # Heavy VTK C++ compile — runs on the Blacksmith 16-vcpu runner when the org/
+    # repo variable FVTK_RUNNER_LINUX is set, else falls back to github-hosted
+    # ubuntu-latest. The compile width auto-tracks the runner's cores (no pinned
+    # FVTK_BUILD_JOBS — see pyproject), so changing the variable to a bigger/
+    # smaller tier is the ONLY knob; nothing here hardcodes a core count.
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -142,7 +147,13 @@ jobs:
     # GCC/x86-only construct (e.g. target_clones FMV) compiles clean on the Linux
     # leg but fails AppleClang/MSVC, and a main-only gate caught it only post-merge.
     # Cost is bounded — single cp312-abi3 wheel, one job per OS.
-    runs-on: ${{ matrix.os }}
+    # runs-on comes from matrix.runner: the Blacksmith macOS (M4) / Windows-2025
+    # runner when the FVTK_RUNNER_MACOS / FVTK_RUNNER_WINDOWS variable is set, else
+    # the github-hosted default. `os` is kept ONLY as the stable artifact suffix so
+    # downstream jobs (publish, bitexact) keep finding fvtk-wheels-macos-14 /
+    # fvtk-wheels-windows-latest unchanged. runner.os (Windows/macOS) still drives
+    # the per-OS `if:` steps and is correct on Blacksmith runners too.
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       # One job per non-Linux OS. Each runs the cp312+ abi3 build through
@@ -152,7 +163,11 @@ jobs:
       # BUILDS + imports on its native platform; the numeric/pixel gates stay
       # Linux-only (stock vtk==9.6.2 is Linux-only).
       matrix:
-        os: [macos-14, windows-latest]
+        include:
+          - os: macos-14
+            runner: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
+          - os: windows-latest
+            runner: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -190,7 +205,8 @@ jobs:
   bitexact:
     name: fvtk == stock VTK 9.6.2 (bit-exact, py${{ matrix.python }})
     needs: build
-    runs-on: ubuntu-latest
+    # Cheap, short gate (~3 min) — the small Blacksmith tier or github fallback.
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -231,7 +247,7 @@ jobs:
   regression:
     name: fvtk behavior regressions (py${{ matrix.python }})
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -262,7 +278,7 @@ jobs:
   renderexact:
     name: fvtk == stock VTK 9.6.2 (pixel-exact render, py${{ matrix.python }})
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -310,7 +326,8 @@ jobs:
   build-lto:
     name: build cp312-abi3 LTO (manylinux_2_28, main only)
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    # Heavy compile + LTO link (64GB on the 16-vcpu tier is ample headroom).
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -350,7 +367,7 @@ jobs:
     name: fvtk == stock VTK 9.6.2 (bit-exact LTO, py${{ matrix.python }})
     if: github.event_name != 'pull_request'
     needs: build-lto
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -383,7 +400,7 @@ jobs:
     name: fvtk == stock VTK 9.6.2 (pixel-exact render LTO, py${{ matrix.python }})
     if: github.event_name != 'pull_request'
     needs: build-lto
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -424,7 +441,7 @@ jobs:
     # dependency — its wheel is never published.
     if: github.event_name == 'release'
     needs: [build-lto, build-other-os, bitexact-lto, renderexact-lto]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     # Matches the PyPI trusted-publisher configuration (repo pyvista/fvtk,
     # workflow ci.yml, environment pypi). id-token: write mints the short-lived
     # OIDC token PyPI exchanges for an upload token — no API token/secret stored.

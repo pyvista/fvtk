@@ -32,11 +32,21 @@ concurrency:
 jobs:
   build:
     name: wheels-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    # matrix.runner = the Blacksmith tier when the FVTK_RUNNER_* variable is set,
+    # else the github-hosted default. matrix.os stays the artifact suffix so the
+    # uploaded names (fvtk-wheels-ubuntu-latest / -macos-14 / -windows-latest) are
+    # unchanged. Compile width auto-tracks the runner cores (no pinned jobs).
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
+        include:
+          - os: ubuntu-latest
+            runner: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+          - os: macos-14
+            runner: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
+          - os: windows-latest
+            runner: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:

@@ -156,7 +156,13 @@ CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
 # checkout root (REPO) before invoking cmake, so ccache sees a valid absolute path.
 CCACHE_BASEDIR = "{project}"
 CCACHE_SLOPPINESS = "time_macros,locale,pch_defines"
-FVTK_BUILD_JOBS = "16"
+# FVTK_BUILD_JOBS is intentionally NOT pinned here: the backend defaults the
+# `cmake --build --parallel` width to os.cpu_count() (ci/cibw/fvtk_backend.py
+# _jobs()), so the compile auto-scales to whatever runner it lands on — a
+# blacksmith-16vcpu runner runs 16 jobs, a 32vcpu runs 32, github's 4-core
+# ubuntu-latest runs 4 — with no per-runner core count baked into the repo. To
+# force a specific width (e.g. oversubscription) set FVTK_BUILD_JOBS in the
+# workflow env or as an org/repo variable; leave it unset to track the runner.
 
 # OPTIONAL cross-RUN persistence: mount a host dir at /ccache. NOT enabled by
 # default because cibuildwheel runs the build as a non-root user whose uid differs

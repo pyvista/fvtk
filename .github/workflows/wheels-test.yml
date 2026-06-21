@@ -50,7 +50,14 @@ jobs:
   build:
     name: wheels-${{ matrix.os }} (cp313)
     needs: matrix
-    runs-on: ${{ matrix.os }}
+    # matrix.os stays the github label (artifact identity + the per-OS `if:`
+    # steps); map it to the matching Blacksmith tier when the FVTK_RUNNER_*
+    # variable is set, else fall back to that same github label.
+    runs-on: >-
+      ${{ (matrix.os == 'ubuntu-latest'  && (vars.FVTK_RUNNER_LINUX   || 'ubuntu-latest'))
+       || (matrix.os == 'macos-14'       && (vars.FVTK_RUNNER_MACOS   || 'macos-14'))
+       || (matrix.os == 'windows-latest' && (vars.FVTK_RUNNER_WINDOWS || 'windows-latest'))
+       || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
