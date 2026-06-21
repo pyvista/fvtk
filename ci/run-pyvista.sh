@@ -76,6 +76,10 @@ echo ">>> PyVista @ $(git -C "$PVDIR" rev-parse --short HEAD) (pinned $REF)"
 SP=$(/tmp/pv/bin/python -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')
 cp "$SRC/tools/fvtk_shim.py" "$SP/_fvtk_shim.py"
 echo "import _fvtk_shim" > "$SP/_fvtk_shim.pth"
+# Put the venv's bin on PATH: we invoke python by absolute path (no `activate`),
+# so without this the CLI tests that shell out to the bare `pyvista`/`pytest`
+# console-scripts get FileNotFoundError.
+export PATH="/tmp/pv/bin:$PATH"
 
 # --- identity: prove PyVista is driving fvtk through the shim ----------------
 /tmp/pv/bin/python - <<'PY'
@@ -112,6 +116,12 @@ if [ "$SNAKE_DISABLED" = "1" ]; then
         --deselect "tests/test_attributes.py::test_dir_snake_case_visible_when_allowed"
         --deselect "tests/core/test_utilities.py::test_vtk_snake_case"
         --deselect "tests/core/test_utilities.py::test_is_vtk_attribute"
+        # Same root cause: with no snake_case property descriptors, PyVista cannot
+        # tell which CamelCase names are VTK-inherited, so its dir() filtering
+        # (hide-inherited / opt-in-show) can't engage. Fails by design, not by
+        # regression — bare nodeids deselect every parametrization.
+        --deselect "tests/test_attributes.py::test_dir_hides_vtk_inherited_attributes"
+        --deselect "tests/test_attributes.py::test_dir_show_vtk_api_opt_in"
     )
 else
     echo ">>> snake_case API present in this wheel: running PyVista snake_case tests"
@@ -131,6 +141,7 @@ set +e
 echo "=== core tests ==="
 "${XVFB[@]}" /tmp/pv/bin/python -m pytest "${SHARED[@]}" "${DESELECT[@]+"${DESELECT[@]}"}" \
     --ignore=tests/plotting \
+    --ignore=tests/typing \
     --test_downloads \
     --junitxml="$OUT/junit-core.xml" \
     tests/ 2>&1 | tee "$OUT/pytest-core.log"

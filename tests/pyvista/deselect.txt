@@ -27,7 +27,12 @@
 # pinned PyVista ref (tests/pyvista/PYVISTA_REF) over a permanent deselect.
 
 # --- image-regression drift -------------------------------------------------
-# (none yet — populated from the first CI run)
+# (none yet — pending the maintainer call on the gltf/cubemap/skybox diffs)
 
-# --- other --------------------------------------------------------------------
-# (none yet)
+# --- upstream PyVista issues at the pinned ref (not fvtk) --------------------
+# PyVista's own code does `self.pickpoint = ...`, which its own new-attribute
+# guard rejects (no VTK involved) — a bug at the pinned ref.
+tests/plotting/test_plotting.py::test_left_button_down
+# Instantiates pathlib WindowsPath on a non-Windows host — a PyVista/platform
+# test issue, unrelated to the VTK backend.
+tests/core/test_utilities.py::test_sample_function_raises
