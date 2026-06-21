@@ -30,7 +30,10 @@ concurrency:
 jobs:
   build-sdk:
     name: build fvtk-sdk wheel (manylinux_2_28)
-    runs-on: ubuntu-latest
+    # Heavy C++ compile (same VTK kit as the runtime wheel) → Blacksmith 16-vcpu
+    # when FVTK_RUNNER_LINUX is set, else github ubuntu-latest. The manylinux
+    # container runs identically on either host.
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
     container: quay.io/pypa/manylinux_2_28_x86_64
     steps:
       - uses: actions/checkout@v5
@@ -60,7 +63,7 @@ jobs:
     # bound to repo pyvista/fvtk, workflow sdk.yml, environment pypi-sdk.
     if: github.event_name == 'release'
     needs: [build-sdk]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     environment:
       name: pypi-sdk
       url: https://pypi.org/p/fvtk-sdk
