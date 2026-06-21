@@ -202,6 +202,9 @@ public:
    * Create a 2D depth texture using a raw pointer.
    * This is a blocking call. If you can, use PBO instead.
    * raw can be null in order to allocate texture without initialization.
+   * On a reused texture a different requested depth format takes effect
+   * unless the format was explicitly configured via SetDataType /
+   * SetInternalFormat.
    */
   bool CreateDepthFromRaw(
     unsigned int width, unsigned int height, int internalFormat, int rawType, void* raw);
@@ -299,11 +302,16 @@ public:
 
   /**
    * Create a 2D depth texture but does not initialize its values.
+   * On a reused texture a different requested internalFormat takes effect
+   * unless the format was explicitly configured via SetDataType /
+   * SetInternalFormat.
    */
   bool AllocateDepth(unsigned int width, unsigned int height, int internalFormat);
 
   /**
    * Create a 2D septh stencil texture but does not initialize its values.
+   * On a reused texture the depth-stencil format takes effect unless the
+   * format was explicitly configured via SetDataType / SetInternalFormat.
    */
   bool AllocateDepthStencil(unsigned int width, unsigned int height);
 
@@ -352,6 +360,8 @@ public:
    * Get the data type for the texture as GLenum type.
    */
   int GetDataType(int vtk_scalar_type);
+  // SetDataType marks the type as explicitly configured: subsequent depth
+  // (re)allocations will not override it.
   void SetDataType(unsigned int glType);
   int GetDefaultDataType(int vtk_scalar_type);
   ///@}
@@ -363,6 +373,8 @@ public:
    * (https://www.opengl.org/sdk/docs/man2/xhtml/glTexImage2D.xml)
    */
   unsigned int GetInternalFormat(int vtktype, int numComps, bool shaderSupportsTextureInt);
+  // SetInternalFormat marks the format as explicitly configured: subsequent
+  // depth (re)allocations will not override it.
   void SetInternalFormat(unsigned int glInternalFormat);
   unsigned int GetDefaultInternalFormat(int vtktype, int numComps, bool shaderSupportsTextureInt);
   ///@}
@@ -753,6 +765,17 @@ protected:
    */
   void DestroyTexture();
 
+  /**
+   * Reset Type and InternalFormat when they hold defaults that a previous
+   * depth allocation derived from its requested depth format (recorded in
+   * DefaultDepthType / DefaultDepthInternalFormat), so the depth format the
+   * current allocation requests takes effect. Values a caller set explicitly
+   * through SetDataType / SetInternalFormat survive, keeping the documented
+   * override: the setters clear the recorded derived defaults, even when the
+   * explicit value equals one.
+   */
+  void ResetDerivedDepthFormat();
+
   int NumberOfDimensions;
   unsigned int Width;
   unsigned int Height;
@@ -767,6 +790,15 @@ protected:
   unsigned int InternalFormat; // GLenum
   unsigned int Type;           // GLenum
   int Components;
+
+  // The values the last depth allocation (CreateDepthFromRaw, AllocateDepth,
+  // AllocateDepthStencil) derived for Type and InternalFormat when the caller
+  // had not set them. ResetDerivedDepthFormat uses these to tell such
+  // leftovers apart from an explicit SetDataType / SetInternalFormat
+  // configuration when the texture is reallocated with a different requested
+  // depth format.
+  unsigned int DefaultDepthType;           // GLenum
+  unsigned int DefaultDepthInternalFormat; // GLenum
 
   vtkWeakPointer<vtkOpenGLRenderWindow> Context;
   unsigned int Handle;

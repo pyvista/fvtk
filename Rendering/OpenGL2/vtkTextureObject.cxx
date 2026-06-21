@@ -431,6 +431,10 @@ void vtkTextureObject::ReleaseGraphicsResources(vtkWindow* win)
     this->InternalFormat = 0;
     this->Format = 0;
     this->Type = 0;
+    // Keep the derived-depth-format records in sync with the cleared
+    // formats so a future depth allocation starts from a clean derive.
+    this->DefaultDepthType = 0;
+    this->DefaultDepthInternalFormat = 0;
     this->Components = 0;
     this->Width = this->Height = this->Depth = 0;
     this->Modified();
@@ -689,6 +693,10 @@ unsigned int vtkTextureObject::GetDefaultInternalFormat(
 //------------------------------------------------------------------------------
 void vtkTextureObject::SetInternalFormat(unsigned int glInternalFormat)
 {
+  // The caller is configuring the internal format explicitly: it is no longer
+  // a default a previous depth allocation derived, even when the requested
+  // value happens to equal that derived default (see ResetDerivedDepthFormat).
+  this->DefaultDepthInternalFormat = 0;
   if (this->InternalFormat != glInternalFormat)
   {
     this->InternalFormat = glInternalFormat;
@@ -852,6 +860,31 @@ void vtkTextureObject::ResetFormatAndType()
   this->Format = 0;
   this->InternalFormat = 0;
   this->Type = 0;
+  this->DefaultDepthType = 0;
+  this->DefaultDepthInternalFormat = 0;
+}
+
+//------------------------------------------------------------------------------
+void vtkTextureObject::ResetDerivedDepthFormat()
+{
+  // A Type or InternalFormat carried over from an earlier depth allocation is
+  // a default this class derived from that call's requested depth format, not
+  // a caller's explicit choice: forget it so the depth format requested now
+  // takes effect. Values set through SetDataType / SetInternalFormat survive,
+  // keeping the documented override of the requested format: the setters
+  // clear DefaultDepthType / DefaultDepthInternalFormat, so an explicitly
+  // configured value never matches the recorded derived default here, even
+  // when it equals the value a previous allocation derived.
+  if (this->Type && this->Type == this->DefaultDepthType)
+  {
+    this->Type = 0;
+  }
+  if (this->InternalFormat && this->InternalFormat == this->DefaultDepthInternalFormat)
+  {
+    this->InternalFormat = 0;
+  }
+  this->DefaultDepthType = 0;
+  this->DefaultDepthInternalFormat = 0;
 }
 
 //------------------------------------------------------------------------------
@@ -905,6 +938,10 @@ int vtkTextureObject::GetDataType(int vtk_scalar_type)
 //------------------------------------------------------------------------------
 void vtkTextureObject::SetDataType(unsigned int glType)
 {
+  // The caller is configuring the data type explicitly: it is no longer a
+  // default a previous depth allocation derived, even when the requested
+  // value happens to equal that derived default (see ResetDerivedDepthFormat).
+  this->DefaultDepthType = 0;
   if (this->Type != glType)
   {
     this->Type = glType;
@@ -1747,12 +1784,20 @@ bool vtkTextureObject::CreateDepthFromRaw(
   assert(
     "pre: valid_internalFormat" && internalFormat >= 0 && internalFormat < NumberOfDepthFormats);
 
+  this->ResetDerivedDepthFormat();
+
   // Now, determine texture parameters using the arguments.
+  const bool deriveType = (this->Type == 0);
   this->GetDataType(rawType);
+  if (deriveType)
+  {
+    this->DefaultDepthType = this->Type;
+  }
 
   if (!this->InternalFormat)
   {
     this->InternalFormat = OpenGLDepthInternalFormat[internalFormat];
+    this->DefaultDepthInternalFormat = this->InternalFormat;
   }
 
   if (!this->InternalFormat || !this->Type)
@@ -1797,15 +1842,19 @@ bool vtkTextureObject::AllocateDepth(unsigned int width, unsigned int height, in
 
   this->Format = GL_DEPTH_COMPONENT;
 
+  this->ResetDerivedDepthFormat();
+
   // Try to match vtk type to internal fmt
   if (!this->Type)
   {
     this->Type = OpenGLDepthInternalFormatType[internalFormat];
+    this->DefaultDepthType = this->Type;
   }
 
   if (!this->InternalFormat)
   {
     this->InternalFormat = OpenGLDepthInternalFormat[internalFormat];
+    this->DefaultDepthInternalFormat = this->InternalFormat;
   }
 
   this->Width = width;
@@ -1851,6 +1900,12 @@ bool vtkTextureObject::AllocateDepthStencil(unsigned int width, unsigned int hei
   this->Format = GL_DEPTH_STENCIL;
   this->Type = GL_UNSIGNED_INT_24_8;
   this->InternalFormat = GL_DEPTH24_STENCIL8;
+  // These values are this class's own choice for a combined depth-stencil
+  // allocation, not a caller configuration: record them so a later depth
+  // allocation with a different requested format replaces them (see
+  // ResetDerivedDepthFormat).
+  this->DefaultDepthType = this->Type;
+  this->DefaultDepthInternalFormat = this->InternalFormat;
 
   this->Width = width;
   this->Height = height;
