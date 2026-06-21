@@ -25,16 +25,24 @@
 name: wheels-legacy
 
 on:
-  # MAIN-ONLY build: the legacy cp310/cp311 wheels build on every merge to main —
-  # like the LTO legs in ci.yml — and via manual dispatch. They NEVER run on PRs,
-  # so PR latency is unaffected; the slow, lower-priority legacy build is paid only
-  # post-merge.
+  # MAIN-ONLY build by default: the legacy cp310/cp311 wheels build on every merge
+  # to main — like the LTO legs in ci.yml — and via manual dispatch. They do NOT run
+  # on PRs by default, so PR latency is unaffected; the slow, lower-priority legacy
+  # build is paid only post-merge.
   push:
     branches: [main]
   workflow_dispatch:
+  # OPT-IN PR validation: add the `ci:legacy` label to a PR to run the legacy build
+  # on that PR (and on every subsequent push while the label stays on). Use this to
+  # validate changes that touch the legacy wheel path (e.g. the data_model module
+  # shim) BEFORE merge, instead of finding out post-merge. The per-job `if` below
+  # gates execution on the label being present, so unrelated `labeled` events (any
+  # other label) are no-ops.
+  pull_request:
+    types: [labeled, synchronize, reopened]
 
 concurrency:
-  group: wheels-legacy-${{ github.ref }}
+  group: wheels-legacy-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -44,6 +52,10 @@ jobs:
   # =========================================================================
   linux:
     name: legacy linux (manylinux2014, cp310+cp311)
+    # On PRs, run only when the `ci:legacy` label is present; push/dispatch always run.
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:legacy')
     # Two non-abi3 cp legs compiled back-to-back → heavy. Blacksmith 16-vcpu when
     # FVTK_RUNNER_LINUX is set, else github ubuntu-latest. The manylinux2014
     # container build width auto-tracks the runner cores.
@@ -121,6 +133,10 @@ jobs:
   # =========================================================================
   windows:
     name: legacy windows (cp310+cp311)
+    # On PRs, run only when the `ci:legacy` label is present; push/dispatch always run.
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:legacy')
     runs-on: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v5

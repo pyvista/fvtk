@@ -54,7 +54,12 @@ for _vtk_dm_cls in (
     vtkPartitionedDataSetCollection,
 ):
     if _vtk_dm_cls.__module__.startswith("fvtk."):
-        _vtk_dm_cls.__module__ = "vtkmodules." + _vtk_dm_cls.__module__[len("fvtk.") :]
+        # cp312+ wraps these as heap types (mutable __module__); the cp310/cp311
+        # legacy wheels wrap them as static (immutable) C types, where the setter
+        # raises "cannot set '__module__' attribute of immutable type". The relabel
+        # is cosmetic PyVista-override compat, so skip it where it can't be applied.
+        with suppress(TypeError):
+            _vtk_dm_cls.__module__ = "vtkmodules." + _vtk_dm_cls.__module__[len("fvtk.") :]
 del _vtk_dm_cls
 
 import weakref
