@@ -5,6 +5,7 @@
 #include "vtkABINamespace.h"
 #include "vtkObject.h"
 #include "vtkPythonUtil.h"
+#include "vtkSMPTools.h" // fvtk: never run a Python observer on an SMP worker thread
 
 #include <iostream>
 
@@ -63,6 +64,18 @@ PyObject* BuildCallDataArgList(
 void vtkPythonCommand::Execute(vtkObject* ptr, unsigned long eventtype, void* callData)
 {
   if (!this->obj)
+  {
+    return;
+  }
+
+  // fvtk: never run a Python observer callback on an SMP worker thread. With a
+  // threaded backend, a parallel filter may fire a progress/error/warning event
+  // from inside its functor on a worker thread; calling into Python there would
+  // either deadlock (the worker blocks on the GIL the parked launcher holds) or
+  // race (concurrent mutation of Python/pipeline state -> heap corruption). The
+  // launcher thread is never a pool worker, so its observers still fire and the
+  // event is simply skipped on workers. This does not affect filter output.
+  if (vtkSMPTools::IsSMPWorkerThread())
   {
     return;
   }

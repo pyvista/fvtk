@@ -5,6 +5,7 @@
 #include "SMP/Common/vtkSMPToolsImpl.h"
 
 #include <vtkObject.h>
+#include <vtkSMPTools.h> // fvtk: mark pool threads as SMP workers
 
 #include <algorithm>
 #include <cassert>
@@ -342,6 +343,11 @@ std::thread vtkSMPThreadPool::MakeThread()
 {
   return std::thread{ [this]()
     {
+      // fvtk: this is a parallel-pool worker thread for its whole lifetime (the
+      // launcher thread is never a pool thread). Mark it so Python observers are
+      // never invoked here -- see vtkSMPTools::IsSMPWorkerThread.
+      vtkSMPTools::SetCurrentThreadIsSMPWorker(true);
+
       while (!this->Initialized.load(std::memory_order_acquire))
       {
       }

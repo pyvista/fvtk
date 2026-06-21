@@ -1,27 +1,28 @@
 #!/usr/bin/env python
-"""Regression: a threaded SMP backend must not deadlock against a Python observer.
+"""Regression: a threaded SMP backend never runs a Python observer on a worker.
 
 fvtk defaults the vtkSMPTools backend to STDThread, so hundreds of filters run
 their ``vtkSMPTools::For`` loops multithreaded by default. Several filters report
 progress/abort from *inside* the parallel functor using VTK's idiom
 ``if (vtkSMPTools::GetSingleThread()) this->UpdateProgress(...)``. Under the
-(default) Sequential backend the designated thread IS the GIL-holding Python
-caller, so the ProgressEvent observer runs on the main thread -- fine. Under a
-threaded backend that designated thread is a *worker*: it invokes the Python
-observer (vtkPythonCommand -> vtkPythonScopeGilEnsurer -> PyGILState_Ensure) and
-blocks on the GIL, which the main thread holds while parked on the For join
-barrier -> permanent deadlock.
+(default) Sequential backend the designated thread IS the launcher thread, so the
+ProgressEvent observer runs on the main thread -- fine. Under a threaded backend
+that designated thread is a *worker*: invoking a Python observer there either
+deadlocks (the worker blocks on the GIL the parked launcher holds) or races
+(concurrent mutation of Python/pipeline state -> heap corruption). PyVista
+attaches such observers pervasively (progress_bar=True), so this hung/crashed its
+tests/core.
 
-The fix: vtkSMPTools::For drops the GIL on the calling thread (PyEval_SaveThread,
-registered via vtkSMPTools::SetGilCallbacks from vtkPythonUtil) for the duration
-of a threaded dispatch, so the worker can acquire it to run the callback, then
-re-acquires it. Releasing the GIL does not change the computed result.
+The fix (main-thread-only events): vtkPythonCommand::Execute returns early when
+vtkSMPTools::IsSMPWorkerThread() is true, so a Python observer is NEVER invoked
+on a pool worker thread. The launcher thread is never a pool worker, so its
+observers still fire; intra-parallel-loop progress ticks are simply skipped
+(cosmetic). This changes no filter output.
 
-This reproduced on vtkThreshold and the vtkThreadedImageAlgorithm path. Because
-a deadlocked main thread holds the GIL, an in-process Python watchdog thread
-cannot fire (it also needs the GIL) -- so the probe runs in a *subprocess* and we
-assert it finishes within a generous timeout. Without the fix the subprocess
-hangs and TimeoutExpired fails the test.
+Two invariants, checked in a *subprocess* (a deadlocked main thread holds the
+GIL, so an in-process watchdog cannot fire): the run completes within a generous
+timeout (no deadlock/crash), AND every Python observer invocation came from the
+main thread (proving no worker ever called into Python).
 """
 
 import subprocess
@@ -36,16 +37,21 @@ import pytest
 # unambiguous.
 TIMEOUT_S = 60
 
-# The child: force STDThread, attach a Python ProgressEvent observer that we can
-# confirm actually fired (proving a worker thread really did call back into
-# Python), and run a filter that reports progress from inside its SMP functor.
+# The child forces STDThread, runs a filter that reports progress from inside its
+# SMP functor, and records the thread identity of every observer invocation. With
+# the fix the observer is never called on a worker, so all recorded idents equal
+# the main-thread ident (and may be zero calls -- all progress was worker-side and
+# correctly suppressed). Without the fix it deadlocks or crashes the worker.
 _CHILD = textwrap.dedent(
     """
     import sys
+    import threading
 
     from fvtk.vtkCommonCore import vtkSMPTools, vtkCommand
     from fvtk.vtkImagingCore import vtkRTAnalyticSource
     from fvtk.vtkFiltersCore import vtkThreshold
+
+    main_ident = threading.get_ident()
 
     smp = vtkSMPTools()
     smp.SetBackend("STDThread")
@@ -61,7 +67,15 @@ _CHILD = textwrap.dedent(
     src.Update()
     image = src.GetOutput()
 
-    progress_calls = {"n": 0}
+    state = {"calls": 0, "offthread": 0}
+
+    def on_progress(obj, evt):
+        state["calls"] += 1
+        # Calling back into the algorithm mid-execution mimics PyVista's
+        # ProgressMonitor (obj.GetProgress()); harmless on the main thread.
+        _ = obj.GetProgress()
+        if threading.get_ident() != main_ident:
+            state["offthread"] += 1
 
     thr = vtkThreshold()
     thr.SetInputData(image)
@@ -73,26 +87,24 @@ _CHILD = textwrap.dedent(
         thr.SetThresholdFunction(thr.THRESHOLD_BETWEEN)
     thr.SetLowerThreshold(-1.0e9)
     thr.SetUpperThreshold(1.0e9)
-    # Observer is a Python callable; under a threaded backend it is invoked from a
-    # worker thread, which is exactly the deadlock trigger.
-    thr.AddObserver(vtkCommand.ProgressEvent, lambda obj, evt: progress_calls.__setitem__("n", progress_calls["n"] + 1))
+    thr.AddObserver(vtkCommand.ProgressEvent, on_progress)
     thr.Update()
 
     out = thr.GetOutput()
-    # Sanity: the filter produced output and the Python observer really ran.
     if out.GetNumberOfCells() <= 0:
         print("no output cells")
         sys.exit(4)
-    if progress_calls["n"] == 0:
-        print("progress observer never fired")
-        sys.exit(5)
-    print("OK cells=%d progress=%d" % (out.GetNumberOfCells(), progress_calls["n"]))
+    if state["offthread"] != 0:
+        print("observer fired on a worker thread %d times" % state["offthread"])
+        sys.exit(6)
+    print("OK cells=%d progress_calls=%d offthread=%d"
+          % (out.GetNumberOfCells(), state["calls"], state["offthread"]))
     sys.exit(0)
     """
 )
 
 
-def test_threaded_smp_does_not_deadlock_on_python_observer():
+def test_threaded_smp_never_runs_python_observer_on_worker():
     if sysconfig.get_config_var("Py_GIL_DISABLED"):
         pytest.skip("free-threaded build: no GIL to contend, deadlock cannot occur")
 
@@ -106,9 +118,11 @@ def test_threaded_smp_does_not_deadlock_on_python_observer():
     except subprocess.TimeoutExpired:
         pytest.fail(
             f"threaded SMP + Python ProgressEvent observer deadlocked "
-            f"(no completion within {TIMEOUT_S}s) -- the GIL-release hook is missing or broken"
+            f"(no completion within {TIMEOUT_S}s) -- worker-thread observer gate missing/broken"
         )
 
+    # rc 6 = observer ran on a worker thread (gate failed); negative rc = the
+    # worker crashed the process (the race); both are hard failures.
     assert proc.returncode == 0, (
         f"child failed rc={proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )

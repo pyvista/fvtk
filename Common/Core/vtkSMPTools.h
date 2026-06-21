@@ -418,6 +418,27 @@ public:
   static void SetGilCallbacks(void* (*release)(), void (*acquire)(void*));
 
   /**
+   * fvtk: true when the calling thread is an SMP backend *worker* thread (a
+   * thread owned by the parallel pool), as opposed to the thread that launched
+   * the parallel work. Used to enforce "Python observers run only on the main
+   * thread": vtkPythonCommand::Execute returns early on a worker thread, so a
+   * parallel filter that fires a progress/error/warning event from inside its
+   * functor never calls back into Python. That is what makes a threaded backend
+   * safe with Python observers -- invoking one from a worker thread otherwise
+   * deadlocks (worker waits for the GIL the parked launcher holds) or races
+   * (worker mutates Python/pipeline state concurrently). The launcher thread is
+   * never a pool thread, so its observers still fire normally. Always false for
+   * the Sequential backend and outside any parallel region.
+   */
+  static bool IsSMPWorkerThread();
+
+  /**
+   * Internal: mark the calling thread as an SMP worker. Called once by the
+   * backend thread pool when each worker thread starts; not for general use.
+   */
+  static void SetCurrentThreadIsSMPWorker(bool isWorker);
+
+  /**
    * Get the estimated number of threads being used by the backend.
    * This should be used as just an estimate since the number of threads may
    * vary dynamically and a particular task may not be executed on all the
