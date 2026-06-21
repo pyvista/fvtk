@@ -58,6 +58,8 @@
 #include "vtkCellLinks.h"         // Needed for inline methods
 #include "vtkPolyDataInternals.h" // Needed for inline methods
 
+#include <mutex> // fvtk: serialize the lazy BuildCells()/BuildLinks() builds
+
 VTK_ABI_NAMESPACE_BEGIN
 struct vtkPolyDataDummyContainter;
 class vtkIncrementalPointLocator;
@@ -740,6 +742,13 @@ protected:
   // built only when necessary
   vtkSmartPointer<CellMap> Cells;
   vtkSmartPointer<vtkAbstractCellLinks> Links;
+
+  // fvtk: serializes the lazy BuildCells()/BuildLinks() so that the inline cell
+  // accessors (GetCellType/GetCell/...) are safe to call concurrently from SMP
+  // worker threads under the STDThread default (each build publishes a
+  // fully-built structure as its last step; see BuildCells()/BuildLinks()).
+  std::mutex BuildCellsMutex;
+  std::mutex BuildLinksMutex;
 
   vtkNew<vtkIdList> LegacyBuffer;
 

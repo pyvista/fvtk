@@ -22,6 +22,7 @@
 #include "vtkUnsignedCharArray.h"
 
 #include <stdexcept>
+#include <atomic> // fvtk: release fence when publishing lazily-built Cells/Links
 #include <vector>
 
 // vtkPolyDataInternals.h methods:
@@ -796,6 +797,22 @@ VTK_ABI_NAMESPACE_BEGIN
 // Create data structure that allows random access of cells.
 void vtkPolyData::BuildCells()
 {
+  // fvtk: make the lazy build thread-safe. The inline cell accessors
+  // (GetCellType/GetCell/GetCellPoints/...) do `if (!this->Cells) BuildCells()`,
+  // and with the STDThread default that runs concurrently from SMP worker
+  // threads. Two defects made it crash: several threads could build at once, and
+  // the original code published this->Cells BEFORE populating it (so a reader
+  // could observe a half-built map). Serialize builders with a mutex and build
+  // into a LOCAL, publishing the fully-built map as the very last step. A reader
+  // then sees this->Cells as either null (and builds under the lock) or
+  // complete. (The header still documents the single-thread-first contract; this
+  // hardens the convenience path that fvtk's default threading relies on.)
+  std::lock_guard<std::mutex> lock(this->BuildCellsMutex);
+  if (this->Cells)
+  {
+    return; // another thread finished the build while we waited on the lock
+  }
+
   vtkCellArray* verts = this->GetVerts();
   vtkCellArray* lines = this->GetLines();
   vtkCellArray* polys = this->GetPolys();
@@ -810,27 +827,27 @@ void vtkPolyData::BuildCells()
   // pre-allocate the space we need
   const vtkIdType nCells = nVerts + nLines + nPolys + nStrips;
 
-  this->Cells = vtkSmartPointer<CellMap>::New();
-  this->Cells->SetNumberOfCells(nCells);
+  vtkSmartPointer<CellMap> cells = vtkSmartPointer<CellMap>::New();
+  cells->SetNumberOfCells(nCells);
 
   vtkIdType beginCellId = 0;
   if (nVerts > 0)
   {
-    verts->Dispatch(BuildCellsImpl{}, this->Cells, beginCellId,
+    verts->Dispatch(BuildCellsImpl{}, cells, beginCellId,
       [](vtkIdType size) -> VTKCellType { return size == 1 ? VTK_VERTEX : VTK_POLY_VERTEX; });
     beginCellId += nVerts;
   }
 
   if (nLines > 0)
   {
-    lines->Dispatch(BuildCellsImpl{}, this->Cells, beginCellId,
+    lines->Dispatch(BuildCellsImpl{}, cells, beginCellId,
       [](vtkIdType size) -> VTKCellType { return size == 2 ? VTK_LINE : VTK_POLY_LINE; });
     beginCellId += nLines;
   }
 
   if (nPolys > 0)
   {
-    polys->Dispatch(BuildCellsImpl{}, this->Cells, beginCellId,
+    polys->Dispatch(BuildCellsImpl{}, cells, beginCellId,
       [](vtkIdType size) -> VTKCellType
       {
         switch (size)
@@ -848,9 +865,16 @@ void vtkPolyData::BuildCells()
 
   if (nStrips > 0)
   {
-    strips->Dispatch(BuildCellsImpl{}, this->Cells, beginCellId,
+    strips->Dispatch(BuildCellsImpl{}, cells, beginCellId,
       [](vtkIdType vtkNotUsed(size)) -> VTKCellType { return VTK_TRIANGLE_STRIP; });
   }
+
+  // Release fence so all of the map's content writes above are visible before
+  // the pointer publish becomes visible to a lazy reader on another core. The
+  // reader observes the map through this->Cells, so the address dependency
+  // orders its dependent loads (correct on weak-memory archs, e.g. arm64).
+  std::atomic_thread_fence(std::memory_order_release);
+  this->Cells = cells; // publish the fully-built map last
 }
 //------------------------------------------------------------------------------
 void vtkPolyData::DeleteLinks()
@@ -871,32 +895,52 @@ void vtkPolyData::BuildLinks(int initialSize)
   {
     return;
   }
-  if (!this->Links)
+
+  // fvtk: same hardening as BuildCells(). The inline link accessors
+  // (GetPointCells/GetCellEdgeNeighbors/...) do `if (!this->Links) BuildLinks()`,
+  // which under the STDThread default runs concurrently from SMP worker threads.
+  // The original code published this->Links before vtkAbstractCellLinks::
+  // BuildLinks() populated it, so a concurrent reader could observe partial
+  // links. Serialize with a mutex; build the FIRST-build path into a local and
+  // publish fully-built last. The rebuild-in-place branches (Links already set,
+  // e.g. after the points change) keep their original behavior -- those calls
+  // come from the main thread, not the concurrent lazy-accessor path.
+  std::lock_guard<std::mutex> lock(this->BuildLinksMutex);
+  if (this->Links)
   {
-    if (!this->Editable)
+    if (initialSize > 0 && this->Links->IsA("vtkCellLinks"))
     {
-      this->Links = vtkSmartPointer<vtkStaticCellLinks>::New();
+      static_cast<vtkCellLinks*>(this->Links.Get())->Allocate(initialSize);
+      this->Links->SetDataSet(this);
     }
-    else
+    else if (this->Points->GetMTime() > this->Links->GetMTime())
     {
-      this->Links = vtkSmartPointer<vtkCellLinks>::New();
-      if (initialSize > 0)
-      {
-        static_cast<vtkCellLinks*>(this->Links.Get())->Allocate(initialSize);
-      }
+      this->Links->SetDataSet(this);
     }
-    this->Links->SetDataSet(this);
+    this->Links->BuildLinks();
+    return;
   }
-  else if (initialSize > 0 && this->Links->IsA("vtkCellLinks"))
+
+  vtkSmartPointer<vtkAbstractCellLinks> links;
+  if (!this->Editable)
   {
-    static_cast<vtkCellLinks*>(this->Links.Get())->Allocate(initialSize);
-    this->Links->SetDataSet(this);
+    links = vtkSmartPointer<vtkStaticCellLinks>::New();
   }
-  else if (this->Points->GetMTime() > this->Links->GetMTime())
+  else
   {
-    this->Links->SetDataSet(this);
+    links = vtkSmartPointer<vtkCellLinks>::New();
+    if (initialSize > 0)
+    {
+      static_cast<vtkCellLinks*>(links.Get())->Allocate(initialSize);
+    }
   }
-  this->Links->BuildLinks();
+  links->SetDataSet(this);
+  links->BuildLinks();
+  // Release fence: make the populated links visible before the pointer publish
+  // (see BuildCells() for the rationale; the reader's address dependency on
+  // this->Links orders its dependent loads on weak-memory archs).
+  std::atomic_thread_fence(std::memory_order_release);
+  this->Links = links; // publish fully-built links last
 }
 
 //------------------------------------------------------------------------------
