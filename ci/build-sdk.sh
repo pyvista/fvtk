@@ -65,7 +65,9 @@ cmpath() {
   if [ "$FVTK_OS" = windows ]; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
 
-"$PYBIN/pip" install -U pip cmake ninja "setuptools_scm>=8" wheel twine
+# Invoke pip via the module, not a `$PYBIN/pip` shim: on Windows pip.exe lives in
+# Scripts/ (not next to python.exe), so the shim path would not exist.
+"$PYBIN/python" -m pip install -U pip cmake ninja "setuptools_scm>=8" wheel twine
 
 # Put the pip cmake + ninja and the cpython on PATH so CMake's Ninja generator
 # resolves CMAKE_MAKE_PROGRAM and the system compilers.
@@ -111,7 +113,7 @@ cmake --install "$(cmpath "$BUILD_DIR")"
 # Build the fvtk-sdk wheel from the build-tree scaffold (pyproject.toml was
 # configured there by vtkWheelPreparation with the install prefix baked in).
 rm -rf "$OUT"
-"$PYBIN/pip" wheel "$(cmpath "$BUILD_DIR/wheel_sdks")" --no-deps -w "$(cmpath "$OUT")"
+"$PYBIN/python" -m pip wheel "$(cmpath "$BUILD_DIR/wheel_sdks")" --no-deps -w "$(cmpath "$OUT")"
 
 # scikit-build-core stamps the wheel py3-none (wheel.py-api in
 # CMake/wheel_sdks/pyproject.toml.in) plus the build platform. macOS

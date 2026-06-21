@@ -27,10 +27,11 @@ cmpath() {
 
 export PATH="$PYBIN:$PATH"
 
-"$PYBIN/pip" install -U pip pytest virtualenv
+# pip via the module (Windows pip.exe is in Scripts/, not next to python.exe).
+"$PYBIN/python" -m pip install -U pip pytest virtualenv
 
 # package-version parity check (importlib.metadata vs __version__)
-"$PYBIN/pip" install --no-index --find-links "$(cmpath "$OUT")" fvtk-sdk
+"$PYBIN/python" -m pip install --no-index --find-links "$(cmpath "$OUT")" fvtk-sdk
 "$PYBIN/python" -m pytest "$(cmpath "$BUILD_DIR/wheel_sdks/tests/test_package.py")" -v
 
 # find_package(VTK) integration: the test builds a downstream project that
