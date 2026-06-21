@@ -44,7 +44,10 @@ jobs:
   # =========================================================================
   linux:
     name: legacy linux (manylinux2014, cp310+cp311)
-    runs-on: ubuntu-latest
+    # Two non-abi3 cp legs compiled back-to-back → heavy. Blacksmith 16-vcpu when
+    # FVTK_RUNNER_LINUX is set, else github ubuntu-latest. The manylinux2014
+    # container build width auto-tracks the runner cores.
+    runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -118,7 +121,7 @@ jobs:
   # =========================================================================
   windows:
     name: legacy windows (cp310+cp311)
-    runs-on: windows-latest
+    runs-on: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
