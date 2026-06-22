@@ -835,6 +835,22 @@ vtkUnstructuredGrid* vtkDelaunay3D::InitPointInsertion(
 
   Mesh->Allocate(5 * numPtsToInsert);
 
+  // This transient working mesh is walked with the raw-pointer GetCellPoints()
+  // accessor (FindEnclosingFaces/GetTetraFaceNeighbor), which assumes the
+  // returned point-id pointer stays valid across subsequent GetCellPoints()
+  // calls on the same mesh. That holds only when the connectivity is stored as
+  // vtkIdType (the accessor returns a direct, per-cell pointer). fvtk defaults
+  // vtkCellArray to 32-bit storage, where the narrower-than-vtkIdType accessor
+  // routes through a single shared scratch buffer that the nested calls clobber,
+  // corrupting the walk and degenerating the triangulation (gh-114). The output
+  // mesh keeps fvtk's 32-bit default; only this internal mesh is pinned to the
+  // 64-bit storage stock VTK 9.6.2 uses, making the algorithm byte-identical to
+  // stock here.
+  if (vtkCellArray* meshCells = Mesh->GetCells())
+  {
+    meshCells->ConvertTo64BitStorage();
+  }
+
   delete this->TetraArray;
 
   this->TetraArray = new vtkTetraArray(5 * numPtsToInsert, numPtsToInsert);

@@ -19,7 +19,6 @@
 # --- REAL fvtk divergences from stock 9.6.2 (tracked; remove when fixed) -----
 # These FAIL on fvtk but PASS on stock 9.6.2 on the same machine. Tracking
 # issues filed on pyvista/fvtk; fix each, then delete its line here.
-tests/core/test_pointset.py::test_delaunay_3d                                   # vtkDelaunay3D degenerate/under-populated output (#114)
 tests/core/test_dataobject.py::test_save_compression                            # XML writer compression weaker than stock (#117)
 tests/core/test_helpers.py::test_to_from_trimesh_points_faces                   # regular_faces not zero-copy (#118)
 tests/plotting/test_texture.py::test_skybox_example                            # vtkSkybox not overridden to vtkOpenGLSkybox (#120)
