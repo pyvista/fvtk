@@ -21,8 +21,17 @@ find_package(VTK REQUIRED COMPONENTS
 # module lib with the wrapped extension inside the `sdk_example` package so the
 # installed wheel is self-contained, with the module lib resolvable next to the
 # extension via an origin-relative rpath.
+#
+# scikit-build-core sets an absolute CMAKE_INSTALL_PREFIX and absolute
+# GNUInstallDirs; vtkModule.cmake rejects absolute *_DESTINATION values, and
+# vtk_module_build's destinations all derive from these four dirs. Set them
+# RELATIVE so every derived destination (ARCHIVE/RUNTIME/HEADERS/CMAKE/LICENSE/
+# SPDX/HIERARCHY) is relative and passes the guard.
 set(BUILD_SHARED_LIBS ON)
 set(CMAKE_INSTALL_LIBDIR "sdk_example")
+set(CMAKE_INSTALL_BINDIR "sdk_example")
+set(CMAKE_INSTALL_INCLUDEDIR "include")
+set(CMAKE_INSTALL_DATAROOTDIR "share")
 if (APPLE)
   set(CMAKE_INSTALL_RPATH "@loader_path")
 elseif (UNIX)
@@ -36,15 +45,9 @@ vtk_module_scan(
   PROVIDES_MODULES  sdk_example_modules
   ENABLE_TESTS      OFF)
 
-# Under scikit-build-core the install prefix is absolute, and vtkModule.cmake's
-# default LICENSE_DESTINATION / HEADERS_DESTINATION inherit it, tripping its
-# "must not be an absolute path" guard. INSTALL_HEADERS is already OFF, but pass
-# explicit RELATIVE destinations so the build never resolves an absolute default.
 vtk_module_build(
-  MODULES             ${sdk_example_modules}
-  INSTALL_HEADERS     OFF
-  LICENSE_DESTINATION "licenses"
-  HEADERS_DESTINATION "include")
+  MODULES         ${sdk_example_modules}
+  INSTALL_HEADERS OFF)
 
 # Python-wrap the module into the `sdk_example` package. SOABI tags the wrapped
 # library with the interpreter's extension suffix; the module destination is the
