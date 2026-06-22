@@ -55,6 +55,14 @@ set(FVTK_SOURCE_UNITY_SKIP_FILES
   vtkHyperTreeGridNonOrientedVonNeumannSuperCursor.cxx
   vtkHyperTreeGridNonOrientedVonNeumannSuperCursorLight.cxx
   # --- Filters/* anonymous-namespace functor / table collisions ---
+  # vtkDelaunay3D.cxx defines file-scope non-anonymous symbols (vtkDelaunayTetra
+  # typedef, vtkTetraArray class, static GetTetraFaceNeighbor) at global namespace
+  # scope (VTK_ABI_NAMESPACE_BEGIN/END expand to nothing in the default fvtk
+  # configuration).  When batched with vtkDecimatePro.cxx and others, a behavioral
+  # regression results: FindEnclosingFaces returns numCells <= 0 for all point
+  # insertions after the first, producing a degenerate tetrahedralization (#114).
+  # Compiling vtkDelaunay3D.cxx in its own TU eliminates the interaction.
+  vtkDelaunay3D.cxx
   vtkAppendPolyData.cxx
   vtkResampleWithDataSet.cxx
   vtkStaticCleanUnstructuredGrid.cxx

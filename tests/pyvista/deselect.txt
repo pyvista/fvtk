@@ -19,7 +19,6 @@
 # --- REAL fvtk divergences from stock 9.6.2 (tracked; remove when fixed) -----
 # These FAIL on fvtk but PASS on stock 9.6.2 on the same machine. Tracking
 # issues filed on pyvista/fvtk; fix each, then delete its line here.
-tests/core/test_pointset.py::test_delaunay_3d                                   # vtkDelaunay3D degenerate/under-populated output (#114)
 tests/core/test_dataobject_filters.py::test_extract_surface_datasets[True-geometry]  # vtkOriginalPointIds not passed through (#115)
 tests/core/test_dataobject_filters.py::test_extract_surface_datasets[True-None]      # vtkOriginalPointIds not passed through (#115)
 tests/core/test_dataset_filters.py::test_compute_boundary_mesh_quality          # vtkBoundaryMeshQuality emits no output arrays (#116)
