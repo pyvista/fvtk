@@ -22,3 +22,6 @@ __pycache__/
 *.whl
 __pycache__/
 *.py[cod]
+
+# Local agent worktrees (git worktrees registered under .claude); never commit.
+.claude/worktrees/
