@@ -136,9 +136,17 @@ set(wheel_sdks_files
   wheel_sdks/src/fvtk_sdk/cmake/__init__.py
   wheel_sdks/tests/test_package.py
   wheel_sdks/tests/test_find_package.py
+  wheel_sdks/tests/test_wrap_module.py
   wheel_sdks/tests/packages/find_package/CMakeLists.txt
   wheel_sdks/tests/packages/find_package/pyproject.toml
-  wheel_sdks/tests/packages/src/vtk_simple/__init__.py)
+  wheel_sdks/tests/packages/src/vtk_simple/__init__.py
+  wheel_sdks/tests/packages/wrap_module/pyproject.toml
+  wheel_sdks/tests/packages/wrap_module/CMakeLists.txt
+  wheel_sdks/tests/packages/wrap_module/sdk_example/vtk.module
+  wheel_sdks/tests/packages/wrap_module/sdk_example/CMakeLists.txt
+  wheel_sdks/tests/packages/wrap_module/sdk_example/vtkSDKExamplePassThrough.h
+  wheel_sdks/tests/packages/wrap_module/sdk_example/vtkSDKExamplePassThrough.cxx
+  wheel_sdks/tests/packages/wrap_module/sdk_example/__init__.py)
 
 set(wheel_sdk_copied_files)
 foreach (wheel_sdk_file IN LISTS wheel_sdks_files)

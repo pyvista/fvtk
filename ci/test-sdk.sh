@@ -39,3 +39,11 @@ export PATH="$PYBIN:$PATH"
 # the freshly built fvtk-sdk wheel.
 cd "$OUT"
 "$PYBIN/python" -m pytest "$(cmpath "$BUILD_DIR/wheel_sdks/tests/test_find_package.py")" -v
+
+# out-of-tree module build + Python-wrap: the test builds a downstream project
+# that find_package(VTK COMPONENTS ... WrappingPythonCore) + vtk_module_scan +
+# vtk_module_build + vtk_module_wrap_python against the same fvtk-sdk wheel, then
+# asserts the wrapped extension was produced. Proves the SDK supports compiling
+# AND wrapping an out-of-tree module, per the README's downstream-SDK intent.
+# Same wheel dir so its `--find-links .` resolves the freshly built fvtk-sdk wheel.
+"$PYBIN/python" -m pytest "$(cmpath "$BUILD_DIR/wheel_sdks/tests/test_wrap_module.py")" -v
