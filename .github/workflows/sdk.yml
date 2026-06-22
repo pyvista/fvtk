@@ -126,6 +126,32 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      # --- cross-run ccache seed (the cold->warm lever) -----------------------
+      # build-sdk.sh sets CMAKE_*_COMPILER_LAUNCHER=ccache when ccache is present,
+      # but nothing persisted CCACHE_DIR, so every SDK build was a full cold VTK
+      # kit compile (~20-30 min on Linux). Pin CCACHE_DIR to a stable path and
+      # restore a per-OS seed keyed by run id (restore-keys prefix match), exactly
+      # like the runtime build in ci.yml: each run SAVES a fresh seed at job end,
+      # so push-to-main / merge_group refresh the seed that PRs restore. Windows
+      # has no ccache (MSVC), so it is skipped. Container legs use an in-container
+      # path (/ccache); the macOS host uses $HOME.
+      - name: Configure ccache dir
+        if: matrix.os != 'windows'
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.container }}" ]; then
+            echo "CCACHE_DIR=/ccache" >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_DIR=$HOME/.cache/fvtk-sdk-ccache" >> "$GITHUB_ENV"
+          fi
+      - name: Restore SDK ccache (cross-run)
+        if: matrix.os != 'windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: fvtk-sdk-ccache-${{ matrix.os }}-${{ github.run_id }}
+          restore-keys: |
+            fvtk-sdk-ccache-${{ matrix.os }}-
       - name: Build fvtk-sdk wheel
         run: ci/build-sdk.sh
       - name: Smoke-test the SDK (find_package(VTK))
