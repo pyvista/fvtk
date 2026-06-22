@@ -151,6 +151,16 @@ MODULE_MAPPER = {
     "vtkCommonExecutionModel": [
         "fvtk.util.execution_model",
     ],
+    # vtkRenderingCore's factory-allocated classes (e.g. vtkSkybox -> vtkOpenGLSkybox)
+    # are wrapped in vtkRenderingOpenGL2.  PyVTKObject_FromPointer looks up the
+    # concrete class name in the Python class registry immediately after the C++
+    # factory returns the override object; if vtkRenderingOpenGL2 has not yet been
+    # imported that lookup returns nullptr and the object is wrapped as the base
+    # class instead of the override.  Force the import here so the registry is
+    # populated before any vtkRenderingCore factory call can resolve.
+    "vtkRenderingCore": [
+        "fvtk.vtkRenderingOpenGL2",
+    ],
 }
 LOADED_MODULES = set()
 PENDING_LOADED_MODULES = set()

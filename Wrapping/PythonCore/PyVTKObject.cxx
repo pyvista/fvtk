@@ -765,6 +765,18 @@ PyObject* PyVTKObject_FromPointer(PyTypeObject* pytype, PyObject* ghostdict, vtk
   std::string classname = vtkPythonUtil::StripModuleFromType(pytype);
   PyVTKClass* cls = nullptr;
 
+#if defined(Py_LIMITED_API)
+  // Under abi3 every wrapped type is a heap type, so the Py_TPFLAGS_HEAPTYPE test
+  // further down cannot tell a Python-defined subclass from a wrapped VTK class.
+  // A wrapped VTK class is registered in the class map under its (module-stripped)
+  // name; a Python-defined subclass is not. Record that here from the originally-
+  // requested name (before `classname` is reassigned below) so factory New() /
+  // actual-class retyping still applies to wrapped classes -- e.g. vtkSkybox()
+  // returns vtkOpenGLSkybox, matching stock VTK -- while Python subclasses keep
+  // their own type.
+  const bool requestedIsWrappedClass = (vtkPythonUtil::FindClass(classname.c_str()) != nullptr);
+#endif
+
   if (ptr)
   {
     // If constructing from an existing C++ object, use its actual class
@@ -848,6 +860,21 @@ PyObject* PyVTKObject_FromPointer(PyTypeObject* pytype, PyObject* ghostdict, vtk
     }
   }
 
+#if defined(Py_LIMITED_API)
+  // All wrapped types are heap types under abi3, so the static-type branch below
+  // (pytype = cls->py_type, which honors factory New() / the object's actual
+  // class) would never run. Apply it here for genuine wrapped VTK classes --
+  // identified as the canonical type for their own name -- so that vtkSkybox(),
+  // vtkActor(), vtkPolyDataMapper(), ... return their vtkOpenGL* factory override
+  // exactly as stock VTK does. Python-defined subclasses (pytype !=
+  // requestedType) keep their own type. Heap types are refcounted and
+  // PyObject_GC_New borrows a reference, so incref the final type either way.
+  if (requestedIsWrappedClass && cls->py_type != nullptr)
+  {
+    pytype = cls->py_type;
+  }
+  Py_INCREF(reinterpret_cast<PyObject*>(pytype));
+#else
   if ((PyType_GetFlags(pytype) & Py_TPFLAGS_HEAPTYPE) != 0)
   {
     // Incref if class was declared in python (see PyType_GenericAlloc).
@@ -858,6 +885,7 @@ PyObject* PyVTKObject_FromPointer(PyTypeObject* pytype, PyObject* ghostdict, vtk
     // To support factory New methods, use the object's actual class
     pytype = cls->py_type;
   }
+#endif
 
   // Create a new dict unless object is being resurrected from a ghost
   PyObject* pydict = ghostdict;

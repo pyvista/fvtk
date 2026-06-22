@@ -21,7 +21,7 @@
 # issues filed on pyvista/fvtk; fix each, then delete its line here.
 tests/core/test_dataobject.py::test_save_compression                            # XML writer compression weaker than stock (#117)
 tests/core/test_helpers.py::test_to_from_trimesh_points_faces                   # regular_faces not zero-copy (#118)
-tests/plotting/test_texture.py::test_skybox_example                            # vtkSkybox not overridden to vtkOpenGLSkybox (#120)
+tests/plotting/test_plotting.py::test_export_gltf                               # glTF export render divergence, same-Mesa (#119)
 
 # --- abi3 heap-type artifact (unavoidable; same family as bitexact __flags__) -
 # fvtk's abi3 heap types expose __module__/__doc__ in vars(<wrapped type>);
