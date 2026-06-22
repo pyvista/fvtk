@@ -38,6 +38,8 @@ jobs:
     name: detect SDK changes
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Trivial paths-filter; finishes in seconds.
+    timeout-minutes: 10
     outputs:
       sdk: ${{ steps.filter.outputs.sdk }}
     steps:
@@ -70,6 +72,8 @@ jobs:
     # script drives the per-OS toolchain.
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
+    # Heavy per-OS VTK compile; cap below the 360-min default to protect paid runners.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -139,6 +143,8 @@ jobs:
     needs: build-sdk
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    # Result-check only; trivial.
+    timeout-minutes: 10
     steps:
       - name: Require build-sdk to pass or be skipped
         run: |
@@ -162,6 +168,8 @@ jobs:
     if: ${{ always() && github.event_name == 'release' && needs.build-sdk.result == 'success' }}
     needs: [build-sdk]
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    # Artifact download + PyPI upload only; cap low.
+    timeout-minutes: 15
     environment:
       name: pypi-sdk
       url: https://pypi.org/p/fvtk-sdk

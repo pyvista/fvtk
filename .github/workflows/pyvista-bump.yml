@@ -28,6 +28,8 @@ concurrency:
 jobs:
   bump:
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    # ls-remote + PR open only; cap low.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 

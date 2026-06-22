@@ -37,6 +37,8 @@ jobs:
     # uploaded names (fvtk-wheels-ubuntu-latest / -macos-14 / -windows-latest) are
     # unchanged. Compile width auto-tracks the runner cores (no pinned jobs).
     runs-on: ${{ matrix.runner }}
+    # Heavy per-OS optimized (LTO) wheel build; cap below the 360-min default.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

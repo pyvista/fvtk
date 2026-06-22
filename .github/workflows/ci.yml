@@ -90,6 +90,9 @@ jobs:
     # FVTK_BUILD_JOBS — see pyproject), so changing the variable to a bigger/
     # smaller tier is the ONLY knob; nothing here hardcodes a core count.
     runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+    # Hard cap so a hung compile/link can't run to GitHub's 360-min default and
+    # burn paid-runner minutes. Warm ccache build is well under this.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with:
@@ -176,6 +179,8 @@ jobs:
             runner: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
           - os: windows-latest
             runner: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
+    # MSVC/AppleClang full VTK compile; cap below the 360-min default.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -215,6 +220,7 @@ jobs:
     needs: build
     # Cheap, short gate (~3 min) — the small Blacksmith tier or github fallback.
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -256,6 +262,7 @@ jobs:
     name: fvtk behavior regressions (py${{ matrix.python }})
     needs: build
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -287,6 +294,7 @@ jobs:
     name: fvtk == stock VTK 9.6.2 (pixel-exact render, py${{ matrix.python }})
     needs: build
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -327,6 +335,8 @@ jobs:
   changes:
     name: detect PyVista-related changes
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    # Trivial git-diff detector; should finish in seconds.
+    timeout-minutes: 10
     outputs:
       pyvista_ref: ${{ steps.f.outputs.changed }}
     steps:
@@ -371,6 +381,8 @@ jobs:
         (contains(github.event.pull_request.labels.*.name, 'pyvista-full') ||
          needs.changes.outputs.pyvista_ref == 'true'))
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    # Heavy downstream suite; cap below the 360-min default.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
@@ -420,6 +432,8 @@ jobs:
     if: github.event_name != 'pull_request'
     # Heavy compile + LTO link (64GB on the 16-vcpu tier is ample headroom).
     runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+    # LTO link is the slowest build (~2-3x the fast build); cap with headroom.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -460,6 +474,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build-lto
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -493,6 +508,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build-lto
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -539,6 +555,8 @@ jobs:
   build-arm:
     name: build cp312-abi3 (manylinux_2_28 aarch64)
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_ARM64 || 'ubuntu-24.04-arm' }}
+    # Native aarch64 full VTK compile; cap below the 360-min default.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -581,6 +599,8 @@ jobs:
     if: github.event_name == 'release'
     needs: [build-lto, build-arm, build-other-os, bitexact-lto, renderexact-lto]
     runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    # Artifact download + PyPI upload only; cap low.
+    timeout-minutes: 15
     # Matches the PyPI trusted-publisher configuration (repo pyvista/fvtk,
     # workflow ci.yml, environment pypi). id-token: write mints the short-lived
     # OIDC token PyPI exchanges for an upload token — no API token/secret stored.

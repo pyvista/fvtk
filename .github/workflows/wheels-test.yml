@@ -30,6 +30,8 @@ jobs:
   matrix:
     name: select OS matrix
     runs-on: ubuntu-latest
+    # Trivial selector script; finishes in seconds.
+    timeout-minutes: 10
     outputs:
       os: ${{ steps.pick.outputs.os }}
     steps:
@@ -58,6 +60,8 @@ jobs:
        || (matrix.os == 'macos-14'       && (vars.FVTK_RUNNER_MACOS   || 'macos-14'))
        || (matrix.os == 'windows-latest' && (vars.FVTK_RUNNER_WINDOWS || 'windows-latest'))
        || matrix.os }}
+    # Single cp313 wheel build + smoke; cap below the 360-min default.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

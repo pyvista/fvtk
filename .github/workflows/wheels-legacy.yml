@@ -60,6 +60,9 @@ jobs:
     # FVTK_RUNNER_LINUX is set, else github ubuntu-latest. The manylinux2014
     # container build width auto-tracks the runner cores.
     runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+    # Two non-abi3 cp legs + LTO link is the heaviest build; generous cap, still
+    # well below the 360-min default so a hung leg can't drain paid runners.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
         with:
@@ -138,6 +141,8 @@ jobs:
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'ci:legacy')
     runs-on: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
+    # Two cp legs + MSVC LTCG link; generous cap, well below the 360-min default.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
         with:
