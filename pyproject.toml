@@ -85,7 +85,7 @@ test-command = "FVTK_IMPORT_NAME=fvtk xvfb-run -a -s '-screen 0 1280x1024x24' py
 # COMPRESSED wheel: 39→33 MB measured). Bit-exact-safe: only symbol metadata is
 # dropped; .dynsym + the abi3 PyInit entry points stay, so the wheel imports and
 # computes byte-identically (the bit-exact + pixel-exact gates run on this wheel).
-repair-wheel-command = "auditwheel repair --strip --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}"
+repair-wheel-command = "python ci/cibw/repair_linux.py {dest_dir} {wheel}"
 # NOTE on abi3audit: cibuildwheel >=4.0 auto-runs `abi3audit --strict` on
 # abi3-tagged wheels and FAILS the build on any non-abi3 symbol. fvtk's cp312-abi3
 # modules export the wrapper runtime's OWN cross-module symbols (PyVTKObject_New,
@@ -104,6 +104,9 @@ repair-wheel-command = "auditwheel repair --strip --plat manylinux_2_28_x86_64 -
 # GCC 14 (>=12) activates the unity + array-split build-time levers (inert on the
 # old manylinux2014/GCC-10.2.1 image).
 manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64"
+# Pin the aarch64 image to the matching glibc 2.28 floor too, so an aarch64 build
+# (a runner that sets CIBW_ARCHS=aarch64) uses the same manylinux policy.
+manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64"
 archs = ["x86_64"]
 # CIBW_BEFORE_ALL runs ONCE in the build container before the cp matrix: install
 # the rendering stack (system mesa = GL backend) + ccache + ninja + xvfb. The
