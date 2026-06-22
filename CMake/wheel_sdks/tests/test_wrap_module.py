@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -35,14 +36,24 @@ def test_wrap_module(virtualenv: VEnv):
     matching `fvtk` runtime wheel (the SDK ships the VTK libs unvendored for
     linking, not for loading). Instead it asserts the wrapped extension was
     produced inside the installed package.
+
+    It also proves the SDK exports its abi3 (stable-ABI) wrapping setting: the
+    SDK's vtk-config re-exports FVTK_ABI3, so the downstream
+    `vtk_module_wrap_python` inherits it and emits a version-INDEPENDENT
+    extension (e.g. `SDKExample.abi3.so`) rather than a version-specific
+    `SDKExample.cpython-3XX-<plat>.so`. The assertions below require at least one
+    `SDKExample*` extension AND that none of them carry a version-specific
+    CPython tag, confirming the wrap was abi3.
     """
     virtualenv.run(
         "python", "-m", "pip", "install", "--find-links", os.curdir, str(BASE)
     )
 
-    # The wrapped extension is installed into the `sdk_example` package. Its
-    # filename carries the interpreter SOABI tag (e.g. SDKExample.cpython-3XX-
-    # <plat>.so / SDKExample.pyd), so glob for it rather than hardcoding the tag.
+    # The wrapped extension is installed into the `sdk_example` package. Because
+    # the SDK exports abi3, it is the version-independent stable-ABI form (e.g.
+    # SDKExample.abi3.so / SDKExample.pyd on Windows) rather than a version-
+    # specific SDKExample.cpython-3XX-<plat>.so, so glob for it rather than
+    # hardcoding the tag (the abi3 suffix differs across platforms).
     pkg = virtualenv.platlib / "sdk_example"
     produced = sorted(
         p.name
@@ -52,4 +63,16 @@ def test_wrap_module(virtualenv: VEnv):
     assert produced, (
         f"vtk_module_wrap_python produced no SDKExample extension in {pkg}; "
         f"contents: {sorted(p.name for p in pkg.glob('*')) if pkg.exists() else 'MISSING'}"
+    )
+
+    # The wrap must have inherited abi3 from the SDK: no produced extension may
+    # carry a version-specific CPython tag (e.g. `cpython-312` / `cp312`). Assert
+    # on the ABSENCE of that tag rather than a hardcoded `.abi3.so`, since the
+    # abi3 filename suffix differs across platforms.
+    version_tag = re.compile(r"cpython-3\d|cp3\d")
+    versioned = [name for name in produced if version_tag.search(name)]
+    assert not versioned, (
+        "vtk_module_wrap_python produced a version-specific extension, so the "
+        "wrap did NOT inherit abi3 from the SDK (FVTK_ABI3 not exported): "
+        f"{versioned}"
     )

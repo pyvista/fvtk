@@ -1,3 +1,15 @@
+# Re-export the abi3 wrapping settings the SDK was built with so a downstream
+# `vtk_module_wrap_python` inherits the same stable-ABI configuration (single
+# .abi3.so serving every CPython >= the Py_LIMITED_API floor). Guarded so a
+# consumer can still override either before `find_package(VTK)`. These values
+# are substituted from the `-D` defines scikit-build passes at SDK build time.
+if (NOT DEFINED FVTK_ABI3)
+  set(FVTK_ABI3 @FVTK_ABI3@)
+endif ()
+if (NOT DEFINED FVTK_ABI3_VERSION)
+  set(FVTK_ABI3_VERSION @FVTK_ABI3_VERSION@)
+endif ()
+
 # Locate the bundled VTK install tree's config. The data directory is named for
 # the base VTK version (vtk-<MAJOR>.<MINOR>.<BUILD>.data) and does not carry the
 # fvtk wheel's PEP 440 suffix (e.g. .postN), so glob for it rather than hardcode

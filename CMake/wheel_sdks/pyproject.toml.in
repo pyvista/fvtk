@@ -58,3 +58,8 @@ wheel.py-api = "py3"
 
 [tool.scikit-build.cmake.define]
 VTK_INSTALL_DIR = "@VTK_WHEEL_SDK_VTK_INSTALL_DIR@"
+# Carry the abi3 wrapping settings into the wheel_sdks CMake configure so the
+# proxy vtk-config can re-export them; a downstream find_package(VTK) then wraps
+# its modules with the same stable-ABI configuration this SDK was built with.
+FVTK_ABI3 = "@VTK_WHEEL_SDK_ABI3@"
+FVTK_ABI3_VERSION = "@VTK_WHEEL_SDK_ABI3_VERSION@"

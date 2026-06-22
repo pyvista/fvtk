@@ -36,9 +36,15 @@ vtk_module_scan(
   PROVIDES_MODULES  sdk_example_modules
   ENABLE_TESTS      OFF)
 
+# Under scikit-build-core the install prefix is absolute, and vtkModule.cmake's
+# default LICENSE_DESTINATION / HEADERS_DESTINATION inherit it, tripping its
+# "must not be an absolute path" guard. INSTALL_HEADERS is already OFF, but pass
+# explicit RELATIVE destinations so the build never resolves an absolute default.
 vtk_module_build(
-  MODULES         ${sdk_example_modules}
-  INSTALL_HEADERS OFF)
+  MODULES             ${sdk_example_modules}
+  INSTALL_HEADERS     OFF
+  LICENSE_DESTINATION "licenses"
+  HEADERS_DESTINATION "include")
 
 # Python-wrap the module into the `sdk_example` package. SOABI tags the wrapped
 # library with the interpreter's extension suffix; the module destination is the
