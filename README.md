@@ -8,8 +8,8 @@
 
 <p align="center">
   <a href="https://pypi.org/project/fvtk/"><img src="https://img.shields.io/pypi/v/fvtk.svg?logo=python&logoColor=white" alt="PyPI" /></a>
-  <a href="https://pypi.org/project/fvtk/"><img src="https://img.shields.io/pypi/pyversions/fvtk.svg?color=orange&logo=python&label=python&logoColor=white" alt="Python versions" /></a>
-  <a href="https://pypi.org/project/fvtk/"><img src="https://img.shields.io/pypi/dm/fvtk.svg?label=PyPI%20downloads" alt="PyPI downloads" /></a>
+  <a href="https://pypi.org/project/fvtk-sdk/"><img src="https://img.shields.io/pypi/v/fvtk-sdk.svg?label=fvtk-sdk&logo=python&logoColor=white" alt="fvtk-sdk PyPI" /></a>
+  <a href="https://pypi.org/project/fvtk/"><img src="https://img.shields.io/badge/ABI-abi3%20(CPython%203.12%2B)-orange?logo=python&logoColor=white" alt="Stable ABI (abi3), CPython 3.12+" /></a>
   <a href="Copyright.txt"><img src="https://img.shields.io/badge/License-BSD%203--Clause-yellow.svg" alt="BSD 3-Clause License" /></a>
   <a href="https://gitlab.kitware.com/vtk/vtk/-/tags/v9.6.2"><img src="https://img.shields.io/badge/fork%20of-VTK%209.6.2-blue.svg" alt="Fork of VTK 9.6.2" /></a>
 </p>
