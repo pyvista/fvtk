@@ -22,6 +22,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The merge queue must run the SDK build+gate on the queued commit, exactly
+  # like the runtime gate in ci.yml — otherwise the required `SDK gate` check
+  # never reports on a merge_group event and the queue blocks forever. On
+  # merge_group the PR-only `changes` job is skipped, so `build-sdk` runs
+  # unconditionally (its `event != pull_request` clause), validating the SDK on
+  # every merge.
+  merge_group:
   release:
     types: [published]
   workflow_dispatch:
