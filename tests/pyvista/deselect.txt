@@ -19,7 +19,6 @@
 # --- REAL fvtk divergences from stock 9.6.2 (tracked; remove when fixed) -----
 # These FAIL on fvtk but PASS on stock 9.6.2 on the same machine. Tracking
 # issues filed on pyvista/fvtk; fix each, then delete its line here.
-tests/core/test_dataobject.py::test_save_compression                            # XML writer compression weaker than stock (#117)
 tests/core/test_helpers.py::test_to_from_trimesh_points_faces                   # regular_faces not zero-copy (#118)
 tests/plotting/test_plotting.py::test_export_gltf                               # glTF export render divergence, same-Mesa (#119)
 
@@ -32,6 +31,17 @@ tests/core/test_dataobject_filters.py::test_cell_status
 # stock 9.6.2 on the same Mesa also exceeds the threshold (1474 vs fvtk 1466),
 # so the committed image_cache was generated against a different VTK/Mesa.
 tests/plotting/test_plotting.py::test_set_environment_texture_cubemap[True]
+
+# --- by-design consequence of fvtk int32-default storage (won't fix) --------
+# fvtk defaults topology/connectivity arrays to int32 (stock uses int64). The
+# test asserts compressed_size < uncompressed_size / 4. fvtk's compressed output
+# is actually SMALLER than stock's (e.g. sphere: 21595 vs 22671 bytes), but its
+# UNCOMPRESSED baseline is far smaller too (65199 vs 101039) because int32 halves
+# the connectivity/offset arrays and stock's int64 arrays are full of zero
+# high-bytes that compress almost for free. So fvtk's *ratio* is ~3x vs stock's
+# ~4.5x even though the absolute file is smaller. The 4x threshold assumes int64
+# padding; there is no fix that keeps the int32 storage win. See #117.
+tests/core/test_dataobject.py::test_save_compression                            # int32-default lowers compression RATIO (smaller file); by design (#117)
 
 # --- intentional fvtk build exclusion (won't fix) ---------------------------
 # fvtk's module closure excludes IOXdmf2: the vendored ThirdParty/xdmf2 fails to
