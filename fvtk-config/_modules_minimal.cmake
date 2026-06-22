@@ -63,6 +63,10 @@ set(VTK_MODULE_ENABLE_VTK_IOExport YES CACHE STRING "")
 set(VTK_MODULE_ENABLE_VTK_IOFLUENTCFF WANT CACHE STRING "")
 set(VTK_MODULE_ENABLE_VTK_IOGeometry WANT CACHE STRING "")
 set(VTK_MODULE_ENABLE_VTK_IOHDF WANT CACHE STRING "")
+# core image IO: PNG/JPEG/TIFF/BMP readers+writers for screenshots and textures.
+# Enabled explicitly rather than relying on the Web modules' dependency chain to
+# pull it in transitively, so image IO can't silently vanish if those deps move.
+set(VTK_MODULE_ENABLE_VTK_IOImage WANT CACHE STRING "")
 set(VTK_MODULE_ENABLE_VTK_IOImport WANT CACHE STRING "")
 set(VTK_MODULE_ENABLE_VTK_IOInfovis WANT CACHE STRING "")
 set(VTK_MODULE_ENABLE_VTK_IOLegacy WANT CACHE STRING "")
@@ -90,9 +94,10 @@ set(VTK_MODULE_ENABLE_VTK_ViewsContext2D YES CACHE STRING "")
 # vtkmodules.vtkWebCore.vtkWebApplication. WebCore PRIVATE_DEPENDS on
 # WebGLExporter (which DEPENDS IOExport, already YES). Explicit module YES
 # overrides the VTK_GROUP_ENABLE_Web DONT_WANT above. All transitive deps
-# (CommonSystem, IOImage, ParallelCore, Python, nlohmannjson, vtksys,
+# (CommonSystem, ParallelCore, Python, nlohmannjson, vtksys,
 # RenderingAnnotation, InteractionWidgets, FiltersCore/General/Geometry,
-# IOCore, IOExport, RenderingCore) are already in the enabled closure.
+# IOCore, IOExport, RenderingCore) are already in the enabled closure
+# (IOImage is now enabled explicitly above rather than pulled in here).
 set(VTK_MODULE_ENABLE_VTK_WebCore YES CACHE STRING "")
 set(VTK_MODULE_ENABLE_VTK_WebGLExporter YES CACHE STRING "")
 
