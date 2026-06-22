@@ -39,7 +39,21 @@ void vtkGLTFWriterUtils::WriteValues(vtkDataArray* ca, ostream& myFile)
   if (!vtkArrayDispatch::DispatchByArray<vtkArrayDispatch::AOSArrays>::Execute(
         aos, WriteValuesFunctor{}, myFile))
   {
-    vtkGenericWarningMacro("Failed to write data array of type " << ca->GetClassName());
+    // Fallback for AOS arrays whose value type is not in the trimmed dispatch
+    // list (e.g. vtkUnsignedIntArray when FVTK_DISPATCH_MINIMAL is active).
+    // ToAOSDataArray() returns non-null for any AOS array, so GetVoidPointer
+    // gives a contiguous buffer that we can write directly -- identical bytes
+    // to the dispatch path that would have called GetPointer(0).
+    if (aos)
+    {
+      vtkIdType nbytes = static_cast<vtkIdType>(aos->GetNumberOfTuples()) *
+        aos->GetNumberOfComponents() * aos->GetElementComponentSize();
+      myFile.write(reinterpret_cast<const char*>(aos->GetVoidPointer(0)), nbytes);
+    }
+    else
+    {
+      vtkGenericWarningMacro("Failed to write data array of type " << ca->GetClassName());
+    }
   }
 }
 
@@ -49,7 +63,18 @@ void vtkGLTFWriterUtils::WriteValues(vtkDataArray* ca, vtkBase64OutputStream* os
   if (!vtkArrayDispatch::DispatchByArray<vtkArrayDispatch::AOSArrays>::Execute(
         aos, WriteValuesFunctor{}, ostr))
   {
-    vtkGenericWarningMacro("Failed to write data array of type " << ca->GetClassName());
+    // Fallback for AOS arrays whose value type is not in the trimmed dispatch
+    // list (e.g. vtkUnsignedIntArray when FVTK_DISPATCH_MINIMAL is active).
+    if (aos)
+    {
+      vtkIdType nbytes = static_cast<vtkIdType>(aos->GetNumberOfTuples()) *
+        aos->GetNumberOfComponents() * aos->GetElementComponentSize();
+      ostr->Write(reinterpret_cast<const char*>(aos->GetVoidPointer(0)), nbytes);
+    }
+    else
+    {
+      vtkGenericWarningMacro("Failed to write data array of type " << ca->GetClassName());
+    }
   }
 }
 

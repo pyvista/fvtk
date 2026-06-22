@@ -25,7 +25,6 @@ tests/core/test_dataobject_filters.py::test_extract_surface_datasets[True-None] 
 tests/core/test_dataset_filters.py::test_compute_boundary_mesh_quality          # vtkBoundaryMeshQuality emits no output arrays (#116)
 tests/core/test_dataobject.py::test_save_compression                            # XML writer compression weaker than stock (#117)
 tests/core/test_helpers.py::test_to_from_trimesh_points_faces                   # regular_faces not zero-copy (#118)
-tests/plotting/test_plotting.py::test_export_gltf                               # glTF export render divergence, same-Mesa (#119)
 tests/plotting/test_texture.py::test_skybox_example                            # vtkSkybox not overridden to vtkOpenGLSkybox (#120)
 
 # --- abi3 heap-type artifact (unavoidable; same family as bitexact __flags__) -
