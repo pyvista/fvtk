@@ -2050,44 +2050,67 @@ struct ExtractDS : public ExtractCellBoundaries<TInputIdType>
 // Helper class to record original point and cell ids. This is for copying
 // cell data, and also to produce output arrays indicating where output
 // cells originated from (typically used in picking).
+//
+// Width-relaxed storage: use vtkTypeInt32Array when the id count fits in
+// int32 (count <= 0x7FFFFFFF), otherwise vtkIdTypeArray.  This must match
+// the type produced by PassPointIds / PassCellIds so that vtkAppendPolyData
+// (used by PyVista's MultiBlock extract_surface) sees a consistent type
+// across all blocks and does not drop the array via IsSimilar().
 struct IdRecorder
 {
-  vtkSmartPointer<vtkIdTypeArray> Ids;
+  vtkSmartPointer<vtkDataArray> Ids;
 
   IdRecorder(
-    vtkTypeBool passThru, const char* name, vtkDataSetAttributes* attrD, vtkIdType allocSize)
+    vtkTypeBool passThru, const char* name, vtkDataSetAttributes* attrD, vtkIdType count)
   {
     if (passThru)
     {
-      this->Ids.TakeReference(vtkIdTypeArray::New());
-      this->Ids->SetName(name);
-      this->Ids->SetNumberOfComponents(1);
-      this->Ids->Allocate(allocSize);
+      if (count <= static_cast<vtkIdType>(0x7FFFFFFF))
+      {
+        auto* a = vtkTypeInt32Array::New();
+        a->SetName(name);
+        a->SetNumberOfComponents(1);
+        this->Ids.TakeReference(a);
+      }
+      else
+      {
+        auto* a = vtkIdTypeArray::New();
+        a->SetName(name);
+        a->SetNumberOfComponents(1);
+        this->Ids.TakeReference(a);
+      }
       attrD->AddArray(this->Ids.Get());
-    }
-  }
-  IdRecorder(vtkTypeBool passThru, const char* name, vtkDataSetAttributes* attrD)
-  {
-    if (passThru)
-    {
-      this->Ids.TakeReference(vtkIdTypeArray::New());
-      this->Ids->SetName(name);
-      this->Ids->SetNumberOfComponents(1);
-      attrD->AddArray(this->Ids.Get());
-    }
-    else
-    {
-      this->Ids = nullptr;
     }
   }
   void Insert(vtkIdType destId, vtkIdType origId)
   {
     if (this->Ids.Get() != nullptr)
     {
-      this->Ids->InsertValue(destId, origId);
+      this->Ids->InsertTuple1(destId, static_cast<double>(origId));
     }
   }
-  vtkIdType* GetPointer() { return this->Ids->GetPointer(0); }
+  // Fill [0, count) with identity values using a parallel SMP loop.
+  void FillIdentity(vtkIdType count)
+  {
+    if (!this->Ids.Get())
+      return;
+    if (auto* a = vtkTypeInt32Array::SafeDownCast(this->Ids.Get()))
+    {
+      auto* ptr = a->GetPointer(0);
+      vtkSMPTools::For(0, count, [ptr](vtkIdType b, vtkIdType e) {
+        for (; b < e; ++b)
+          ptr[b] = static_cast<vtkTypeInt32>(b);
+      });
+    }
+    else if (auto* a = vtkIdTypeArray::SafeDownCast(this->Ids.Get()))
+    {
+      auto* ptr = a->GetPointer(0);
+      vtkSMPTools::For(0, count, [ptr](vtkIdType b, vtkIdType e) {
+        for (; b < e; ++b)
+          ptr[b] = b;
+      });
+    }
+  }
   vtkTypeBool PassThru() { return this->Ids.Get() != nullptr; }
   void Allocate(vtkIdType num)
   {
@@ -2100,7 +2123,7 @@ struct IdRecorder
   {
     if (this->Ids.Get() != nullptr)
     {
-      this->Ids->SetNumberOfValues(num);
+      this->Ids->SetNumberOfTuples(num);
     }
   }
 }; // id recorder
@@ -2608,23 +2631,17 @@ int ExecutePolyData(vtkGeometryFilter* self, vtkDataSet* dataSetInput, vtkPolyDa
   }
 
   IdRecorder origCellIds(
-    self->GetPassThroughCellIds(), self->GetOriginalCellIdsName(), output->GetCellData());
+    self->GetPassThroughCellIds(), self->GetOriginalCellIdsName(), output->GetCellData(),
+    numCells);
   IdRecorder origPointIds(
-    self->GetPassThroughPointIds(), self->GetOriginalPointIdsName(), output->GetPointData());
+    self->GetPassThroughPointIds(), self->GetOriginalPointIdsName(), output->GetPointData(),
+    numPts);
 
   // vtkPolyData points are not culled
   if (origPointIds.PassThru())
   {
     origPointIds.SetNumberOfValues(numPts);
-    vtkIdType* origPointIdsPtr = origPointIds.GetPointer();
-    vtkSMPTools::For(0, numPts,
-      [&origPointIdsPtr](vtkIdType pId, vtkIdType endPId)
-      {
-        for (; pId < endPId; ++pId)
-        {
-          origPointIdsPtr[pId] = pId;
-        }
-      });
+    origPointIds.FillIdentity(numPts);
   }
 
   // Special case when data is just passed through
@@ -2637,15 +2654,7 @@ int ExecutePolyData(vtkGeometryFilter* self, vtkDataSet* dataSetInput, vtkPolyDa
     if (origCellIds.PassThru())
     {
       origCellIds.SetNumberOfValues(numCells);
-      vtkIdType* origCellIdsPtr = origCellIds.GetPointer();
-      vtkSMPTools::For(0, numCells,
-        [&origCellIdsPtr](vtkIdType cId, vtkIdType endCId)
-        {
-          for (; cId < endCId; ++cId)
-          {
-            origCellIdsPtr[cId] = cId;
-          }
-        });
+      origCellIds.FillIdentity(numCells);
     }
 
     return 1;
