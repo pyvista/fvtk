@@ -10,6 +10,14 @@ if (NOT DEFINED FVTK_ABI3_VERSION)
   set(FVTK_ABI3_VERSION @FVTK_ABI3_VERSION@)
 endif ()
 
+# Resolve external dependencies the installed VTK targets carry in their link
+# interface so a downstream `find_package(VTK)` does not have to. On platforms
+# where fvtk's filters use OpenMP, `VTK::*-objects` targets reference
+# `OpenMP::OpenMP_CXX`; without this the include() below fails with "target not
+# found". Non-REQUIRED so platforms without the OpenMP linkage (e.g. macOS) skip
+# it harmlessly.
+find_package(OpenMP QUIET)
+
 # Locate the bundled VTK install tree's config. The data directory is named for
 # the base VTK version (vtk-<MAJOR>.<MINOR>.<BUILD>.data) and does not carry the
 # fvtk wheel's PEP 440 suffix (e.g. .postN), so glob for it rather than hardcode
