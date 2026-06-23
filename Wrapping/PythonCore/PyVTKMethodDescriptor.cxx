@@ -114,16 +114,33 @@ static int PyVTKMethodDescriptor_Traverse(PyObject* ob, visitproc visit, void* a
 static PyObject* PyVTKMethodDescriptor_Call(PyObject* ob, PyObject* args, PyObject* kwds)
 {
   PyMethodDescrObject* descr = (PyMethodDescrObject*)ob;
-  PyObject* result = nullptr;
-  PyObject* func = PyCFunction_New(descr->d_method, (PyObject*)PyDescr_TYPE(descr));
+  PyMethodDef* meth = descr->d_method;
 
-  if (func)
+  // "self" for a method descriptor is the owning type; the wrapper functions
+  // recover the real instance from args[0] (the unbound calling convention,
+  // see vtkPythonArgs::GetSelfFromFirstArg). This is exactly the same self+args
+  // pairing PyCFunction_New(...) + PyObject_Call(...) used to forward, so the
+  // observable behavior is identical -- we only elide the per-call temporary
+  // PyCFunction object (a GC-tracked heap alloc+free on every wrapped call).
+  // All wrapped methods are emitted with either METH_VARARGS or
+  // METH_VARARGS|METH_KEYWORDS (see vtkWrapPythonMethodDef.c), so dispatch on
+  // METH_KEYWORDS covers every case.
+  PyObject* self = (PyObject*)PyDescr_TYPE(descr);
+
+  if (meth->ml_flags & METH_KEYWORDS)
   {
-    result = PyObject_Call(func, args, kwds);
-    Py_DECREF(func);
+    return ((PyCFunctionWithKeywords)(void (*)(void))meth->ml_meth)(self, args, kwds);
   }
 
-  return result;
+  // A METH_VARARGS-only method rejects keyword arguments, matching the
+  // TypeError that PyObject_Call(PyCFunction, ...) would have raised.
+  if (kwds != nullptr && PyDict_Size(kwds) != 0)
+  {
+    PyErr_Format(PyExc_TypeError, "%U() takes no keyword arguments", PyDescr_NAME(descr));
+    return nullptr;
+  }
+
+  return meth->ml_meth(self, args);
 }
 
 static PyObject* PyVTKMethodDescriptor_Get(PyObject* self, PyObject* obj, PyObject*)
@@ -214,7 +231,8 @@ PyTypeObject PyVTKMethodDescriptor_Type = {
   PyObject_GenericGetAttr,                 // tp_getattro
   nullptr,                                 // tp_setattro
   nullptr,                                 // tp_as_buffer
-  Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, // tp_flags
+  Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC |
+    Py_TPFLAGS_METHOD_DESCRIPTOR,          // tp_flags
   nullptr,                                 // tp_doc
   PyVTKMethodDescriptor_Traverse,          // tp_traverse
   nullptr,                                 // tp_clear
@@ -257,7 +275,8 @@ static PyType_Slot PyVTKMethodDescriptor_Slots[] = {
 };
 static PyType_Spec PyVTKMethodDescriptor_Spec = {
   "fvtk.vtkCommonCore.method_descriptor", sizeof(PyMethodDescrObject), 0,
-  Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, PyVTKMethodDescriptor_Slots
+  Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_METHOD_DESCRIPTOR,
+  PyVTKMethodDescriptor_Slots
 };
 
 // Backing pointer for the `#define PyVTKMethodDescriptor_Type (*ptr)` shim.
