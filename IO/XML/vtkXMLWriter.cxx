@@ -37,6 +37,8 @@
 #include "vtkStdString.h"
 #include "vtkStreamingDemandDrivenPipeline.h"
 #include "vtkStringFormatter.h"
+#include "vtkSMPTools.h"
+#include "vtkSmartPointer.h"
 #include "vtkUnsignedCharArray.h"
 #include "vtkZLibDataCompressor.h"
 #define vtkXMLOffsetsManager_DoNotInclude
@@ -61,8 +63,11 @@
 #include <io.h> /* unlink */
 #endif
 
-#include <cctype> // for isalnum
-#include <locale> // C++ locale
+#include <algorithm> // for std::min
+#include <atomic>    // for parallel-compress failure flag
+#include <cctype>    // for isalnum
+#include <locale>    // C++ locale
+#include <vector>    // for per-block compressed buffers
 
 VTK_ABI_NAMESPACE_BEGIN
 
@@ -1118,7 +1123,33 @@ int vtkXMLWriter::WriteBinaryDataInternal(vtkAbstractArray* a)
 
   size_t numValues = static_cast<size_t>(a->GetNumberOfComponents() * a->GetNumberOfTuples());
 
-  if (wordType == VTK_STRING)
+  // Fast path: when compressing a contiguous AOS array that needs no byte swap
+  // and no vtkIdType->Int32 conversion, compress the independent blocks in
+  // parallel (byte-for-byte identical output -- see WriteCompressedBlocksParallel).
+  // Gated on BlockSize being a whole number of output words so the parallel
+  // byte-blocking matches the serial worker's word-blocking and the header's
+  // block count exactly. Falls back to the serial worker for every other case
+  // (byte swap, id-type conversion, vtkBitArray/strings, non-contiguous/implicit
+  // storage, single-threaded, or an odd block size).
+  unsigned char* fastData = nullptr;
+  if (this->Compressor && !this->ByteSwapBuffer && !this->Int32IdTypeBuffer &&
+    wordType != VTK_STRING && wordType != VTK_BIT && numValues > 0 && outWordSize > 0 &&
+    (this->BlockSize % outWordSize == 0) && vtkSMPTools::GetEstimatedNumberOfThreads() > 1)
+  {
+    if (vtkDataArray* fastDA = vtkArrayDownCast<vtkDataArray>(a))
+    {
+      if (fastDA->HasStandardMemoryLayout())
+      {
+        fastData = static_cast<unsigned char*>(fastDA->GetVoidPointer(0));
+      }
+    }
+  }
+
+  if (fastData)
+  {
+    ret = this->WriteCompressedBlocksParallel(fastData, numValues * outWordSize);
+  }
+  else if (wordType == VTK_STRING)
   {
     vtkArrayIterator* aiter = a->NewIterator();
     vtkArrayIteratorTemplate<vtkStdString>* iter =
@@ -1387,6 +1418,99 @@ int vtkXMLWriter::WriteCompressionBlock(unsigned char* data, size_t size)
   this->CompressionHeader->Set(3 + this->CompressionBlockNumber++, outputSize);
 
   outputArray->Delete();
+
+  return result;
+}
+
+//------------------------------------------------------------------------------
+int vtkXMLWriter::WriteCompressedBlocksParallel(unsigned char* data, size_t size)
+{
+  // Parallel counterpart of the WriteCompressionBlock loop. The on-disk format
+  // deflates every BlockSize-sized chunk into an INDEPENDENT zlib stream and
+  // records each compressed size, in order, in the compression header. Because
+  // the blocks are independent, compressing them concurrently and then writing
+  // their streams sequentially in the same order yields byte-for-byte identical
+  // output to the serial path -- only the work order changes, never the bytes.
+  //
+  // vtkZLibDataCompressor::CompressBuffer / vtkLZ4DataCompressor::CompressBuffer
+  // only read immutable settings (compression level) and allocate a fresh
+  // output array per call, so Compress() is reentrant across threads on the
+  // same compressor instance.
+  //
+  // Caller guarantees: this->Compressor is set, `data` is a contiguous buffer
+  // of `size` bytes already in final on-disk form (no pending byte swap or
+  // vtkIdType->Int32 conversion), and the compression header has been written
+  // (CompressionBlockNumber == 0).
+  const size_t blockSize = this->BlockSize;
+  if (size == 0 || blockSize == 0)
+  {
+    return 1;
+  }
+  const size_t numBlocks = (size + blockSize - 1) / blockSize;
+
+  // Process in waves so peak extra memory stays bounded (a wave of compressed
+  // blocks) instead of buffering every compressed block of the whole array at
+  // once. Each wave is compressed in parallel, then written serially in order.
+  unsigned int nThreads = vtkSMPTools::GetEstimatedNumberOfThreads();
+  if (nThreads < 1)
+  {
+    nThreads = 1;
+  }
+  const size_t waveSize = std::min(numBlocks, static_cast<size_t>(nThreads) * 4);
+
+  std::vector<vtkSmartPointer<vtkUnsignedCharArray>> compressed(waveSize);
+  int result = 1;
+
+  for (size_t waveStart = 0; waveStart < numBlocks && result; waveStart += waveSize)
+  {
+    const size_t waveEnd = std::min(waveStart + waveSize, numBlocks);
+    std::atomic<bool> ok{ true };
+
+    // Phase 1: compress this wave's blocks concurrently.
+    vtkSMPTools::For(static_cast<vtkIdType>(waveStart), static_cast<vtkIdType>(waveEnd),
+      [&](vtkIdType begin, vtkIdType end)
+      {
+        for (vtkIdType b = begin; b < end; ++b)
+        {
+          const size_t offset = static_cast<size_t>(b) * blockSize;
+          const size_t thisBlock = std::min(blockSize, size - offset);
+          vtkUnsignedCharArray* out = this->Compressor->Compress(data + offset, thisBlock);
+          if (!out)
+          {
+            ok = false;
+            continue;
+          }
+          compressed[b - static_cast<vtkIdType>(waveStart)].TakeReference(out);
+        }
+      });
+
+    if (!ok)
+    {
+      result = 0;
+      break;
+    }
+
+    // Phase 2: write the wave's compressed streams sequentially, in block order,
+    // recording each compressed size in the header exactly as the serial path.
+    for (size_t b = waveStart; b < waveEnd; ++b)
+    {
+      vtkUnsignedCharArray* out = compressed[b - waveStart];
+      const size_t outputSize = out->GetNumberOfTuples();
+      result = this->DataStream->Write(out->GetPointer(0), outputSize);
+      this->Stream->flush();
+      if (this->Stream->fail())
+      {
+        this->SetErrorCode(vtkErrorCode::GetLastSystemError());
+        result = 0;
+      }
+      this->CompressionHeader->Set(3 + this->CompressionBlockNumber++, outputSize);
+      compressed[b - waveStart] = nullptr;
+      if (!result)
+      {
+        break;
+      }
+    }
+  }
 
   return result;
 }

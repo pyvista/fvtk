@@ -260,6 +260,12 @@ protected:
   void PerformByteSwap(void* data, size_t numWords, size_t wordSize);
   int CreateCompressionHeader(size_t size);
   int WriteCompressionBlock(unsigned char* data, size_t size);
+  // Parallel variant of the per-block compression loop for the common
+  // contiguous, no-byteswap, no-idtype-conversion case. Compresses blocks
+  // concurrently and writes their compressed streams sequentially in order,
+  // producing byte-for-byte identical output to the serial path. Returns 1 on
+  // success, 0 on failure.
+  int WriteCompressedBlocksParallel(unsigned char* data, size_t size);
   int WriteCompressionHeader();
   size_t GetWordTypeSize(int dataType);
   const char* GetWordTypeName(int dataType);
