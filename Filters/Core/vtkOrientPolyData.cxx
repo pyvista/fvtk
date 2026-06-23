@@ -191,9 +191,21 @@ int vtkOrientPolyData::RequestData(vtkInformation* vtkNotUsed(request),
   // vtkPolyDataNormals (Consistency=1) pipeline, with a deterministic parallel
   // orientation kernel. Restricted to the MANIFOLD, consistency-only case; the
   // AutoOrientNormals / NonManifoldTraversal / non-manifold paths fall through to
-  // the byte-exact serial code below. The only relaxation is the per-connected-
-  // component winding CHOICE, resolved by the component's lowest cell id so the
-  // result is thread-count invariant. No-op unless fvtk::FastModeEnabled().
+  // the byte-exact serial code below.
+  //
+  // TRADEOFF (what EnableFast buys/costs here): this is NOT byte-exact with stock
+  // VTK 9.6.2 -- it is orientation-relaxed. Positions, the cell-to-slot mapping,
+  // and each cell's point-id multiset are identical to stock, and adjacent cells
+  // are always mutually consistent; the one thing that may differ is the absolute
+  // winding chosen for a whole connected component. Stock seeds each component
+  // from the first cell it visits in BFS order; the kernel seeds from the
+  // component's lowest global cell id instead (so the choice is deterministic and
+  // thread-count invariant). When the two seeds imply opposite windings, that
+  // entire component is wound the other way, which FLIPS THE SIGN of any normals
+  // vtkPolyDataNormals then computes for it -- geometrically valid and internally
+  // consistent, but possibly opposite to stock for that component. This only ever
+  // happens with fast mode ON; the default path (below) is unchanged and
+  // byte-exact. No-op unless fvtk::FastModeEnabled().
   if (fvtk::FastModeEnabled())
   {
     if (fvtk::FastOrientPolyData(input, output, this->Consistency, this->FlipNormals,
