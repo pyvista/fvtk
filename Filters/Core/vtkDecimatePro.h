@@ -275,6 +275,16 @@ public:
   vtkGetMacro(OutputPointsPrecision, int);
   ///@}
 
+  /**
+   * fvtk addition (not upstream VTK): number of times the opt-in parallel fast
+   * path (fvtk::FastDecimatePro, env FVTK_FAST / fvtk.EnableFast()) has
+   * successfully engaged in this process. Monotonically increasing. Returns 0
+   * if the fast path has never run (e.g. fast mode off, or every request fell
+   * back to the byte-exact serial decimator). Used by the regression tests to
+   * prove the fast path actually ran.
+   */
+  static vtkTypeUInt64 GetFastModeEngageCount();
+
 protected:
   vtkDecimatePro();
   ~vtkDecimatePro() override;

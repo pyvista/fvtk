@@ -17,6 +17,8 @@
 #include "vtkPriorityQueue.h"
 #include "vtkTriangle.h"
 
+#include "fvtkFastDecimate.h" // fvtk opt-in parallel decimation (EnableFast lane)
+
 VTK_ABI_NAMESPACE_BEGIN
 vtkStandardNewMacro(vtkDecimatePro);
 
@@ -97,6 +99,15 @@ vtkDecimatePro::~vtkDecimatePro()
   this->EdgeLengths->Delete();
   delete this->V;
   delete this->T;
+}
+
+//------------------------------------------------------------------------------
+// fvtk addition: expose the parallel fast-path engagement counter (defined in
+// fvtkFastDecimate.cxx) through this wrapped class so Python tests can prove the
+// fast path actually ran (vs falling back to the serial decimator).
+vtkTypeUInt64 vtkDecimatePro::GetFastModeEngageCount()
+{
+  return static_cast<vtkTypeUInt64>(fvtk::GetFastDecimateEngageCount());
 }
 
 //------------------------------------------------------------------------------
@@ -184,6 +195,19 @@ int vtkDecimatePro::RequestData(vtkInformation* vtkNotUsed(request),
       output->GetCellData()->PassData(input->GetCellData());
       return 1;
     }
+  }
+
+  // fvtk opt-in parallel fast path (env FVTK_FAST / fvtk.EnableFast()). Engages
+  // only when fast mode is on AND the request is in the supported regime
+  // (all-triangle polydata, no topology preservation, float/double points,
+  // reachable reduction). On success it fills `output` with a points-relaxed
+  // (subset-of-input points, reordered) decimation and we return; otherwise it
+  // leaves `output` untouched and we fall through to the byte-exact serial path.
+  if (fvtk::FastDecimatePro(input, output, this->TargetReduction, this->FeatureAngle,
+        this->BoundaryVertexDeletion != 0, this->PreserveTopology != 0, this->MaximumError,
+        this->OutputPointsPrecision))
+  {
+    return 1;
   }
 
   // Build cell data structure. Need to copy triangle connectivity data

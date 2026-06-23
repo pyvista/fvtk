@@ -147,8 +147,10 @@ vtk_module_add_module(VTK::FiltersCore
   CLASSES ${classes}
   HEADERS ${headers}
   SOURCES fvtkFastClean.cxx fvtkFastCleanPoly.cxx fvtkFastConnectivity.cxx fvtkFastClipPoly.cxx
+    fvtkFastDecimate.cxx
   PRIVATE_HEADERS ${private_headers}
     fvtkFastClean.h fvtkFastCleanPoly.h fvtkFastConnectivity.h fvtkFastClipPoly.h
+    fvtkFastDecimate.h
     pvaClean.h pvaHash96.h pvaLinearProbeTable.h pvaParallelRadixSort.h)
 
 vtk_add_test_mangling(VTK::FiltersCore)
@@ -165,6 +167,16 @@ vtk_add_test_mangling(VTK::FiltersCore)
 set_source_files_properties(
   fvtkFastClean.cxx fvtkFastCleanPoly.cxx fvtkFastConnectivity.cxx fvtkFastClipPoly.cxx
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
+# fvtkFastDecimate.cxx is the SMP-based (vtkSMPTools, NOT OpenMP) EnableFast
+# decimation kernel. It #defines VTK_SIMPLE_VERTEX etc. (copied from
+# vtkDecimatePro.cxx) that would clash under the unity build, so exclude it.
+# It is NOT in the OpenMP block: it works on every platform (including MSVC) via
+# vtkSMPTools, so it gets no FVTK_HAVE_OPENMP and no OpenMP link.
+set_source_files_properties(
+  fvtkFastDecimate.cxx
+  PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
 find_package(OpenMP QUIET)
 if (OpenMP_CXX_FOUND AND NOT MSVC)
   vtk_module_link(VTK::FiltersCore PRIVATE OpenMP::OpenMP_CXX)
