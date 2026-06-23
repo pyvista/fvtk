@@ -32,7 +32,7 @@ import pytest
 
 from fvtk.vtkCommonDataModel import vtkPolyData
 from fvtk.vtkFiltersCore import vtkDecimatePro, vtkTriangleFilter
-from fvtk.vtkFiltersGeneral import vtkDistancePolyDataFilter
+from fvtk.vtkFiltersCore import vtkImplicitPolyDataDistance
 from fvtk.vtkFiltersSources import vtkSphereSource, vtkPlaneSource, vtkDiskSource
 from fvtk.util.numpy_support import vtk_to_numpy
 
@@ -123,22 +123,38 @@ def _cells_array(poly):
     return offs, conn
 
 
-def _mean_surface_distance(a, b):
-    """Mean distance from surface a to surface b (a measured against b)."""
-    f = vtkDistancePolyDataFilter()
-    f.SetInputData(0, a)
-    f.SetInputData(1, b)
-    f.SignedDistanceOff()
-    f.ComputeSecondDistanceOff()
-    f.Update()
-    d = vtk_to_numpy(f.GetOutput().GetPointData().GetArray("Distance"))
-    return float(np.mean(np.abs(d)))
+def _mean_surface_deviation(original, decimated):
+    """Mean distance from the ORIGINAL surface's vertices to the DECIMATED
+    surface -- i.e. how far decimation moved the geometry.
+
+    This is the meaningful direction: the decimated output's points are an exact
+    subset of the input points, so they lie ON the original surface and the
+    reverse distance (decimated vertices -> original surface) is ~0 for any
+    valid decimation, measuring nothing. Measuring original vertices against the
+    decimated surface captures the detail the simplification dropped.
+
+    (vtkDistancePolyDataFilter is trimmed from fvtk; vtkImplicitPolyDataDistance
+    gives the point->surface distance we need.)
+    """
+    imp = vtkImplicitPolyDataDistance()
+    imp.SetInput(decimated)
+    pts = vtk_to_numpy(original.GetPoints().GetData())
+    ds = np.fromiter((abs(imp.EvaluateFunction(p)) for p in pts), dtype=float, count=len(pts))
+    return float(np.mean(ds))
 
 
 # Skip the whole module if the fast lane never engages on this build (no SMP
 # fast path compiled in). Probe once with a coarse sphere.
 def _fast_lane_available():
-    base = vtkDecimatePro.GetFastModeEngageCount()
+    # AttributeError => the static accessor isn't wrapped (e.g. stock VTK or a
+    # build without the fast lane): skip cleanly rather than erroring at
+    # collection. On a real fvtk build the method exists and the probe must
+    # engage (FastModeEnabled reads FVTK_FAST live), so a skip here on CI is a
+    # red flag to investigate, not a pass.
+    try:
+        base = vtkDecimatePro.GetFastModeEngageCount()
+    except AttributeError:
+        return False
     poly = _sphere()
     _decimate(poly, 0.5, fast=True)
     return vtkDecimatePro.GetFastModeEngageCount() > base
@@ -224,8 +240,8 @@ def test_fidelity_vs_serial(name, maker, reduction):
     fast = _decimate(poly, reduction, fast=True)
     ref = _decimate(poly, reduction, fast=False)
 
-    dev_fast = _mean_surface_distance(fast, poly)
-    dev_ref = _mean_surface_distance(ref, poly)
+    dev_fast = _mean_surface_deviation(poly, fast)
+    dev_ref = _mean_surface_deviation(poly, ref)
 
     slack = 0.20
     # absolute floor so near-zero serial deviation (e.g. flat plane) doesn't make
