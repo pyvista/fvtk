@@ -4,47 +4,47 @@
 // fvtk (pyvista/fvtk) addition -- NOT part of upstream VTK.
 //
 // Global C++ operator new/delete override that routes fvtk's own heap
-// allocations to the vendored, statically-linked mimalloc
-// (ThirdParty/mimalloc -> libvtkmimalloc.a). This is the ONLY allocator hook in
-// fvtk; there is no LD_PRELOAD, no mimalloc malloc/free interposition, and no
-// mimalloc redirect/preload mechanism.
+// allocations to the single, process-global, vendored mimalloc instance
+// (ThirdParty/mimalloc -> the shared libvtkmimalloc.so/.dylib/vtkmimalloc.dll).
+// This is the ONLY allocator hook in fvtk; there is no LD_PRELOAD, no mimalloc
+// malloc/free interposition, and no mimalloc redirect/preload mechanism.
+//
+// PER-KIT, LIBRARY-WIDE: this TU is compiled (HIDDEN) into EVERY fvtk shared
+// library -- every kit (vtkCommon, vtkFilters, vtkRendering, ...), every
+// standalone module DLL, and every Python wrapper module -- by the post-build
+// injection in the top-level CMakeLists.txt. Each library therefore gets its OWN
+// hidden operator new/delete that binds within that library and forwards to the
+// SAME shared mimalloc instance via mi_malloc_aligned/mi_free. Because all the
+// overrides call into ONE mimalloc (one segment/heap metadata map), a block
+// allocated through one kit and freed through another is consistent -- no
+// cross-kit / cross-DLL heap corruption. (A static-per-kit mimalloc would give
+// each kit its OWN metadata and corrupt the heap on such a free; that is exactly
+// what this shared-instance design avoids, and why it is correct on Windows too,
+// where every DLL otherwise has its own CRT heap.)
 //
 // WHY THIS IS SAFE (no host interposition / "just works" on pip install):
 //   * fvtk is built with CMAKE_CXX_VISIBILITY_PRESET=hidden +
 //     CMAKE_VISIBILITY_INLINES_HIDDEN and -fno-semantic-interposition. These
-//     operator new/delete definitions carry NO export macro, so they are emitted
-//     as HIDDEN symbols. They satisfy fvtk's own intra-.so operator new/delete
-//     references but are NOT placed in the dynamic symbol table, so they cannot
-//     interpose the host CPython allocator, libstdc++, or any other extension
-//     module. The nm -D guard (ci/check-no-alloc-exports.sh) asserts this on the
-//     built artifacts and fails the build if any malloc/free/operator new/delete
-//     symbol is ever exported.
-//   * mimalloc itself is compiled WITHOUT MI_MALLOC_OVERRIDE, so libvtkmimalloc.a
-//     exports no malloc/free/operator new -- only the internal mi_* C API that
-//     this TU calls.
+//     operator new/delete definitions carry NO export macro, so on ELF/Mach-O
+//     they are emitted as HIDDEN symbols: they satisfy each fvtk library's own
+//     intra-.so operator new/delete references but are NOT placed in the dynamic
+//     symbol table, so they cannot interpose the host CPython allocator,
+//     libstdc++, or any other extension module. On MSVC, user replacement of the
+//     global operator new/delete is a documented, supported facility and is
+//     scoped to the DLL that defines it (PE/COFF has no cross-DLL symbol
+//     interposition), so the host CPython CRT is likewise untouched. The
+//     cross-platform CI guard (ci/check-no-alloc-exports.sh) asserts on the
+//     built artifacts -- nm on Linux/macOS, dumpbin/llvm-nm on Windows -- that no
+//     fvtk library exports malloc/free/operator new/delete, and fails the build
+//     otherwise.
+//   * mimalloc itself is compiled WITHOUT MI_MALLOC_OVERRIDE, so the shared
+//     mimalloc library exports ONLY the mi_* C API that this TU calls -- never
+//     malloc/free/operator new.
 //
 // WHY THIS IS BYTE-EXACT: an allocator only changes the ADDRESSES returned by
 // new/malloc; it never changes any value, count, ordering, or layout that fvtk
 // computes. The bitexact (maxULP=0), renderexact, and pyvista parity gates are
 // the proof.
-//
-// SCOPE: this TU is compiled into vtkCommonCore, so the override binds within
-// the vtkCommon kit .so (where VTK's array/object/point/cell allocation lives --
-// the hot allocation paths for the threaded filters). Extending the override to
-// the other kit .so files is a documented follow-up (see the PR body).
-
-// Windows is deliberately out of scope: no fvtk Windows wheel is shipped, and a
-// global operator-new override interacts with the MSVC CRT differently (it would
-// need mimalloc-redirect.dll, which is exactly the preload-style mechanism the
-// design forbids). The CMake gate in fvtk-config/minimal.cmake already forces
-// FVTK_MIMALLOC OFF on Windows so this TU is never compiled there; this #if is a
-// second belt so an accidental Windows compile is a clean no-op rather than a
-// surprising CRT override.
-#if defined(_WIN32)
-
-// Intentionally empty on Windows.
-
-#else
 
 #include <cstddef>
 #include <new>
@@ -52,11 +52,12 @@
 #include <mimalloc.h>
 
 // All of these are intentionally NOT marked with any VTK*_EXPORT macro: under
-// the build's hidden default visibility they resolve fvtk-internal references
-// only and are never exported. mimalloc's mi_malloc_aligned honors C++'s
-// fundamental alignment guarantee; we pass alignof(std::max_align_t) for the
-// unaligned overloads (matching the platform malloc contract) and the requested
-// alignment for the aligned (C++17) overloads.
+// the build's hidden default visibility (ELF/Mach-O) they resolve fvtk-internal
+// references only and are never exported; on MSVC they replace the global
+// operator new/delete for the defining DLL only. mimalloc's mi_malloc_aligned
+// honors C++'s fundamental alignment guarantee; we pass alignof(std::max_align_t)
+// for the unaligned overloads (matching the platform malloc contract) and the
+// requested alignment for the aligned (C++17) overloads.
 
 namespace
 {
@@ -199,5 +200,3 @@ void operator delete[](void* p, std::align_val_t, const std::nothrow_t&) noexcep
 {
   mi_free(p);
 }
-
-#endif // !_WIN32

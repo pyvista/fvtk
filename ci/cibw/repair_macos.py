@@ -196,6 +196,17 @@ def main(argv: list[str]) -> int:
         f"(binary bytes removed: {saved/1e6:.1f} MB)",
         flush=True,
     )
+
+    # fvtk no-host-interposition gate (cross-platform; macOS uses `nm -gU`). Scan
+    # the REPAIRED + stripped wheel and fail if any fvtk dylib/.so exports an
+    # allocator symbol (malloc/free/operator new/delete). The shared mimalloc's
+    # mi_* exports are allowed. See ci/check-no-alloc-exports.sh.
+    guard = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "ci",
+        "check-no-alloc-exports.sh",
+    )
+    _run(["bash", guard, repaired])
     return 0
 
 

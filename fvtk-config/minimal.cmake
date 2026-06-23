@@ -521,36 +521,50 @@ else ()
   set(VTK_USE_X True CACHE BOOL "")
 endif ()
 
-# --- Lever: mimalloc allocator (FVTK_MIMALLOC) — DEFAULT ON -------------------
+# --- Lever: mimalloc allocator (FVTK_MIMALLOC) — DEFAULT ON, ALL PLATFORMS ----
 # Route VTK's own C++ allocations (global operator new/new[]/delete/delete[],
-# sized + aligned variants) to a vendored, statically-linked mimalloc
-# (ThirdParty/mimalloc, pinned v2.3.2 -> libvtkmimalloc.a) via fvtk's own
-# override TU (Common/Core/vtkFVTKAllocator.cxx). The override is defined with
-# fvtk's global hidden visibility (CMAKE_CXX_VISIBILITY_PRESET=hidden) +
-# -fno-semantic-interposition, so it binds WITHIN fvtk's own .so and is NEVER
-# exported -- it does not interpose the host CPython allocator or any other
-# extension's malloc/free/operator new (enforced by the nm -D CI guard in
-# ci/check-no-alloc-exports.sh). No LD_PRELOAD / mi_override / redirect: it
-# "just works" on `pip install fvtk` with nothing from the user.
+# sized + aligned variants) to a SINGLE, process-global, vendored mimalloc
+# instance (ThirdParty/mimalloc, pinned v2.3.2, built as the SHARED library
+# libvtkmimalloc.{so,dylib,dll}). fvtk's own override TU
+# (Common/Core/vtkFVTKAllocator.cxx) is compiled HIDDEN into EVERY fvtk shared
+# library (every kit, every standalone module DLL, every Python wrapper module)
+# by the library-wide injection in the top-level CMakeLists.txt, and each copy
+# forwards new/delete to the ONE shared mimalloc via mi_malloc_aligned/mi_free.
+#
+# WHY SHARED + PER-KIT (correctness): mimalloc keeps its segment/heap metadata in
+# process-global state, so an allocation made through one kit and freed through
+# another only works if both call into the SAME mimalloc instance. A static
+# mimalloc linked into each kit would give each kit its own metadata and corrupt
+# the heap on a cross-kit/cross-DLL free -- latent on Linux, CERTAIN on Windows
+# (every DLL has its own CRT heap). One shared instance + a per-kit hidden
+# override fixes this on all three shipped platforms (Linux, macOS, Windows).
+#
+# WHY NO HOST INTERPOSITION: the override carries NO export macro, so on ELF/
+# Mach-O fvtk's global hidden visibility (CMAKE_CXX_VISIBILITY_PRESET=hidden) +
+# -fno-semantic-interposition keep it out of the dynamic symbol table; on MSVC
+# the global operator new/delete replacement is scoped to the defining DLL (PE/
+# COFF has no cross-DLL interposition). It never touches the host CPython
+# allocator or any other extension's malloc/free/operator new. mimalloc itself is
+# built WITHOUT MI_MALLOC_OVERRIDE, so it exports ONLY the mi_* C API (never CRT
+# malloc/operator new). All of this is enforced cross-platform by the CI guard
+# ci/check-no-alloc-exports.sh (nm on Linux/macOS, llvm-nm/dumpbin on Windows).
+# No LD_PRELOAD / mi_override / mimalloc-redirect.dll: it "just works" on
+# `pip install fvtk` with nothing from the user. The one shared mimalloc lib is a
+# normal linked dependency, so auditwheel/delocate/delvewheel bundle it.
 #
 # Byte-exact by construction: an allocator only changes the ADDRESSES returned,
 # never any value, count, or emission order, so the bitexact (maxULP=0),
 # renderexact, and pyvista gates stay green. Expected win is on alloc-heavy
-# threaded filters (now that STDThread is the default backend).
-#
-# Linux-first (the only published wheel); builds the same way on macOS (the
-# override TU references mi_* directly so the linker pulls the needed objects out
-# of the static archive on both ELF and Mach-O -- no per-toolchain whole-archive
-# spelling needed). Windows is cleanly skipped (no wheel shipped there). Turn OFF
-# for an A/B baseline with -DFVTK_MIMALLOC=OFF.
-option(FVTK_MIMALLOC "fvtk: route VTK's C++ operator new/delete to a vendored static mimalloc (default ON; Linux/macOS only, skipped on Windows). See Common/Core/vtkFVTKAllocator.cxx." ON)
-# CommonCore lists VTK::mimalloc under OPTIONAL_DEPENDS, which only links the
-# module when it is enabled, so force-enable the vendored module whenever the
-# lever is ON and we are not building the Windows wheel. YES (hard enable) is
-# safe here: mimalloc has no external/blocking dependencies, so it always builds
-# on Linux/macOS. On Windows (no shipped wheel) force NO so the module is never
-# built and the override TU is never compiled (Windows is cleanly skipped).
-if (FVTK_MIMALLOC AND NOT WIN32 AND NOT FVTK_FORCE_MSVC)
+# threaded filters (now that STDThread is the default backend). Turn OFF for an
+# A/B baseline with -DFVTK_MIMALLOC=OFF.
+option(FVTK_MIMALLOC "fvtk: route VTK's C++ operator new/delete to a single shared vendored mimalloc, library-wide (default ON; Linux/macOS/Windows). See Common/Core/vtkFVTKAllocator.cxx." ON)
+# CommonCore lists VTK::mimalloc under OPTIONAL_DEPENDS; force-enable the vendored
+# module whenever the lever is ON (all platforms). YES (hard enable) is safe:
+# mimalloc has no external/blocking dependencies and builds on Linux, macOS, and
+# Windows. The library-wide override injection (top-level CMakeLists.txt) is
+# gated on `FVTK_MIMALLOC AND TARGET VTK::mimalloc`, so turning the module off
+# (or the lever off) cleanly disables the whole feature.
+if (FVTK_MIMALLOC)
   set(VTK_MODULE_ENABLE_VTK_mimalloc "YES" CACHE STRING "")
 else ()
   set(VTK_MODULE_ENABLE_VTK_mimalloc "NO" CACHE STRING "")

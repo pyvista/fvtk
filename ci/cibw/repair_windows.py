@@ -46,8 +46,91 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import subprocess
 import sys
+import tempfile
+import zipfile
+
+
+# fvtk no-host-interposition gate (Windows half of ci/check-no-alloc-exports.sh).
+# A repaired wheel must not contain any fvtk DLL/.pyd that EXPORTS an allocator
+# symbol -- malloc/free/operator new/delete -- or it would interpose the host
+# CPython CRT. fvtk routes its own C++ operator new/delete to the single shared
+# mimalloc (Common/Core/vtkFVTKAllocator.cxx); on Windows that replacement is
+# scoped to the defining DLL (PE/COFF has no cross-DLL interposition), so it must
+# never appear in any DLL's export table. The shared mimalloc.dll legitimately
+# EXPORTS the mi_* C API (its public interface, consumed across the DLL boundary)
+# -- mi_* is NOT the CRT malloc/operator new, so it is allowed.
+#
+# MSVC-mangled replaceable operator new/delete export names begin with:
+#   ??2@  operator new     ??_U@  operator new[]
+#   ??3@  operator delete  ??_V@  operator delete[]
+# plus the CRT malloc family by name. We use dumpbin /EXPORTS (always on PATH via
+# vcvars in the Windows build job).
+_WIN_ALLOC_RE = re.compile(
+    r"^(malloc|free|calloc|realloc|_aligned_malloc|_aligned_free"
+    r"|\?\?2@|\?\?3@|\?\?_U@|\?\?_V@)"
+)
+
+
+def _dumpbin_exports(dll: str) -> list[str]:
+    """Exported symbol names of a PE DLL via `dumpbin /EXPORTS` (best-effort)."""
+    try:
+        out = subprocess.run(
+            ["dumpbin", "/EXPORTS", dll],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+    except FileNotFoundError:
+        print(
+            "repair_windows: WARNING: dumpbin not on PATH; skipping the "
+            "no-alloc-exports gate (run under vcvars to enable it).",
+            file=sys.stderr,
+        )
+        return []
+    names: list[str] = []
+    # dumpbin export rows look like:  "    1    0 00001000 SomeName"
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[0].isdigit():
+            names.append(parts[-1])
+    return names
+
+
+def _check_no_alloc_exports(wheel: str) -> int:
+    """Fail (return 1) if any DLL/.pyd in *wheel* exports an allocator symbol."""
+    rc = 0
+    scanned = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        with zipfile.ZipFile(wheel) as zf:
+            zf.extractall(tmp)
+        for dirpath, _dirs, files in os.walk(tmp):
+            for name in files:
+                if not name.lower().endswith((".dll", ".pyd")):
+                    continue
+                lib = os.path.join(dirpath, name)
+                scanned += 1
+                hits = [s for s in _dumpbin_exports(lib) if _WIN_ALLOC_RE.match(s)]
+                if hits:
+                    print(
+                        f"ERROR: {name} EXPORTS allocator symbol(s) "
+                        f"(host interposition!): {hits}",
+                        file=sys.stderr,
+                    )
+                    rc = 1
+    if rc:
+        print(
+            "no-alloc-exports gate FAILED: fvtk must not export allocator symbols.",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "no-alloc-exports gate OK: no exported malloc/free/operator "
+            f"new/delete in {scanned} fvtk DLL(s) (mi_* C API is allowed)."
+        )
+    return rc
 
 
 def _bin_dirs(project: str) -> list[str]:
@@ -101,7 +184,23 @@ def main(argv: list[str]) -> int:
     for d in bin_dirs:
         print(f"  - {d}", flush=True)
     print("+ " + " ".join(cmd), flush=True)
-    return subprocess.call(cmd)
+    rc = subprocess.call(cmd)
+    if rc != 0:
+        return rc
+
+    # fvtk no-host-interposition gate on the REPAIRED wheel. delvewheel writes it
+    # into dest_dir (it may retag the platform, so find the newest .whl there).
+    cands = sorted(
+        glob.glob(os.path.join(dest_dir, "*.whl")), key=os.path.getmtime
+    )
+    if not cands:
+        print(
+            "repair_windows: WARNING: no repaired wheel found in "
+            f"{dest_dir}; skipping the no-alloc-exports gate.",
+            file=sys.stderr,
+        )
+        return 0
+    return _check_no_alloc_exports(cands[-1])
 
 
 if __name__ == "__main__":

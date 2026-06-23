@@ -500,23 +500,16 @@ if (VTK_WRAP_SERIALIZATION)
     vtkVariantSerDesHelper.h)
 endif ()
 
-# fvtk: route VTK's C++ operator new/delete to the vendored static mimalloc.
-# Gated behind FVTK_MIMALLOC (default ON, set in fvtk-config/minimal.cmake) and
-# the platform guard (Linux/macOS only; the option is forced OFF on Windows where
-# no wheel ships). The override TU is compiled INTO vtkCommonCore so it is always
-# present in the vtkCommon kit .so (object-library sources are never archive-
-# stripped); it forwards new/delete to mi_malloc_aligned/mi_free. See
-# Common/Core/vtkFVTKAllocator.cxx for the full no-interposition rationale.
-set(vtk_allocator_sources)
-if (FVTK_MIMALLOC AND TARGET VTK::mimalloc)
-  list(APPEND vtk_allocator_sources
-    vtkFVTKAllocator.cxx)
-endif ()
+# fvtk: the mimalloc operator new/delete override (Common/Core/vtkFVTKAllocator.cxx)
+# is NOT a CommonCore source. It is compiled once into a dedicated HIDDEN object
+# library and injected into EVERY fvtk shared library (all kits, standalone module
+# DLLs, and Python wrapper modules) by the post-build step in the top-level
+# CMakeLists.txt, so every library's new/delete forwards to the ONE shared
+# mimalloc instance. See that injection block and vtkFVTKAllocator.cxx.
 
 set(sources
   vtkArrayIteratorTemplateInstantiate.cxx
   vtkFVTKSMPDefaults.cxx
-  ${vtk_allocator_sources}
   vtkGenericDataArray.cxx
   vtkStringFormatter.cxx
   vtkValueFromString.cxx
@@ -891,27 +884,6 @@ vtk_module_compile_features(VTK::CommonCore
   PUBLIC
     cxx_std_17)
 
-# fvtk: wire the vendored static mimalloc into vtkCommonCore for the operator
-# new/delete override TU (vtkFVTKAllocator.cxx).
-#
-# Linkage: the override TU is a vtkCommonCore SOURCE, so it is always present in
-# the vtkCommon kit .so (object-library objects are never archive-stripped), and
-# it references mi_malloc_aligned/mi_free DIRECTLY -- so the linker pulls exactly
-# the needed objects out of libvtkmimalloc.a with no whole-archive needed. The
-# OPTIONAL_DEPENDS VTK::mimalloc in this module's vtk.module is what enables the
-# vendored module and makes its archive part of the kit's private link line; we
-# do NOT add a second `$<LINK_LIBRARY:WHOLE_ARCHIVE,...>` edge for the same
-# target because, under VTK's KITS object-library model, the kit already links
-# mimalloc privately and a second WHOLE_ARCHIVE-wrapped edge to the same target
-# triggers CMake's "linked with and without WHOLE_ARCHIVE" conflict. (mimalloc's
-# OWN operator-new override would have needed force-pulling, but we deliberately
-# do not use it -- our hidden-visibility TU is the only override.)
-#
-# Include: add mimalloc's public include dir so the allocator TU resolves
-# <mimalloc.h> directly even if usage-requirement propagation through the kit
-# object library is not visible at this TU's compile.
-if (FVTK_MIMALLOC AND TARGET VTK::mimalloc)
-  vtk_module_include(VTK::CommonCore
-    PRIVATE
-      "$<TARGET_PROPERTY:VTK::mimalloc,INTERFACE_INCLUDE_DIRECTORIES>")
-endif ()
+# fvtk: the mimalloc operator new/delete override is wired library-wide (into
+# every fvtk shared library, not just vtkCommonCore) by the post-build injection
+# in the top-level CMakeLists.txt; nothing extra is needed here.

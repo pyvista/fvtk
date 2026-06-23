@@ -24,9 +24,10 @@ pkgs.mkShell {
     gcc
     tbb
 
-    # mimalloc: fvtk vendors a static mimalloc in-tree (ThirdParty/mimalloc,
-    # built as libvtkmimalloc.a -> the shipped wheel needs NOTHING from the
-    # system) to back the global operator new/delete override
+    # mimalloc: fvtk vendors mimalloc in-tree (ThirdParty/mimalloc, built as the
+    # SHARED libvtkmimalloc.{so,dylib,dll} bundled into the wheel -> the shipped
+    # wheel needs NOTHING from the system) as the single process-global allocator
+    # instance behind the library-wide operator new/delete override
     # (Common/Core/vtkFVTKAllocator.cxx). This system copy is provided for the
     # dev build so the headers/tooling are available and a future external-copy
     # path (VTK_MODULE_USE_EXTERNAL_vtkmimalloc, mirroring loguru) can resolve it.

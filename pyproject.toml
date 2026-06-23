@@ -85,12 +85,14 @@ test-command = "FVTK_IMPORT_NAME=fvtk xvfb-run -a -s '-screen 0 1280x1024x24' py
 # COMPRESSED wheel: 39→33 MB measured). Bit-exact-safe: only symbol metadata is
 # dropped; .dynsym + the abi3 PyInit entry points stay, so the wheel imports and
 # computes byte-identically (the bit-exact + pixel-exact gates run on this wheel).
-# auditwheel repair, THEN the fvtk no-host-interposition gate: scan every .so in
+# auditwheel repair (which ALSO bundles the shared libvtkmimalloc.so as a normal
+# linked dependency), THEN the fvtk no-host-interposition gate: scan every .so in
 # the REPAIRED wheel with `nm -D` and fail if any allocator symbol
 # (malloc/free/operator new/delete) is EXPORTED. fvtk routes its own C++
-# new/delete to a vendored static mimalloc, but that override is built hidden +
-# -fno-semantic-interposition so it must never reach .dynsym and never interpose
-# the host CPython allocator. This is the permanent "just works on pip install"
+# new/delete to the single shared mimalloc instance, but that per-kit override is
+# built hidden + -fno-semantic-interposition so it must never reach .dynsym and
+# never interpose the host CPython allocator. (The shared mimalloc's mi_* exports
+# are allowed by the guard.) This is the permanent "just works on pip install"
 # guarantee, baked into the wheel build itself. (`bash -lc` so the chained
 # command + glob run in a shell; {dest_dir}/{wheel} are substituted by cibw.)
 # NOTE: cibuildwheel does NOT expand {project} in repair-wheel-command (only

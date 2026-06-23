@@ -621,6 +621,98 @@ if (VTK_WHEEL_BUILD)
   set(vtk_library_version_info)
 endif ()
 
+# === fvtk: library-wide mimalloc operator new/delete override ================
+# (FVTK_MIMALLOC lever, default ON; see fvtk-config/minimal.cmake and
+# Common/Core/vtkFVTKAllocator.cxx for the rationale.)
+#
+# The override TU must be present (HIDDEN) in EVERY fvtk shared library so that
+# each library's global operator new/delete forwards to the SINGLE shared
+# mimalloc instance (VTK::mimalloc -> libvtkmimalloc.{so,dylib,dll}). Putting it
+# in only one kit (the original PR) is incorrect: a block allocated through a kit
+# WITH the override (mi_malloc) and freed through a kit WITHOUT it (system free)
+# corrupts the heap -- latent on Linux, certain on Windows (per-DLL CRT heaps).
+#
+# Mechanism: compile vtkFVTKAllocator.cxx ONCE into a dedicated OBJECT library
+# (fvtk_allocator_objects) and inject its objects + a link to the shared mimalloc
+# into every fvtk SHARED/MODULE target after they are created. Each library links
+# the same object code, producing its OWN hidden operator new/delete that resolve
+# locally (hidden visibility / DLL-local replacement) and all forward to the one
+# shared mimalloc. The CI guard (ci/check-no-alloc-exports.sh) proves none of
+# these definitions are ever exported (no host interposition).
+set(_fvtk_mimalloc_active OFF)
+if (FVTK_MIMALLOC AND TARGET VTK::mimalloc)
+  set(_fvtk_mimalloc_active ON)
+
+  add_library(fvtk_allocator_objects OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/Common/Core/vtkFVTKAllocator.cxx")
+  # Resolve <mimalloc.h> (PUBLIC include dir of the shared mimalloc module) and
+  # pick up its INTERFACE MI_SHARED_LIB define (so on MSVC the mi_* prototypes
+  # resolve to __declspec(dllimport)). Link VTK::mimalloc on the object library
+  # for the usage requirements only; the actual shared-lib link edge is added to
+  # each consuming target below.
+  target_link_libraries(fvtk_allocator_objects
+    PRIVATE
+      VTK::mimalloc)
+  # Hidden everywhere (matches the global preset; explicit for the standalone
+  # object library, which is created outside the VTK module machinery).
+  set_target_properties(fvtk_allocator_objects
+    PROPERTIES
+      CXX_VISIBILITY_PRESET hidden
+      VISIBILITY_INLINES_HIDDEN ON
+      POSITION_INDEPENDENT_CODE ON)
+
+  # Inject the override objects + the shared-mimalloc link edge into a single
+  # fvtk shared/module library target. Idempotent (skips a target already wired)
+  # and type-guarded (only SHARED_LIBRARY / MODULE_LIBRARY targets get an
+  # operator new/delete; INTERFACE/OBJECT/STATIC/header-only targets are skipped,
+  # and VTK::mimalloc itself is skipped so it does not depend on its own
+  # consumer's override). vtkFVTKAllocator.cxx itself lives in the object library,
+  # never in a kit's own source list, so there is no double definition.
+  function (_fvtk_inject_allocator _target)
+    if (NOT TARGET "${_target}")
+      return ()
+    endif ()
+    get_target_property(_fvtk_t_type "${_target}" TYPE)
+    if (NOT (_fvtk_t_type STREQUAL "SHARED_LIBRARY" OR
+             _fvtk_t_type STREQUAL "MODULE_LIBRARY"))
+      return ()
+    endif ()
+    # Never inject into the mimalloc shared lib (would be self-referential) or
+    # re-inject a target already wired.
+    get_target_property(_fvtk_already "${_target}" _FVTK_ALLOCATOR_INJECTED)
+    if (_fvtk_already)
+      return ()
+    endif ()
+    get_target_property(_fvtk_out "${_target}" OUTPUT_NAME)
+    if ("${_target}" MATCHES "mimalloc" OR "${_fvtk_out}" MATCHES "mimalloc")
+      return ()
+    endif ()
+    target_sources("${_target}"
+      PRIVATE
+        $<TARGET_OBJECTS:fvtk_allocator_objects>)
+    target_link_libraries("${_target}"
+      PRIVATE
+        VTK::mimalloc)
+    set_target_properties("${_target}"
+      PROPERTIES _FVTK_ALLOCATOR_INJECTED ON)
+  endfunction ()
+
+  # Sweep every target defined under a directory subtree and inject into the
+  # shared/module ones. Recurses through BUILDSYSTEM_TARGETS + SUBDIRECTORIES so
+  # it reaches the per-module / per-kit / per-wrapper targets wherever VTK's
+  # add_subdirectory machinery created them.
+  function (_fvtk_inject_allocator_tree _dir)
+    get_property(_fvtk_targets DIRECTORY "${_dir}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach (_fvtk_tgt IN LISTS _fvtk_targets)
+      _fvtk_inject_allocator("${_fvtk_tgt}")
+    endforeach ()
+    get_property(_fvtk_subdirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
+    foreach (_fvtk_sub IN LISTS _fvtk_subdirs)
+      _fvtk_inject_allocator_tree("${_fvtk_sub}")
+    endforeach ()
+  endfunction ()
+endif ()
+
 vtk_module_build(
   MODULES             ${vtk_modules}
   KITS                ${vtk_kits}
@@ -647,6 +739,15 @@ vtk_module_build(
   SPDX_DOCUMENT_NAMESPACE "https://vtk.org/spdx"
   SPDX_DOWNLOAD_LOCATION  "https://gitlab.kitware.com/vtk/vtk/-/tree/master"
   ENABLE_SERIALIZATION    "${VTK_WRAP_SERIALIZATION}")
+
+# fvtk: inject the mimalloc operator new/delete override into every kit /
+# standalone module shared library that vtk_module_build just created. The
+# Python wrapper modules are created later (vtk_module_wrap_python) and swept
+# again there. The tree sweep is idempotent, so the second pass only touches the
+# new wrapper targets.
+if (_fvtk_mimalloc_active)
+  _fvtk_inject_allocator_tree("${CMAKE_CURRENT_SOURCE_DIR}")
+endif ()
 
 include(vtkModuleJson)
 vtk_module_json(
@@ -733,6 +834,14 @@ if (VTK_WRAP_PYTHON)
     WRAPPED_MODULES vtk_python_wrapped_modules
     TARGET_SPECIFIC_COMPONENTS "${VTK_TARGET_SPECIFIC_COMPONENTS}"
     TARGET          VTK::vtkpythonmodules)
+
+  # fvtk: inject the mimalloc override into the Python wrapper MODULE libraries
+  # too, so their C++ allocations also forward to the one shared mimalloc (the
+  # earlier sweep ran before these targets existed). Idempotent on already-wired
+  # kit/module targets.
+  if (_fvtk_mimalloc_active)
+    _fvtk_inject_allocator_tree("${CMAKE_CURRENT_SOURCE_DIR}")
+  endif ()
 
   if (APPLE AND VTK_WHEEL_BUILD)
     list(REMOVE_ITEM CMAKE_INSTALL_RPATH
