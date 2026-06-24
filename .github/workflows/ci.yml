@@ -51,7 +51,10 @@
 #              SHIPPED wheels to PyPI via trusted publishing (OIDC, no stored
 #              token) — the LTO Linux wheel (build-lto) plus the optimized macOS +
 #              Windows wheels (build-other-os) — gated on the LTO bit-exact +
-#              pixel-exact legs being green. Wheels-only (fvtk_backend has no sdist).
+#              pixel-exact legs being green. A final step then attaches those same
+#              wheels to the GitHub Release (gh release upload) so every wheel is
+#              downloadable from the Release page too, not only PyPI. Wheels-only
+#              (fvtk_backend has no sdist).
 name: CI
 
 on:
@@ -633,7 +636,10 @@ jobs:
       name: pypi
       url: https://pypi.org/p/fvtk
     permissions:
+      # id-token: write mints the OIDC token PyPI trusted publishing exchanges.
+      # contents: write lets the final step attach the same wheels to the Release.
       id-token: write
+      contents: write
     steps:
       # Collect EXACTLY the four shipped wheels into dist/ (Linux x86_64 + aarch64,
       # macOS, Windows). We pull them by exact artifact name rather than a
@@ -670,3 +676,13 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+      # Attach the SAME four wheels (already collected in dist/) to the GitHub
+      # Release itself, so every wheel is downloadable from the Release page and
+      # not only from PyPI. Same job as the PyPI publish: the wheels are right here
+      # in dist/, so this is one extra step, not a second job that re-downloads them.
+      # --clobber makes a re-run of the release event idempotent (overwrites an
+      # asset of the same name rather than erroring on the second upload).
+      - name: Attach wheels to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.whl --clobber --repo "${{ github.repository }}"
