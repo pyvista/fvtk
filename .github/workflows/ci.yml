@@ -50,9 +50,9 @@
 #   build-legacy-{linux,windows,macos} : the cp310 + cp311 version-specific
 #              (non-abi3) wheels. 3.10/3.11 cannot be abi3 (stable-ABI member
 #              constants are 3.12+), so they ship as six per-version wheels across
-#              the three desktop OSes. Run on push-to-main + dispatch (continuous
-#              validation), on a PR with the `ci:legacy` label, and on a Release
-#              (where `publish` ships them). FVTK_ABI3=0 selects the legacy path.
+#              the three desktop OSes. RELEASE-ONLY: built only when a Release is
+#              published (where `publish` ships them), so they add nothing to
+#              per-merge CI cost. FVTK_ABI3=0 selects the legacy path.
 #   publish : RELEASE-ONLY (if: github.event_name == 'release'). Uploads the
 #              SHIPPED wheels to PyPI via trusted publishing (OIDC, no stored
 #              token) — the four abi3 wheels (LTO Linux x86_64 + aarch64 + macOS +
@@ -630,19 +630,17 @@ jobs:
   # per-version wheel automatically when the build interpreter is < 3.12 or
   # FVTK_ABI3=0 (set belt-and-suspenders below), so there is NO new build logic.
   #
-  # These run on push-to-main + workflow_dispatch (continuous validation, like the
-  # LTO legs), on a PR carrying the `ci:legacy` label (opt-in pre-merge check), and
-  # on a Release — where `publish` collects their artifacts and ships them to PyPI +
-  # the Release alongside the four abi3 wheels. NOT on merge_group (kept off the
-  # squash gate; the smoke import per leg is the validation, not a numeric gate).
+  # RELEASE-ONLY: these build only when a Release is published — where `publish`
+  # collects their artifacts and ships them to PyPI + the Release alongside the four
+  # abi3 wheels. They are deliberately kept off push-to-main / PRs / workflow_dispatch
+  # / merge_group so they add nothing to per-merge CI cost (validated at release
+  # time; the cibuildwheel smoke import per leg is the validation, not a numeric gate).
   build-legacy-linux:
     name: build legacy linux (manylinux2014, cp310+cp311)
-    if: >-
-      github.event_name == 'release' ||
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-        contains(github.event.pull_request.labels.*.name, 'ci:legacy'))
+    # RELEASE-ONLY: the legacy cp310/cp311 wheels build only when a Release is
+    # published (where `publish` ships them). Kept off push-to-main / PRs / dispatch
+    # so they never add to per-merge CI cost; they are validated at release time.
+    if: github.event_name == 'release'
     # Two non-abi3 cp legs + LTO link is the heaviest build; generous cap, still
     # well below the 360-min default so a hung leg can't drain paid runners.
     runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
@@ -695,12 +693,10 @@ jobs:
 
   build-legacy-windows:
     name: build legacy windows (cp310+cp311)
-    if: >-
-      github.event_name == 'release' ||
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-        contains(github.event.pull_request.labels.*.name, 'ci:legacy'))
+    # RELEASE-ONLY: the legacy cp310/cp311 wheels build only when a Release is
+    # published (where `publish` ships them). Kept off push-to-main / PRs / dispatch
+    # so they never add to per-merge CI cost; they are validated at release time.
+    if: github.event_name == 'release'
     runs-on: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
     timeout-minutes: 120
     steps:
@@ -730,12 +726,10 @@ jobs:
 
   build-legacy-macos:
     name: build legacy macos (cp310+cp311)
-    if: >-
-      github.event_name == 'release' ||
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-        contains(github.event.pull_request.labels.*.name, 'ci:legacy'))
+    # RELEASE-ONLY: the legacy cp310/cp311 wheels build only when a Release is
+    # published (where `publish` ships them). Kept off push-to-main / PRs / dispatch
+    # so they never add to per-merge CI cost; they are validated at release time.
+    if: github.event_name == 'release'
     runs-on: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
     timeout-minutes: 120
     steps:
