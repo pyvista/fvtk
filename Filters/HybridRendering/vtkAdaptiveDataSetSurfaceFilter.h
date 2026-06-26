@@ -20,7 +20,7 @@
 #ifndef vtkAdaptiveDataSetSurfaceFilter_h
 #define vtkAdaptiveDataSetSurfaceFilter_h
 
-#include "vtkFiltersHybridModule.h" // For export macro
+#include "vtkFiltersHybridRenderingModule.h" // For export macro
 #include "vtkGeometryFilter.h"
 
 VTK_ABI_NAMESPACE_BEGIN
@@ -33,7 +33,7 @@ class vtkRenderer;
 class vtkHyperTreeGridNonOrientedGeometryCursor;
 class vtkHyperTreeGridNonOrientedVonNeumannSuperCursorLight;
 
-class VTKFILTERSHYBRID_EXPORT vtkAdaptiveDataSetSurfaceFilter : public vtkGeometryFilter
+class VTKFILTERSHYBRIDRENDERING_EXPORT vtkAdaptiveDataSetSurfaceFilter : public vtkGeometryFilter
 {
 public:
   static vtkAdaptiveDataSetSurfaceFilter* New();

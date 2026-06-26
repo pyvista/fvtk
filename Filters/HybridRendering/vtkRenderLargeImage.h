@@ -11,7 +11,7 @@
 #define vtkRenderLargeImage_h
 
 #include "vtkAlgorithm.h"
-#include "vtkFiltersHybridModule.h" // For export macro
+#include "vtkFiltersHybridRenderingModule.h" // For export macro
 #include "vtkImageData.h"           // makes things a bit easier
 
 VTK_ABI_NAMESPACE_BEGIN
@@ -20,7 +20,7 @@ class vtkActor2DCollection;
 class vtkCollection;
 class vtkRenderLargeImage2DHelperClass;
 
-class VTKFILTERSHYBRID_EXPORT vtkRenderLargeImage : public vtkAlgorithm
+class VTKFILTERSHYBRIDRENDERING_EXPORT vtkRenderLargeImage : public vtkAlgorithm
 {
 public:
   static vtkRenderLargeImage* New();

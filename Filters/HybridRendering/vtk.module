@@ -1,45 +1,31 @@
 NAME
-  VTK::FiltersHybrid
+  VTK::FiltersHybridRendering
 LIBRARY_NAME
-  vtkFiltersHybrid
-GROUPS
-  StandAlone
+  vtkFiltersHybridRendering
 DESCRIPTION
-  Filters that process both regular (image) and unstructured data.
+  The view/camera-dependent filters split out of FiltersHybrid: they require
+  RenderingCore (vtkCamera/vtkRenderer/vtkRenderWindow). Kept in their own module
+  so VTK::FiltersHybrid stays rendering-free.
 SPDX_LICENSE_IDENTIFIER
   LicenseRef-BSD-3-Clause-Sandia-USGov
 SPDX_COPYRIGHT_TEXT
   Copyright (c) Ken Martin, Will Schroeder, Bill Lorensen
   Copyright Sandia Corporation
-SPDX_CUSTOM_LICENSE_FILE
-  LICENSE
-SPDX_CUSTOM_LICENSE_NAME
-  BSD-3-Clause-Sandia-USGov
 LICENSE_FILES
   LICENSE
 DEPENDS
   VTK::CommonCore
   VTK::CommonDataModel
   VTK::CommonExecutionModel
-  VTK::CommonTransforms
   VTK::FiltersGeometry
+  VTK::RenderingCore
 PRIVATE_DEPENDS
   VTK::CommonMath
-  VTK::CommonMisc
-  VTK::FiltersCore
-  VTK::FiltersGeneral
-  VTK::ImagingCore
-  VTK::ImagingSources
-  VTK::vtksys
+  VTK::CommonTransforms
+  VTK::FiltersHybrid
 TEST_DEPENDS
-  VTK::FiltersGeneral
-  VTK::FiltersHyperTree
   VTK::FiltersSources
-  VTK::IOIOSS
-  VTK::IOLegacy
   VTK::IOXML
-  VTK::ImagingCore
-  VTK::ImagingStencil
   VTK::InteractionStyle
   VTK::RenderingOpenGL2
   VTK::TestingRendering

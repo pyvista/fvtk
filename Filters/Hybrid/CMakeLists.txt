@@ -1,5 +1,4 @@
 set(classes
-  vtkAdaptiveDataSetSurfaceFilter
   vtkBSplineTransform
   vtkDepthSortPolyData
   vtkDSPFilterDefinition
@@ -13,10 +12,8 @@ set(classes
   vtkImageToPolyDataFilter
   vtkImplicitModeller
   vtkPCAAnalysisFilter
-  vtkPolyDataSilhouette
   vtkProcrustesAlignmentFilter
   vtkProjectedTerrainPath
-  vtkRenderLargeImage
   vtkTemporalArrayOperatorFilter
   vtkTemporalDataSetCache
   vtkTemporalFractal

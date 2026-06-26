@@ -26,7 +26,7 @@
 #ifndef vtkPolyDataSilhouette_h
 #define vtkPolyDataSilhouette_h
 
-#include "vtkFiltersHybridModule.h" // For export macro
+#include "vtkFiltersHybridRenderingModule.h" // For export macro
 #include "vtkPolyDataAlgorithm.h"
 
 VTK_ABI_NAMESPACE_BEGIN
@@ -35,7 +35,7 @@ class vtkProp3D;
 class vtkTransform;
 class vtkPolyDataEdges;
 
-class VTKFILTERSHYBRID_EXPORT vtkPolyDataSilhouette : public vtkPolyDataAlgorithm
+class VTKFILTERSHYBRIDRENDERING_EXPORT vtkPolyDataSilhouette : public vtkPolyDataAlgorithm
 {
 public:
   /**
