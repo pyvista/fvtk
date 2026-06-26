@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "vtkConnectivityFilter.h"
 
-#include "fvtkFastConnectivity.h" // fvtk opt-in parallel union-find region labeling
+#include "cvistaFastConnectivity.h" // cvista opt-in parallel union-find region labeling
 #include "vtkCell.h"
 #include "vtkCellData.h"
 #include "vtkDataSet.h"
@@ -218,16 +218,16 @@ int vtkConnectivityFilter::RequestData(vtkInformation* vtkNotUsed(request),
     this->ExtractionMode != VTK_EXTRACT_CELL_SEEDED_REGIONS &&
     this->ExtractionMode != VTK_EXTRACT_CLOSEST_POINT_REGION)
   { // visit all cells marking with region number
-    // fvtk opt-in fast lane: for ALL_REGIONS + geometric connectivity, replace
+    // cvista opt-in fast lane: for ALL_REGIONS + geometric connectivity, replace
     // the serial wave-BFS (TraverseAndMark, the measured #1 self-time hotspot)
     // with a parallel union-find. Region ids are bit-identical (both number by
     // increasing min cell index); only output point order relaxes. No-op unless
-    // fvtk::FastModeEnabled() and the supported regime -> falls through to the
+    // cvista::FastModeEnabled() and the supported regime -> falls through to the
     // stock BFS below otherwise.
     bool fastDone = false;
     if (this->ExtractionMode == VTK_EXTRACT_ALL_REGIONS)
     {
-      fastDone = fvtk::FastConnectivityAllRegions(input, numPts, numCells,
+      fastDone = cvista::FastConnectivityAllRegions(input, numPts, numCells,
         this->InScalars != nullptr, this->Visited, this->PointMap, this->NewScalars,
         this->NewCellScalars, this->RegionSizes, this->PointNumber, this->RegionNumber);
     }

@@ -151,7 +151,7 @@ macro(vtkArrayDispatch_default_array_setup)
     endif ()
   endmacro()
 
-  # fvtk: aggressively trim the array-dispatch value-type list to the types
+  # cvista: aggressively trim the array-dispatch value-type list to the types
   # PyVista actually constructs (numpy_to_vtk -> float/double, uint8 colors, int,
   # int64/ids). VTK's default ~14-type list instantiates every Dispatch* worker
   # across all of them (and Dispatch2/3 multiply it N^2/N^3); restricting the
@@ -159,12 +159,12 @@ macro(vtkArrayDispatch_default_array_setup)
   # kits. Correctness-preserving: an array whose value type is no longer in the
   # list still works — Dispatch returns false and the call site falls back to the
   # virtual vtkDataArray path (same mechanism the SOA-off lever relies on); only
-  # the fast path is dropped, never a result. Gated by env FVTK_DISPATCH_MINIMAL.
+  # the fast path is dropped, never a result. Gated by env CVISTA_DISPATCH_MINIMAL.
   # vtkTypeList::Unique folds vtkIdType into long long where they coincide.
-  # Default ON (validated parity-green); set FVTK_DISPATCH_MINIMAL=0 to restore
+  # Default ON (validated parity-green); set CVISTA_DISPATCH_MINIMAL=0 to restore
   # the full ~14-type dispatch list.
-  set(_fvtk_disp_types "${vtk_numeric_types}")
-  if (NOT "$ENV{FVTK_DISPATCH_MINIMAL}" STREQUAL "0")
+  set(_cvista_disp_types "${vtk_numeric_types}")
+  if (NOT "$ENV{CVISTA_DISPATCH_MINIMAL}" STREQUAL "0")
     # ~4 types PyVista hits on the fast path: double + float (the bulk of
     # numpy_to_vtk geometry/scalars), vtkIdType (connectivity / id arrays), and
     # unsigned char (RGBA color arrays). vtkIdType is 64-bit signed, so int64
@@ -175,12 +175,12 @@ macro(vtkArrayDispatch_default_array_setup)
     # speed trade for int32/narrow-int workloads. This is the maximal compile-time
     # cut: every Dispatch* worker is instantiated across this list, and
     # Dispatch2/Dispatch3 multiply it N^2/N^3, so 14 -> 4 collapses the
-    # cross-filter template fan-out hard. FVTK_DISPATCH_MINIMAL=0 restores stock.
-    set(_fvtk_disp_types "double;float;vtkIdType;unsigned char")
+    # cross-filter template fan-out hard. CVISTA_DISPATCH_MINIMAL=0 restores stock.
+    set(_cvista_disp_types "double;float;vtkIdType;unsigned char")
   endif ()
 
   # Set up regular arrays
-  _vtkCreateArrayDispatch(VTK_DISPATCH_AOS_ARRAYS "vtkAOSDataArrayTemplate" "${_fvtk_disp_types}")
+  _vtkCreateArrayDispatch(VTK_DISPATCH_AOS_ARRAYS "vtkAOSDataArrayTemplate" "${_cvista_disp_types}")
   _vtkCreateArrayDispatch(VTK_DISPATCH_SOA_ARRAYS "vtkSOADataArrayTemplate" "${vtk_numeric_types}")
   _vtkCreateArrayDispatch(VTK_DISPATCH_SCALED_SOA_ARRAYS "vtkScaledSOADataArrayTemplate" "${vtk_numeric_types}")
 
@@ -198,7 +198,7 @@ macro(vtkArrayDispatch_default_array_setup)
   _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_CONSTANT_ARRAYS "vtkConstantArray" "${vtk_numeric_types}")
   _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STD_FUNCTION_ARRAYS "vtkStdFunctionArray" "${vtk_numeric_types}")
   _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STRIDED_ARRAYS "vtkStridedArray" "${vtk_numeric_types}")
-  _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STRUCTURED_POINT_ARRAYS "vtkStructuredPointArray" "${_fvtk_disp_types}")
+  _vtkCreateArrayDispatchImplicit(VTK_DISPATCH_STRUCTURED_POINT_ARRAYS "vtkStructuredPointArray" "${_cvista_disp_types}")
 
 endmacro()
 

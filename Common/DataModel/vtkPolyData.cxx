@@ -22,7 +22,7 @@
 #include "vtkUnsignedCharArray.h"
 
 #include <stdexcept>
-#include <atomic> // fvtk: release fence when publishing lazily-built Cells/Links
+#include <atomic> // cvista: release fence when publishing lazily-built Cells/Links
 #include <vector>
 
 // vtkPolyDataInternals.h methods:
@@ -797,7 +797,7 @@ VTK_ABI_NAMESPACE_BEGIN
 // Create data structure that allows random access of cells.
 void vtkPolyData::BuildCells()
 {
-  // fvtk: make the lazy build thread-safe. The inline cell accessors
+  // cvista: make the lazy build thread-safe. The inline cell accessors
   // (GetCellType/GetCell/GetCellPoints/...) do `if (!this->Cells) BuildCells()`,
   // and with the STDThread default that runs concurrently from SMP worker
   // threads. Two defects made it crash: several threads could build at once, and
@@ -806,7 +806,7 @@ void vtkPolyData::BuildCells()
   // into a LOCAL, publishing the fully-built map as the very last step. A reader
   // then sees this->Cells as either null (and builds under the lock) or
   // complete. (The header still documents the single-thread-first contract; this
-  // hardens the convenience path that fvtk's default threading relies on.)
+  // hardens the convenience path that cvista's default threading relies on.)
   std::lock_guard<std::mutex> lock(this->BuildCellsMutex);
   if (this->Cells)
   {
@@ -896,7 +896,7 @@ void vtkPolyData::BuildLinks(int initialSize)
     return;
   }
 
-  // fvtk: same hardening as BuildCells(). The inline link accessors
+  // cvista: same hardening as BuildCells(). The inline link accessors
   // (GetPointCells/GetCellEdgeNeighbors/...) do `if (!this->Links) BuildLinks()`,
   // which under the STDThread default runs concurrently from SMP worker threads.
   // The original code published this->Links before vtkAbstractCellLinks::

@@ -5,9 +5,9 @@ A VTK filter that takes a point-based input and emits output points must, by
 DEFAULT (vtkAlgorithm::DEFAULT_PRECISION), produce output points of the SAME
 data type as the input points; SetOutputPointsPrecision(SINGLE/DOUBLE) forces
 float/double. Stock VTK 9.6.2 has a long-standing bug where ~30 filters silently
-downcast float64 -> float32 (and a couple force float -> double); fvtk fixes
+downcast float64 -> float32 (and a couple force float -> double); cvista fixes
 them by adding the standard OutputPointsPrecision API. This test asserts the
-corrected behavior on the built fvtk wheel (no stock comparison).
+corrected behavior on the built cvista wheel (no stock comparison).
 
 Two layers:
   * API presence: every fixed filter exposes Get/SetOutputPointsPrecision and
@@ -21,11 +21,11 @@ Two layers:
 import numpy as np
 import pytest
 
-from fvtk.vtkCommonCore import vtkPoints, VTK_FLOAT, VTK_DOUBLE
-from fvtk.vtkCommonDataModel import vtkPolyData, vtkStructuredGrid, vtkUnstructuredGrid, vtkCellArray
-from fvtk.vtkFiltersSources import vtkSphereSource
-from fvtk.vtkFiltersCore import vtkTriangleFilter, vtkDelaunay3D
-from fvtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+from cvista.vtkCommonCore import vtkPoints, VTK_FLOAT, VTK_DOUBLE
+from cvista.vtkCommonDataModel import vtkPolyData, vtkStructuredGrid, vtkUnstructuredGrid, vtkCellArray
+from cvista.vtkFiltersSources import vtkSphereSource
+from cvista.vtkFiltersCore import vtkTriangleFilter, vtkDelaunay3D
+from cvista.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
 # vtkAlgorithm::DesiredOutputPrecision enum values (order is SINGLE, DOUBLE,
 # DEFAULT -- so DEFAULT is 2, NOT 0). DEFAULT means "match the input precision".
@@ -48,9 +48,9 @@ FIXED_FILTERS = [
     ("vtkFiltersExtraction", "vtkExtractUnstructuredGrid"),
     # vtkAxisAlignedReflectionFilter, vtkClipConvexPolyData,
     # vtkUnstructuredGridGeometryFilter, vtkWeightedTransformFilter received the
-    # same C++ OutputPointsPrecision fix but are NOT Python-wrapped in fvtk, so
+    # same C++ OutputPointsPrecision fix but are NOT Python-wrapped in cvista, so
     # they cannot be exercised here -- their fix is covered by compilation and
-    # tests/precision_audit.md. (Confirmed not present in any fvtk.* module.)
+    # tests/precision_audit.md. (Confirmed not present in any cvista.* module.)
     ("vtkFiltersGeneral", "vtkBooleanOperationPolyDataFilter"),
     ("vtkFiltersGeneral", "vtkBoxClipDataSet"),
     ("vtkFiltersGeneral", "vtkDataSetTriangleFilter"),
@@ -75,7 +75,7 @@ FIXED_FILTERS = [
 
 
 def _load(module, classname):
-    mod = __import__(f"fvtk.{module}", fromlist=[classname])
+    mod = __import__(f"cvista.{module}", fromlist=[classname])
     return getattr(mod, classname)
 
 

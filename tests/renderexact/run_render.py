@@ -1,7 +1,7 @@
 """Standalone driver: render every scene offscreen via EGL, read back the RGBA
 framebuffer (and Z buffer), and dump one .npz per scene plus a manifest.json.
 
-Invoked once under the stock-VTK venv and once under the fvtk venv (the
+Invoked once under the stock-VTK venv and once under the cvista venv (the
 ``vtkmodules`` import resolves to whichever backend that venv provides). The
 pytest harness / CI job then compare the two output dirs pixel-for-pixel.
 

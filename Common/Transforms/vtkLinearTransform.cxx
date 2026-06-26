@@ -5,7 +5,7 @@
 #include "vtkArrayDispatch.h"
 #include "vtkArrayDispatchDataSetArrayList.h"
 #include "vtkDataArray.h"
-#include "vtkFVTKSMPDefaults.h" // fvtk: opt into default multithreading (bit-exact)
+#include "vtkCVISTASMPDefaults.h" // cvista: opt into default multithreading (bit-exact)
 #include "vtkMath.h"
 #include "vtkMatrix4x4.h"
 #include "vtkPoints.h"
@@ -80,7 +80,7 @@ inline void vtkLinearTransformNormal(T1 mat[4][4], T2 in[3], T3 out[3])
 }
 
 //------------------------------------------------------------------------------
-// fvtk SIMD: the contiguous 4x4 matrix*point inner loop, hoisted into a
+// cvista SIMD: the contiguous 4x4 matrix*point inner loop, hoisted into a
 // dedicated free function so it can carry the target_clones("default","avx2")
 // function-multi-versioning attribute. GCC emits a baseline (SSE2) .default
 // clone + an .avx2 clone + an IFUNC resolver (runtime CPUID dispatch) so a
@@ -91,10 +91,10 @@ inline void vtkLinearTransformNormal(T1 mat[4][4], T2 in[3], T3 out[3])
 // set_source_files_properties in CMakeLists): the matrix*point expression is
 // the canonical a*b+c FMA shape and FMA contraction would diverge from stock
 // VTK by 1 ULP on adversarial data. target_clones controls ISA only; the
-// off-contract flag governs all clones. The fvtk-prefixed name keeps the
+// off-contract flag governs all clones. The cvista-prefixed name keeps the
 // symbol distinct for objdump verification.
 //
-// fvtk PORTABILITY: target_clones("default","avx2") is GCC x86-only function
+// cvista PORTABILITY: target_clones("default","avx2") is GCC x86-only function
 // multiversioning. AppleClang (Apple Silicon / non-x86) rejects it ("function
 // multiversioning is not supported on the current target") and MSVC has no such
 // attribute, so guard it to real GCC-on-x86 and expand to nothing elsewhere.
@@ -102,12 +102,12 @@ inline void vtkLinearTransformNormal(T1 mat[4][4], T2 in[3], T3 out[3])
 // and thus bit-exact) without the runtime AVX2 clone — the Linux bitexact gate
 // exercises the AVX2 path; macOS/Windows wheels use the portable baseline.
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-#define FVTK_AVX2_TARGET_CLONES __attribute__((target_clones("default", "avx2")))
+#define CVISTA_AVX2_TARGET_CLONES __attribute__((target_clones("default", "avx2")))
 #else
-#define FVTK_AVX2_TARGET_CLONES
+#define CVISTA_AVX2_TARGET_CLONES
 #endif
 template <class TIn, class TOut, class T>
-FVTK_AVX2_TARGET_CLONES void fvtkLinearTransformPointRange(
+CVISTA_AVX2_TARGET_CLONES void cvistaLinearTransformPointRange(
   T matrix[4][4], const TIn* pin, TOut* pout, vtkIdType count)
 {
   for (vtkIdType i = 0; i < count; ++i, pin += 3, pout += 3)
@@ -129,9 +129,9 @@ struct vtkLinearTransformPointsWorker
       {
         auto pin = inArray->GetPointer(3 * ptId);
         auto pout = outArray->GetPointer(3 * (outBeginTuple + ptId));
-        // fvtk: dispatch the contiguous range to the AVX2/SSE2 multi-versioned
-        // kernel (see fvtkLinearTransformPointRange above).
-        fvtkLinearTransformPointRange(matrix, pin, pout, endPtId - ptId);
+        // cvista: dispatch the contiguous range to the AVX2/SSE2 multi-versioned
+        // kernel (see cvistaLinearTransformPointRange above).
+        cvistaLinearTransformPointRange(matrix, pin, pout, endPtId - ptId);
       });
   }
 };
@@ -275,9 +275,9 @@ void vtkLinearTransform::TransformPoints(vtkPoints* inPts, vtkPoints* outPts)
   vtkDataArray* outArray = outPts->GetData();
   outArray->WriteVoidPointer(3 * m, 3 * n);
 
-  // fvtk: run the (pre-sized, per-tuple-independent => bit-exact under any thread
+  // cvista: run the (pre-sized, per-tuple-independent => bit-exact under any thread
   // count) transform under the default-threading policy.
-  fvtk::RunSafeFilterParallel(
+  cvista::RunSafeFilterParallel(
     [&]()
     {
       vtkLinearTransformPointsWorker worker;
@@ -317,7 +317,7 @@ void vtkLinearTransform::TransformNormals(vtkDataArray* inNms, vtkDataArray* out
   // operate directly on the memory to avoid GetTuple()/SetPoint() calls.
   outNms->WriteVoidPointer(3 * m, 3 * n);
 
-  fvtk::RunSafeFilterParallel(
+  cvista::RunSafeFilterParallel(
     [&]()
     {
       vtkLinearTransformNormalsWorker worker;
@@ -355,7 +355,7 @@ void vtkLinearTransform::TransformVectors(vtkDataArray* inVrs, vtkDataArray* out
   // operate directly on the memory to avoid GetTuple()/SetTuple() calls.
   outVrs->WriteVoidPointer(3 * m, 3 * n);
 
-  fvtk::RunSafeFilterParallel(
+  cvista::RunSafeFilterParallel(
     [&]()
     {
       vtkLinearTransformVectorsWorker worker;

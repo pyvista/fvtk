@@ -3,16 +3,16 @@
 # .abi3.so serving every CPython >= the Py_LIMITED_API floor). Guarded so a
 # consumer can still override either before `find_package(VTK)`. These values
 # are substituted from the `-D` defines scikit-build passes at SDK build time.
-if (NOT DEFINED FVTK_ABI3)
-  set(FVTK_ABI3 @FVTK_ABI3@)
+if (NOT DEFINED CVISTA_ABI3)
+  set(CVISTA_ABI3 @CVISTA_ABI3@)
 endif ()
-if (NOT DEFINED FVTK_ABI3_VERSION)
-  set(FVTK_ABI3_VERSION @FVTK_ABI3_VERSION@)
+if (NOT DEFINED CVISTA_ABI3_VERSION)
+  set(CVISTA_ABI3_VERSION @CVISTA_ABI3_VERSION@)
 endif ()
 
 # Resolve external dependencies the installed VTK targets carry in their link
 # interface so a downstream `find_package(VTK)` does not have to. On platforms
-# where fvtk's filters use OpenMP, `VTK::*-objects` targets reference
+# where cvista's filters use OpenMP, `VTK::*-objects` targets reference
 # `OpenMP::OpenMP_CXX`; without this the include() below fails with "target not
 # found". Non-REQUIRED so platforms without the OpenMP linkage (e.g. macOS) skip
 # it harmlessly.
@@ -20,10 +20,10 @@ find_package(OpenMP QUIET)
 
 # Locate the bundled VTK install tree's config. The data directory is named for
 # the base VTK version (vtk-<MAJOR>.<MINOR>.<BUILD>.data) and does not carry the
-# fvtk wheel's PEP 440 suffix (e.g. .postN), so glob for it rather than hardcode
+# cvista wheel's PEP 440 suffix (e.g. .postN), so glob for it rather than hardcode
 # the package version.
-file(GLOB _fvtk_sdk_data_dir LIST_DIRECTORIES true
+file(GLOB _cvista_sdk_data_dir LIST_DIRECTORIES true
   "${CMAKE_CURRENT_LIST_DIR}/../@VTK_SDK_INSTALL_DIR@/vtk-*.data")
-list(GET _fvtk_sdk_data_dir 0 _fvtk_sdk_data_dir)
-include("${_fvtk_sdk_data_dir}/headers/cmake/vtk-config.cmake")
-unset(_fvtk_sdk_data_dir)
+list(GET _cvista_sdk_data_dir 0 _cvista_sdk_data_dir)
+include("${_cvista_sdk_data_dir}/headers/cmake/vtk-config.cmake")
+unset(_cvista_sdk_data_dir)

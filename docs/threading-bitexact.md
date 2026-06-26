@@ -1,9 +1,9 @@
 # Threading and bit-exactness
 
-fvtk ships **`Sequential`** as the default `vtkSMPTools` backend, the same as
-stock VTK. This is deliberate: with the Sequential backend, fvtk's compute output
+cvista ships **`Sequential`** as the default `vtkSMPTools` backend, the same as
+stock VTK. This is deliberate: with the Sequential backend, cvista's compute output
 is byte-for-byte identical to stock VTK 9.6.2 (`maxULP == 0`; see
-`tests/bitexact/`), so fvtk is a drop-in replacement.
+`tests/bitexact/`), so cvista is a drop-in replacement.
 
 VTK also compiles in an **`STDThread`** backend (std::thread). VTK 9.6's threaded
 filters are written "gather-over-output" (each thread writes a disjoint output
@@ -21,7 +21,7 @@ pv.enable_smp_tools(backend="stdthread")   # process-wide
 or directly:
 
 ```python
-from fvtk.vtkCommonCore import vtkSMPTools
+from cvista.vtkCommonCore import vtkSMPTools
 vtkSMPTools.SetBackend("STDThread")        # call before constructing filters
 ```
 
@@ -33,7 +33,7 @@ expect a win on toy inputs.
 
 Audited Sequential vs STDThread at thread counts {1, 2, 4, 8}, comparing every
 output array (points, all point/cell data, full topology) against **both**
-fvtk-Sequential **and** stock VTK 9.6.2, with each threaded config run twice to
+cvista-Sequential **and** stock VTK 9.6.2, with each threaded config run twice to
 catch run-to-run nondeterminism.
 
 **SAFE — byte-identical to stock VTK at every thread count, run-to-run stable

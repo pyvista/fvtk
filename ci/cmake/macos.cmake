@@ -1,10 +1,10 @@
-# fvtk CI init-cache: macOS arm64 (Apple Silicon) wheel.
+# cvista CI init-cache: macOS arm64 (Apple Silicon) wheel.
 #   Runner: GitHub Actions `macos-14` (Apple Silicon / arm64).
 #   Toolchain: AppleClang (Xcode) + cmake + ninja (NOT nix / NOT GCC).
 #
-# Reuses fvtk-config/minimal.cmake for the deny-by-default PyVista module closure
+# Reuses cvista-config/minimal.cmake for the deny-by-default PyVista module closure
 # + the wheel-build knobs. The patched minimal.cmake already detects macOS
-# (CMAKE_HOST_APPLE / FVTK_TARGET_OS=macos) and:
+# (CMAKE_HOST_APPLE / CVISTA_TARGET_OS=macos) and:
 #   - selects the clang ThinLTO (-flto=thin) path instead of GCC -flto=auto,
 #   - drops the gold/ICF + GNU-ld (--gc-sections/--hash-style) levers and uses
 #     -Wl,-dead_strip (ld64) instead,
@@ -29,4 +29,4 @@ set(VTK_DEFAULT_RENDER_WINDOW_HEADLESS OFF CACHE BOOL "")
 set(CMAKE_OSX_ARCHITECTURES      "arm64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET  "11.0"  CACHE STRING "")
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../fvtk-config/minimal.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../cvista-config/minimal.cmake")

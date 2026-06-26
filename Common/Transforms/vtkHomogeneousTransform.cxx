@@ -4,7 +4,7 @@
 
 #include "vtkDataArray.h"
 #include "vtkDoubleArray.h"
-#include "vtkFVTKSMPDefaults.h" // fvtk: opt into default multithreading (bit-exact)
+#include "vtkCVISTASMPDefaults.h" // cvista: opt into default multithreading (bit-exact)
 #include "vtkFloatArray.h"
 #include "vtkMath.h"
 #include "vtkMatrix4x4.h"
@@ -16,7 +16,7 @@
 VTK_ABI_NAMESPACE_BEGIN
 namespace
 {
-// fvtk devirtualized AOS gather/scatter for the homogeneous (perspective) point
+// cvista devirtualized AOS gather/scatter for the homogeneous (perspective) point
 // loop. The per-point homogeneous-divide math (vtkHomogeneousTransformPoint and
 // the in-loop vector/normal homogeneous correction) is unchanged; only the
 // virtual vtkPoints::GetPoint/SetPoint and vtkDataArray::GetTuple/SetTuple that
@@ -232,13 +232,13 @@ void vtkHomogeneousTransform::TransformPoints(vtkPoints* inPts, vtkPoints* outPt
 
   this->Update();
 
-  // fvtk: devirtualize coordinate gather/scatter; same per-point homogeneous math.
+  // cvista: devirtualize coordinate gather/scatter; same per-point homogeneous math.
   const HomogTransformAOSReader inReader(inPts->GetData());
   const HomogTransformAOSWriter outWriter(outPts->GetData());
 
-  // fvtk: per-point-independent writes to a pre-sized output => bit-exact under
+  // cvista: per-point-independent writes to a pre-sized output => bit-exact under
   // any thread count; run under the default-threading policy.
-  fvtk::RunSafeFilterParallel(
+  cvista::RunSafeFilterParallel(
     [&]()
     {
       vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
@@ -294,7 +294,7 @@ void vtkHomogeneousTransform::TransformPointsNormalsVectors(vtkPoints* inPts, vt
     vtkMatrix4x4::Transpose(*L, *L);
   }
 
-  // fvtk: devirtualize coordinate / vector / normal gather/scatter; same per-point
+  // cvista: devirtualize coordinate / vector / normal gather/scatter; same per-point
   // homogeneous math.
   const HomogTransformAOSReader inPtReader(inPts->GetData());
   const HomogTransformAOSWriter outPtWriter(outPts->GetData());
@@ -315,9 +315,9 @@ void vtkHomogeneousTransform::TransformPointsNormalsVectors(vtkPoints* inPts, vt
     }
   }
 
-  // fvtk: per-point-independent writes to pre-sized outputs => bit-exact under
+  // cvista: per-point-independent writes to pre-sized outputs => bit-exact under
   // any thread count; run under the default-threading policy.
-  fvtk::RunSafeFilterParallel([&]() {
+  cvista::RunSafeFilterParallel([&]() {
   vtkSMPTools::For(0, n, vtkSMPTools::THRESHOLD,
     [&](vtkIdType ptId, vtkIdType endPtId)
     {
@@ -365,7 +365,7 @@ void vtkHomogeneousTransform::TransformPointsNormalsVectors(vtkPoints* inPts, vt
         }
       }
     });
-  }); // fvtk: end RunSafeFilterParallel
+  }); // cvista: end RunSafeFilterParallel
 }
 
 //------------------------------------------------------------------------------

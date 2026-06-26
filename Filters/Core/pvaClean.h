@@ -3,7 +3,7 @@
 // Vendored from pyvista-algorithms (https://github.com/banesullivan/pyvista-algorithms)
 //   src/cpp/clean.hpp  — MIT licensed (Bane Sullivan and contributors).
 //
-// Fast parallel point-dedup / coincident-point merge: a re-implementation of vtkStaticCleanUnstructuredGrid's merge-points + connectivity-rewrite. fvtk calls pvu::clean::run_clean() directly (no nanobind) from the vtkStaticCleanUnstructuredGrid fast path when opt-in fast mode is enabled (fvtk.EnableFast() / FVTK_FAST). Output is points-order-relaxed (merged points + cells are renumbered in a thread/hash-dependent order).
+// Fast parallel point-dedup / coincident-point merge: a re-implementation of vtkStaticCleanUnstructuredGrid's merge-points + connectivity-rewrite. cvista calls pvu::clean::run_clean() directly (no nanobind) from the vtkStaticCleanUnstructuredGrid fast path when opt-in fast mode is enabled (cvista.EnableFast() / CVISTA_FAST). Output is points-order-relaxed (merged points + cells are renumbered in a thread/hash-dependent order).
 // Unmodified upstream source below this banner (local #includes renamed to the
 // pva* vendored filenames).
 //

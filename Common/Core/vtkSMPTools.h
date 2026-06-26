@@ -403,10 +403,10 @@ public:
   static void Initialize(int numThreads = 0);
 
   /**
-   * fvtk: register a Python GIL release/acquire callback pair so that a threaded
+   * cvista: register a Python GIL release/acquire callback pair so that a threaded
    * SMP backend can drop the GIL on the calling thread while it blocks on the
    * worker join, letting worker threads acquire the GIL to run Python observer
-   * callbacks (progress/error/warning). Without this, fvtk-under-Python with a
+   * callbacks (progress/error/warning). Without this, cvista-under-Python with a
    * threaded backend deadlocks the moment a parallel filter invokes such an
    * observer. Registered automatically by vtkPythonUtil::Initialize(); a no-op
    * (and never invoked) for the Sequential backend or in non-Python use.
@@ -418,7 +418,7 @@ public:
   static void SetGilCallbacks(void* (*release)(), void (*acquire)(void*));
 
   /**
-   * fvtk: true when the calling thread is an SMP backend *worker* thread (a
+   * cvista: true when the calling thread is an SMP backend *worker* thread (a
    * thread owned by the parallel pool), as opposed to the thread that launched
    * the parallel work. Used to enforce "Python observers run only on the main
    * thread": vtkPythonCommand::Execute returns early on a worker thread, so a

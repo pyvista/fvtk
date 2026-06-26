@@ -40,7 +40,7 @@ void vtkGLTFWriterUtils::WriteValues(vtkDataArray* ca, ostream& myFile)
         aos, WriteValuesFunctor{}, myFile))
   {
     // Fallback for AOS arrays whose value type is not in the trimmed dispatch
-    // list (e.g. vtkUnsignedIntArray when FVTK_DISPATCH_MINIMAL is active).
+    // list (e.g. vtkUnsignedIntArray when CVISTA_DISPATCH_MINIMAL is active).
     // ToAOSDataArray() returns non-null for any AOS array, so GetVoidPointer
     // gives a contiguous buffer that we can write directly -- identical bytes
     // to the dispatch path that would have called GetPointer(0).
@@ -64,7 +64,7 @@ void vtkGLTFWriterUtils::WriteValues(vtkDataArray* ca, vtkBase64OutputStream* os
         aos, WriteValuesFunctor{}, ostr))
   {
     // Fallback for AOS arrays whose value type is not in the trimmed dispatch
-    // list (e.g. vtkUnsignedIntArray when FVTK_DISPATCH_MINIMAL is active).
+    // list (e.g. vtkUnsignedIntArray when CVISTA_DISPATCH_MINIMAL is active).
     if (aos)
     {
       vtkIdType nbytes = static_cast<vtkIdType>(aos->GetNumberOfTuples()) *

@@ -23,7 +23,7 @@
 //----------------------------------------------------------------------------
 VTK_ABI_NAMESPACE_BEGIN
 
-// fvtk: flat small-map for vtkInformation's key->value store.
+// cvista: flat small-map for vtkInformation's key->value store.
 //
 // Stock VTK keys this on std::unordered_map<vtkInformationKey*, vtkObjectBase*>
 // (VTK_INFORMATION_USE_HASH_MAP). But a vtkInformation typically holds only a
@@ -35,16 +35,16 @@ VTK_ABI_NAMESPACE_BEGIN
 // chase (cache miss) + per-entry node malloc costs more than a linear/branchless
 // scan over a single contiguous {key,value} block that stays in cache.
 //
-// fvtkInformationFlatMap is that block: a std::vector of (key,value) pairs kept
+// cvistaInformationFlatMap is that block: a std::vector of (key,value) pairs kept
 // sorted by key POINTER, so find() is a binary search and iteration is ordered by
 // pointer — exactly the std::map ordering, and a deterministic re-ordering of the
 // stock unordered_map. BIT-EXACT: the bitexact gate already compares stock-vtk and
-// fvtk as separate processes whose pointer-hashed iteration orders differ (ASLR)
+// cvista as separate processes whose pointer-hashed iteration orders differ (ASLR)
 // yet match byte-for-byte, so no output depends on info-key iteration order; a
 // pointer-sorted order is therefore equally safe. It exposes exactly the STL
 // subset vtkInformation.cxx / vtkInformationIterator.cxx use (begin/end/find/
 // insert/erase + forward iterators with ->first/->second), so it is a drop-in.
-class fvtkInformationFlatMap
+class cvistaInformationFlatMap
 {
 public:
   typedef vtkInformationKey* KeyType;
@@ -107,7 +107,7 @@ class vtkInformationInternals
 public:
   typedef vtkInformationKey* KeyType;
   typedef vtkObjectBase* DataType;
-  typedef fvtkInformationFlatMap MapType;
+  typedef cvistaInformationFlatMap MapType;
   MapType Map;
 
   vtkInformationInternals() = default;

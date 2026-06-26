@@ -3,7 +3,7 @@ set(classes
   vtkPLYReader
   vtkPLYWriter)
 
-# Vendored third-party fast PLY parser (MIT, Vilya Harvey) backing the fvtk
+# Vendored third-party fast PLY parser (MIT, Vilya Harvey) backing the cvista
 # binary-LE fast path in vtkPLYReader. Plain source, not a wrapped VTK class.
 set(sources
   miniply.cxx)

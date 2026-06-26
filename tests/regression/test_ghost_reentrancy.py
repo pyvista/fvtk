@@ -19,7 +19,7 @@ honestly on allocators that never reuse the freed address.
 import gc
 import sys
 
-from fvtk.vtkCommonCore import vtkCollection, vtkObject
+from cvista.vtkCommonCore import vtkCollection, vtkObject
 
 
 def test_ghost_map_reentrant_erase():

@@ -12,7 +12,7 @@
 
   These inline accessors express the read in one place so the runtime can be
   compiled either way. CRITICAL CONTRACT: under the default build (the only
-  build fvtk currently ships) every accessor MUST expand to the *exact* same
+  build cvista currently ships) every accessor MUST expand to the *exact* same
   field access it replaces, so the emitted object code is byte-identical and
   this is a pure API-hygiene no-op. The Py_LIMITED_API branch is dormant
   today; it exists so the abi3 port can flip it on without re-touching every
@@ -29,8 +29,8 @@
 #define vtkPythonTypeAccess_h
 
 // VTK_ABI3_LIMITED is the single switch: it is defined exactly when the
-// translation unit is being compiled against the Python limited API. fvtk's
-// FVTK_ABI3 cmake lever injects Py_LIMITED_API, which CPython's headers turn
+// translation unit is being compiled against the Python limited API. cvista's
+// CVISTA_ABI3 cmake lever injects Py_LIMITED_API, which CPython's headers turn
 // into the opaque-PyTypeObject world this shim guards against.
 #if defined(Py_LIMITED_API)
 #define VTK_ABI3_LIMITED 1
@@ -52,10 +52,10 @@
 // generated *Python.cxx and the runtime would fail to compile ("PyMemberDef has
 // incomplete type" / "Py_T_PYSSIZET not declared").
 //
-// fvtk's abi3 floor is 3.12 (FVTK_ABI3_VERSION == 0x030c0000), so in the SHIPPED
+// cvista's abi3 floor is 3.12 (CVISTA_ABI3_VERSION == 0x030c0000), so in the SHIPPED
 // build this shim is INERT — the guard below (< 0x030c0000) is never entered, and
 // 3.11 ships as a static, non-limited-API wheel (not an abi3 floor). It is
-// retained only as a belt-and-suspenders for anyone lowering FVTK_ABI3_VERSION
+// retained only as a belt-and-suspenders for anyone lowering CVISTA_ABI3_VERSION
 // below 0x030c0000.
 //
 // The canonical source is <structmember.h>, which 3.11 SHIPS (with full include
@@ -85,7 +85,7 @@ VTK_ABI_NAMESPACE_BEGIN
 // Read a type's tp_base (the single declared C/Python base). Borrowed ref.
 //
 // PyType_GetSlot(tp, Py_tp_base) was extended to work on *all* types (not just
-// heap types) in CPython 3.10, and is the form the limited API mandates. fvtk's
+// heap types) in CPython 3.10, and is the form the limited API mandates. cvista's
 // floor is now cp311, so the non-limited branch uses the same PyType_GetSlot
 // call the runtime already used at its existing tp_base read sites — the legacy
 // "tp->tp_base" direct read remains only for the <3.10 fallback (never compiled
@@ -118,7 +118,7 @@ static inline reprfunc vtkPythonType_GetStr(PyTypeObject* tp)
 // Read a type's tp_dict (its attribute dictionary). Borrowed ref under the
 // default build; PyType_GetDict (3.12+) returns a *new* reference, so the
 // limited-API branch is only valid where the caller treats the result as
-// borrowed for the duration of a single use (all current fvtk readers do —
+// borrowed for the duration of a single use (all current cvista readers do —
 // they immediately pass it to PyDict_GetItem*/SetItemString without storing
 // it). Limited-API correctness of the new-ref leak is a port-time concern;
 // today this branch is never compiled.
@@ -130,7 +130,7 @@ static inline PyObject* vtkPythonType_GetDict(PyTypeObject* tp)
   // object protocol: getattr "__dict__" returns a mappingproxy that wraps the
   // real tp_dict. Callers that only do read lookups (PyMapping_GetItemString /
   // membership) work against the proxy identically. The proxy is a *new* ref;
-  // current fvtk readers use the result transiently (immediately look an item up
+  // current cvista readers use the result transiently (immediately look an item up
   // and drop it), so this matches the borrowed-slot lifetime in practice.
   return PyObject_GetAttrString(reinterpret_cast<PyObject*>(tp), "__dict__");
 #else
@@ -255,7 +255,7 @@ static inline int vtkPythonType_MergeIntoTypeDict(PyTypeObject* tp, PyObject* sr
 // a type is PyType_FromSpec, which yields a *heap* type. This wraps the common
 // build-and-ready sequence: call PyType_FromSpec, then (if a base tuple is
 // needed for multiple/explicit bases) PyType_FromModuleAndSpec is avoided —
-// fvtk's runtime types each have a single base expressed via the Py_tp_base
+// cvista's runtime types each have a single base expressed via the Py_tp_base
 // slot inside the spec, so plain PyType_FromSpec suffices. The returned object
 // is a *new* strong reference (the static-type world held these as file-scope
 // globals with effectively static lifetime; under abi3 we leak one ref per

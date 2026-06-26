@@ -1541,7 +1541,7 @@ private:
   vtkCellArray(const vtkCellArray&) = delete;
   void operator=(const vtkCellArray&) = delete;
 
-  // fvtk width-relaxed rule ([[fvtk-int32-default-width-relaxed]]): cell arrays
+  // cvista width-relaxed rule ([[cvista-int32-default-width-relaxed]]): cell arrays
   // default to 32-bit offset/connectivity storage (half the footprint of stock
   // VTK's 64-bit default) and auto-widen to 64-bit only when a value cannot be
   // represented in int32. This guard is called by every value-writing path

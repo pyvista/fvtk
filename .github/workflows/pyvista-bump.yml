@@ -4,7 +4,7 @@
 # pinned SHA in tests/pyvista/PYVISTA_REF, open a PR bumping it with the
 # `pyvista-full` label. That label runs the full PyVista suite on the PR (and the
 # merge queue runs it on enqueue regardless), so the pin only advances through a
-# gate that proves fvtk still matches that PyVista revision.
+# gate that proves cvista still matches that PyVista revision.
 #
 # NOTE: the default GITHUB_TOKEN cannot trigger CI from a bot-opened PR. Set repo
 # secret PYVISTA_BUMP_TOKEN (a PAT with contents:write + pull-requests:write) to
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   bump:
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     # ls-remote + PR open only; cap low.
     timeout-minutes: 15
     steps:
@@ -84,6 +84,6 @@ jobs:
             `tests/pyvista/PYVISTA_REF` → `${{ steps.head.outputs.sha }}`
 
             The `pyvista-full` label runs the full PyVista suite against the built
-            fvtk wheel on this PR, so the bump is validated before it lands. If the
-            suite goes red, an upstream change broke parity — fix fvtk, or triage
+            cvista wheel on this PR, so the bump is validated before it lands. If the
+            suite goes red, an upstream change broke parity — fix cvista, or triage
             into `tests/pyvista/deselect.txt` with a one-line WHY.

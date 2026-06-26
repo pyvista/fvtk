@@ -17,7 +17,7 @@ previous explicit x86_64 tag.
 
 ``--strip`` removes local symbol tables (same win as the macOS wrapper); the
 dynamic symbols and abi3 ``PyInit_*`` entry points are kept, so the repaired
-wheel imports byte-identically. Set ``FVTK_STRIP=0`` to skip the strip pass
+wheel imports byte-identically. Set ``CVISTA_STRIP=0`` to skip the strip pass
 (escape hatch, reversible).
 
 USAGE (from pyproject [tool.cibuildwheel.linux] repair-wheel-command):
@@ -53,7 +53,7 @@ def main() -> None:
     plat = f"{MANYLINUX}_{match.group(1)}"
 
     cmd = ["auditwheel", "repair", "--plat", plat, "-w", dest_dir, wheel]
-    if os.environ.get("FVTK_STRIP", "1") != "0":
+    if os.environ.get("CVISTA_STRIP", "1") != "0":
         cmd.insert(2, "--strip")
     print("+ " + " ".join(cmd), flush=True)
     subprocess.check_call(cmd)

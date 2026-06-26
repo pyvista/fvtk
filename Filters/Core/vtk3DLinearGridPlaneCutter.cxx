@@ -22,7 +22,7 @@
 #include "vtkPlane.h"
 #include "vtkPointData.h"
 #include "vtkPolyData.h"
-#include "vtkFVTKSMPDefaults.h"
+#include "vtkCVISTASMPDefaults.h"
 #include "vtkSMPThreadLocalObject.h"
 #include "vtkSMPTools.h"
 #include "vtkStaticEdgeLocatorTemplate.h"
@@ -51,7 +51,7 @@ vtkCxxSetObjectMacro(vtk3DLinearGridPlaneCutter, Plane, vtkPlane);
   {                                                                                                \
     if (!_seq)                                                                                     \
     {                                                                                              \
-      fvtk::RunFastFilterParallel([&]() { vtkSMPTools::For(0, _num, _op); });                                                              \
+      cvista::RunFastFilterParallel([&]() { vtkSMPTools::For(0, _num, _op); });                                                              \
     }                                                                                              \
     else                                                                                           \
     {                                                                                              \
@@ -64,7 +64,7 @@ vtkCxxSetObjectMacro(vtk3DLinearGridPlaneCutter, Plane, vtkPlane);
   {                                                                                                \
     if (!_seq)                                                                                     \
     {                                                                                              \
-      fvtk::RunFastFilterParallel([&]() { vtkSMPTools::For(0, _num, _op); });                                                              \
+      cvista::RunFastFilterParallel([&]() { vtkSMPTools::For(0, _num, _op); });                                                              \
     }                                                                                              \
     else                                                                                           \
     {                                                                                              \

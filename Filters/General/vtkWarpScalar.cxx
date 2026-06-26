@@ -26,7 +26,7 @@
 #include "vtkUnstructuredGrid.h"
 #include "vtkWeakPointer.h"
 
-#include "vtkFVTKSMPDefaults.h"
+#include "vtkCVISTASMPDefaults.h"
 #include "vtkNew.h"
 #include "vtkSMPTools.h"
 #include "vtkSmartPointer.h"
@@ -109,7 +109,7 @@ int vtkWarpScalar::RequestDataObject(
 namespace
 { // anonymous
 
-// fvtk wave-11/12 typed-pointer kernel for the dominant constant-normal warp:
+// cvista wave-11/12 typed-pointer kernel for the dominant constant-normal warp:
 // xo = xi + sf*s*n over raw contiguous AOS buffers resolved ONCE in the worker
 // (vtkAOSDataArrayTemplate::FastDownCast + GetPointer(0)) instead of through
 // vtkDataArrayTupleRange. Covers both s sources -- the scalar array's 0th
@@ -126,7 +126,7 @@ namespace
 // narrowed to OutT on store -- the EXACT same multiply/add chain and intermediate
 // precision as the original. -ffp-contract=off TU, so no a*b+c contracts to an FMA.
 template <typename InT, typename OutT, typename ScT>
-void fvtkWarpScalarPtr(const InT* in, OutT* out, const ScT* sc, int scNComp, bool XYPlane, double sf,
+void cvistaWarpScalarPtr(const InT* in, OutT* out, const ScT* sc, int scNComp, bool XYPlane, double sf,
   const double* n, vtkIdType begin, vtkIdType end)
 {
   for (vtkIdType ptId = begin; ptId < end; ++ptId)
@@ -159,7 +159,7 @@ struct ScaleWorker
     auto opts = vtk::DataArrayTupleRange<3>(outPts);
     const auto sRange = vtk::DataArrayTupleRange(scalars);
 
-    // fvtk: try to resolve raw AOS buffers once for the constant-normal fast path.
+    // cvista: try to resolve raw AOS buffers once for the constant-normal fast path.
     // The dispatch restricts outPts to AOS; inPts and scalars may be SOA, in which
     // case the typed pointers stay null and we use the original tuple-range loop.
     // The per-point-normal case (inNormals != nullptr) also uses the range loop so
@@ -178,10 +178,10 @@ struct ScaleWorker
 
     // We use THRESHOLD to test if the data size is small enough
     // to execute the functor serially.
-    // fvtk: this For writes opts[ptId] = f(ipts[ptId]) into pre-sized output
-    // slots, so it is bit-exact under any thread count -> opt into the fvtk
+    // cvista: this For writes opts[ptId] = f(ipts[ptId]) into pre-sized output
+    // slots, so it is bit-exact under any thread count -> opt into the cvista
     // default-on multithreading (capped at 4, overridable via VTK SMP APIs).
-    fvtk::RunSafeFilterParallel(
+    cvista::RunSafeFilterParallel(
       [&]()
       {
         vtkSMPTools::For(0, numPts, vtkSMPTools::THRESHOLD,
@@ -198,7 +198,7 @@ struct ScaleWorker
             // touches the point or scalar arrays, so the values written are identical; only
             // abort *responsiveness* is coarsened, which is inherently periodic/best-effort.
             constexpr vtkIdType kAbortInterval = 4096;
-            // fvtk: constant-normal AOS fast path uses the devirtualized raw-pointer
+            // cvista: constant-normal AOS fast path uses the devirtualized raw-pointer
             // kernel, processed in abort-checked batches identical to the per-point
             // check (CheckAbort only sets a flag; abort breaks at a batch boundary and
             // the undefined tail is discarded exactly as the per-point path would).
@@ -215,7 +215,7 @@ struct ScaleWorker
                   break;
                 }
                 const vtkIdType batchEnd = std::min(base + kAbortInterval, endPtId);
-                fvtkWarpScalarPtr(inPtr, outPtr, scPtr, scNComp, XYPlane, sf, n, base, batchEnd);
+                cvistaWarpScalarPtr(inPtr, outPtr, scPtr, scNComp, XYPlane, sf, n, base, batchEnd);
               }
               return;
             }

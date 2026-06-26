@@ -13,7 +13,7 @@ It also checks that a Python observer fired by RenderEvent inside Render()
 re-acquires the GIL and runs correctly while another Python thread executes
 concurrently.
 
-Requires VTK_PYTHON_FULL_THREADSAFE=ON (fvtk's default).  On free-threaded (PEP
+Requires VTK_PYTHON_FULL_THREADSAFE=ON (cvista's default).  On free-threaded (PEP
 703) builds the wrappers never call PyEval_SaveThread, so the probe cannot
 discriminate and the test skips.
 """
@@ -25,15 +25,15 @@ import time
 
 import pytest
 
-from fvtk.vtkFiltersSources import vtkSphereSource
-from fvtk.vtkRenderingCore import (
+from cvista.vtkFiltersSources import vtkSphereSource
+from cvista.vtkRenderingCore import (
     vtkActor,
     vtkPolyDataMapper,
     vtkRenderer,
     vtkRenderWindow,
     vtkRenderWindowInteractor,
 )
-import fvtk.vtkRenderingOpenGL2  # noqa: F401  (registers the OpenGL factory)
+import cvista.vtkRenderingOpenGL2  # noqa: F401  (registers the OpenGL factory)
 
 # number of Render() calls to probe
 N = 30

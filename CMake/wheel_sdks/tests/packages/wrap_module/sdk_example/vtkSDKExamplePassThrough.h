@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /**
  * @class   vtkSDKExamplePassThrough
- * @brief   Trivial pass-through filter used to validate the fvtk-sdk.
+ * @brief   Trivial pass-through filter used to validate the cvista-sdk.
  *
  * vtkSDKExamplePassThrough is a deliberately minimal vtkPolyDataAlgorithm
  * subclass: it shallow-copies its input vtkPolyData to its output and exposes a
  * single integer Value property. It carries no real functionality; its only
  * purpose is to prove that an out-of-tree VTK module can be both compiled in C++
- * and Python-wrapped against the fvtk-sdk wheel.
+ * and Python-wrapped against the cvista-sdk wheel.
  */
 
 #ifndef vtkSDKExamplePassThrough_h

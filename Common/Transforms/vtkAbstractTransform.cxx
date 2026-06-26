@@ -5,7 +5,7 @@
 #include "vtkDataArray.h"
 #include "vtkDebugLeaks.h"
 #include "vtkDoubleArray.h"
-#include "vtkFVTKSMPDefaults.h" // fvtk: opt into default multithreading (bit-exact)
+#include "vtkCVISTASMPDefaults.h" // cvista: opt into default multithreading (bit-exact)
 #include "vtkFloatArray.h"
 #include "vtkIndent.h"
 #include "vtkLinearTransform.h"
@@ -23,7 +23,7 @@ VTK_ABI_NAMESPACE_BEGIN
 namespace
 { // anonymous
 
-// fvtk devirtualized gather/scatter for the nonlinear (generic abstract)
+// cvista devirtualized gather/scatter for the nonlinear (generic abstract)
 // transform path. Unlike the linear/homogeneous matrix*point kernels, the
 // per-point math here is a virtual InternalTransformPoint /
 // InternalTransformDerivative that CANNOT be batched (it is the whole point of
@@ -277,17 +277,17 @@ void vtkAbstractTransform::TransformPoints(vtkPoints* inPts, vtkPoints* outPts)
   vtkIdType m = outPts->GetNumberOfPoints();
   outPts->SetNumberOfPoints(m + n);
 
-  // fvtk: devirtualize the per-point coordinate gather/scatter while keeping the
+  // cvista: devirtualize the per-point coordinate gather/scatter while keeping the
   // exact same per-point virtual InternalTransformPoint math (nonlinear, not
   // batchable). See AbsTransformAOSReader/Writer above for the byte-exactness
   // argument; non-AOS storage falls back to GetPoint/SetPoint.
   const AbsTransformAOSReader inReader(inPts->GetData());
   const AbsTransformAOSWriter outWriter(outPts->GetData());
 
-  // fvtk: per-point-independent writes to a pre-sized output (InternalTransformPoint
+  // cvista: per-point-independent writes to a pre-sized output (InternalTransformPoint
   // is a read-only function of the post-Update transform state) => bit-exact under
   // any thread count; run under the default-threading policy.
-  fvtk::RunSafeFilterParallel(
+  cvista::RunSafeFilterParallel(
     [&]()
     {
       vtkSMPTools::For(0, n,
@@ -337,7 +337,7 @@ void vtkAbstractTransform::TransformPointsNormalsVectors(vtkPoints* inPts, vtkPo
     outNms->SetNumberOfTuples(m + n);
   }
 
-  // fvtk: devirtualize the per-point coordinate / vector / normal gather and
+  // cvista: devirtualize the per-point coordinate / vector / normal gather and
   // scatter while keeping the exact same per-point virtual
   // InternalTransformDerivative + vtkMath 3x3 math (nonlinear, not batchable).
   // See AbsTransformAOSReader/Writer above for the byte-exactness argument; non-AOS
@@ -361,10 +361,10 @@ void vtkAbstractTransform::TransformPointsNormalsVectors(vtkPoints* inPts, vtkPo
     }
   }
 
-  // fvtk: per-point-independent writes to pre-sized outputs (InternalTransform-
+  // cvista: per-point-independent writes to pre-sized outputs (InternalTransform-
   // Derivative is a read-only function of the post-Update transform state) =>
   // bit-exact under any thread count; run under the default-threading policy.
-  fvtk::RunSafeFilterParallel([&]() {
+  cvista::RunSafeFilterParallel([&]() {
   vtkSMPTools::For(0, n,
     [&](vtkIdType ptId, vtkIdType endPtId)
     {
@@ -401,7 +401,7 @@ void vtkAbstractTransform::TransformPointsNormalsVectors(vtkPoints* inPts, vtkPo
         }
       }
     });
-  }); // fvtk: end RunSafeFilterParallel
+  }); // cvista: end RunSafeFilterParallel
 }
 
 //------------------------------------------------------------------------------

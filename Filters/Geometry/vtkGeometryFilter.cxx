@@ -32,7 +32,7 @@
 #include "vtkStructuredData.h"
 #include "vtkStructuredGrid.h"
 #include "vtkTetra.h"
-#include "vtkTypeInt32Array.h" // fvtk: width-relaxed int32 OriginalPointIds storage
+#include "vtkTypeInt32Array.h" // cvista: width-relaxed int32 OriginalPointIds storage
 #include "vtkUniformGrid.h"
 #include "vtkUnsignedCharArray.h"
 #include "vtkUnstructuredGrid.h"
@@ -801,7 +801,7 @@ struct LocalDataType
   // Later on (in Reduce()), a thread id is assigned to the thread.
   int ThreadId;
 
-  // fvtk: deterministic ordering. vtkSMPTools::For partitions the work range
+  // cvista: deterministic ordering. vtkSMPTools::For partitions the work range
   // into many contiguous chunks which are dispatched to a thread pool; a single
   // thread-local may therefore process several non-contiguous chunks in
   // execution (nondeterministic) order. To make the composited output
@@ -935,7 +935,7 @@ struct LocalDataType
   }
 };
 
-// fvtk: the composited output is assembled from per-chunk LocalDataType
+// cvista: the composited output is assembled from per-chunk LocalDataType
 // records (owned by ExtractCellBoundaries::ChunkData), ordered deterministically
 // in Reduce(). Threads holds non-owning pointers to those records in output
 // order; the composite functors index it as (*Threads)[thread].
@@ -1273,7 +1273,7 @@ struct ExtractCellBoundaries
   using TThreadOutputType = ThreadOutputType<TInputIdType>;
   TThreadOutputType* Threads;
 
-  // fvtk: per-chunk output records (see LocalDataType::SortEpoch). Each
+  // cvista: per-chunk output records (see LocalDataType::SortEpoch). Each
   // invocation of a subclass operator() moves its freshly produced cells into a
   // new record appended here (under ChunkMutex). Reduce() sorts these records
   // by (SortEpoch, SortBegin) so the composited output matches the Sequential
@@ -1321,13 +1321,13 @@ struct ExtractCellBoundaries
 
   // operator() implemented by dataset-specific subclasses
 
-  // fvtk: bump the epoch before each vtkSMPTools::For invocation so that chunks
+  // cvista: bump the epoch before each vtkSMPTools::For invocation so that chunks
   // from successive invocations sort after those of earlier ones. Paths that
   // issue a single For (UG, vtkDataSet) never need to call this; the structured
   // path issues one For per grid face and calls it between them.
   void NextEpoch() { ++this->CurrentEpoch; }
 
-  // fvtk: capture the cells a subclass operator() just produced into a new
+  // cvista: capture the cells a subclass operator() just produced into a new
   // per-chunk record tagged with the chunk's sort key. The thread-local's cell
   // arrays are moved out (leaving them empty but still configured), so the same
   // thread-local can be reused for its next chunk. 'begin' is the chunk's begin
@@ -1363,7 +1363,7 @@ struct ExtractCellBoundaries
     this->StripsNumPts = this->StripsNumCells = 0;
     int threadId = 0;
 
-    // fvtk: order the per-chunk records so the composited output is identical to
+    // cvista: order the per-chunk records so the composited output is identical to
     // the Sequential backend (which visits the work range in increasing index
     // order). Sorting by (SortEpoch, SortBegin) reproduces that order exactly:
     // chunks partition each vtkSMPTools::For range contiguously and disjointly,
@@ -1565,7 +1565,7 @@ struct ExtractUG : public ExtractCellBoundaries<TInputIdType>
       FaceOperator{}(cells->GetOffsetsArray(), cells->GetConnectivityArray(),
         this->Grid->GetCellTypes(), this, beginHash, endHash);
     }
-    // fvtk: capture this chunk's cells for deterministic compositing.
+    // cvista: capture this chunk's cells for deterministic compositing.
     this->CaptureChunk(this->LocalData.Local(), beginHash);
   }
 
@@ -1902,7 +1902,7 @@ struct ExtractStructured : public ExtractCellBoundaries<TInputIdType>
           0.1 * this->CurrentAxis + (0.1 * faceEndCellId / this->NumberOfFaces));
       }
     }
-    // fvtk: capture this chunk's cells for deterministic compositing. The
+    // cvista: capture this chunk's cells for deterministic compositing. The
     // structured path issues a separate vtkSMPTools::For per grid face; each is
     // tagged with a distinct epoch (see NextEpoch calls in Execute) so chunks
     // from different faces never interleave.
@@ -1935,7 +1935,7 @@ struct ExtractStructured : public ExtractCellBoundaries<TInputIdType>
         {
           extract->NumberOfFaces = std::abs(extent[2 * iAxis + 1] - extent[2 * iAxis]) *
             std::abs(extent[2 * jAxis] - extent[2 * jAxis + 1]);
-          extract->NextEpoch(); // fvtk: order this face's chunks after prior faces
+          extract->NextEpoch(); // cvista: order this face's chunks after prior faces
           vtkSMPTools::For(0, extract->NumberOfFaces, *extract);
         }
         // axisMax-face
@@ -1946,7 +1946,7 @@ struct ExtractStructured : public ExtractCellBoundaries<TInputIdType>
         {
           extract->NumberOfFaces = std::abs(extent[2 * iAxis + 1] - extent[2 * iAxis]) *
             std::abs(extent[2 * jAxis] - extent[2 * jAxis + 1]);
-          extract->NextEpoch(); // fvtk: order this face's chunks after prior faces
+          extract->NextEpoch(); // cvista: order this face's chunks after prior faces
           vtkSMPTools::For(0, extract->NumberOfFaces, *extract);
         }
       }
@@ -1963,7 +1963,7 @@ struct ExtractStructured : public ExtractCellBoundaries<TInputIdType>
         jAxis = (axis + 2) % 3;
         extract->NumberOfFaces = std::abs(extent[2 * iAxis + 1] - extent[2 * iAxis]) *
           std::abs(extent[2 * jAxis] - extent[2 * jAxis + 1]);
-        extract->NextEpoch(); // fvtk: order this face's chunks after prior faces
+        extract->NextEpoch(); // cvista: order this face's chunks after prior faces
         vtkSMPTools::For(0, extract->NumberOfFaces, *extract);
       }
     }
@@ -2035,7 +2035,7 @@ struct ExtractDS : public ExtractCellBoundaries<TInputIdType>
       } // if cell visible
 
     } // for all cells in this batch
-    // fvtk: capture this chunk's cells for deterministic compositing.
+    // cvista: capture this chunk's cells for deterministic compositing.
     this->CaptureChunk(localData, beginCellId);
     if (isFirst)
     {
@@ -2500,7 +2500,7 @@ struct CompositeCells
 }; // CompositeCells
 
 // Composite threads to produce originating cell ids
-// fvtk: templated on TOutId so the same scatter drives int32 or int64 storage.
+// cvista: templated on TOutId so the same scatter drives int32 or int64 storage.
 template <typename TInputIdType, typename TOutputIdType, typename TOutId = vtkIdType>
 struct CompositeCellIds
 {
@@ -2928,7 +2928,7 @@ template <typename TInputIdType>
 void PassPointIds(const char* name, vtkIdType numInputPts, vtkIdType numOutputPts,
   TInputIdType* ptMap, vtkPointData* outPD)
 {
-  // fvtk: width-relaxed storage. The values are input point ids (sacred); the
+  // cvista: width-relaxed storage. The values are input point ids (sacred); the
   // CONTAINER is int32 when every id fits in 0x7FFFFFFF, else int64. Halves the
   // array footprint on large extracted surfaces. The bitexact gate width-
   // normalizes integer arrays, and the render hardware-selection path reads this
@@ -2962,7 +2962,7 @@ void PassCellIds(const char* name, ExtractCellBoundaries<TInputIdType>* extract,
 {
   vtkIdType numOutputCells = extract->NumCells;
 
-  // fvtk: width-relaxed storage. The values are input cell ids (sacred); the
+  // cvista: width-relaxed storage. The values are input cell ids (sacred); the
   // CONTAINER is int32 when every id fits in 0x7FFFFFFF, else int64. The input
   // id type TInputIdType is selected by dispatch to vtkTypeInt32 only when the
   // input cell (and point) count is <= VTK_TYPE_INT32_MAX, so when it is int32

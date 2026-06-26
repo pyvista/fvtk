@@ -4,16 +4,16 @@
 WHY THIS EXISTS
 ---------------
 cibuildwheel's default macOS repair is just ``delocate-wheel`` — it bundles the
-vendored dylibs into the wheel but does NOT strip symbols. fvtk's ``.so`` modules
+vendored dylibs into the wheel but does NOT strip symbols. cvista's ``.so`` modules
 and the dylibs delocate copies in carry large local-symbol tables (every static
 function, every internal C++ symbol). They are dead weight at import time: the
 dynamic loader resolves imports through the *dynamic* symbol table only, so the
 local entries can be dropped with zero behavioural change.
 
 ``strip -x`` removes the local symbols while KEEPING every externally-visible
-(global/dynamic) symbol — so the abi3 ``PyInit_*`` entry points and fvtk's own
+(global/dynamic) symbol — so the abi3 ``PyInit_*`` entry points and cvista's own
 cross-module runtime symbols (``PyVTKObject_New``, ``PyVTKEnum_Add``, … shared
-between fvtk's ``.so`` files) survive. This mirrors the Linux ``auditwheel repair
+between cvista's ``.so`` files) survive. This mirrors the Linux ``auditwheel repair
 --strip`` win (see pyproject ``[tool.cibuildwheel.linux]``), which measured ~15%
 off the wheel.
 
@@ -35,7 +35,7 @@ USAGE (from pyproject [tool.cibuildwheel.macos] repair-wheel-command):
     python ci/cibw/repair_macos.py {delocate_archs} {dest_dir} {wheel}
 
 cibuildwheel substitutes ``{delocate_archs}`` / ``{dest_dir}`` / ``{wheel}`` and
-runs with cwd == project root. Set ``FVTK_STRIP=0`` to skip the strip pass and
+runs with cwd == project root. Set ``CVISTA_STRIP=0`` to skip the strip pass and
 fall back to a plain delocate repair (escape hatch, reversible).
 """
 from __future__ import annotations
@@ -163,8 +163,8 @@ def main(argv: list[str]) -> int:
         ]
     )
 
-    if os.environ.get("FVTK_STRIP", "1") == "0":
-        print("repair_macos: FVTK_STRIP=0 -> skipping strip pass.", flush=True)
+    if os.environ.get("CVISTA_STRIP", "1") == "0":
+        print("repair_macos: CVISTA_STRIP=0 -> skipping strip pass.", flush=True)
         return 0
 
     # delocate writes the repaired wheel into dest_dir under the same basename.
@@ -179,7 +179,7 @@ def main(argv: list[str]) -> int:
         repaired = cands[-1]
 
     before = os.path.getsize(repaired)
-    work = tempfile.mkdtemp(prefix="fvtk-strip-")
+    work = tempfile.mkdtemp(prefix="cvista-strip-")
     try:
         with zipfile.ZipFile(repaired) as zf:
             zf.extractall(work)

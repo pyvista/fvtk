@@ -22,21 +22,21 @@ vtk_module_add_module(VTK::scn
   PRIVATE_HEADERS ${private_headers}
   HEADERS_SUBDIR "vtkscn")
 
-# fvtk build-time trim: the only consumer of scn in fvtk's module closure is
+# cvista build-time trim: the only consumer of scn in cvista's module closure is
 # Common/Core/vtkStringScanner.h (vtk::scan / vtk::from_chars), which scans
 # *narrow* numeric/string values only. It exposes no regex API and no
 # locale-aware ("L"-flag / scan(locale,...)) scanning. The default scnlib
 # config instantiates the full std::regex backend and the locale machinery in
 # the single monolithic impl.cpp TU (the heaviest non-dispatch TU in the
 # build). Disabling the two unused feature families is correctness-neutral for
-# fvtk's usage and removes ~26% of impl.cpp's compile work (measured: object
+# cvista's usage and removes ~26% of impl.cpp's compile work (measured: object
 # code 4.02 MB -> 2.90 MB, ~-26% CPU on a warm -O3 build). These macros are
 # PUBLIC because they gate inline code in scan.h that consumers parse, so they
 # must agree across impl.cpp and every consumer TU for ABI consistency.
 vtk_module_definitions(VTK::scn
   PUBLIC
-    SCN_DISABLE_REGEX=1   # fvtk uses no regex scanning; drops the std::regex backend
-    SCN_DISABLE_LOCALE=1  # fvtk uses no locale-aware scanning ('L' flag / scan(locale,...))
+    SCN_DISABLE_REGEX=1   # cvista uses no regex scanning; drops the std::regex backend
+    SCN_DISABLE_LOCALE=1  # cvista uses no locale-aware scanning ('L' flag / scan(locale,...))
     SCN_REGEX_BACKEND=0 # std::regex
     SCN_DISABLE_FAST_FLOAT=0)
 

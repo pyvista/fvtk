@@ -31,24 +31,24 @@ def virtualenv(tmp_path: Path) -> VEnv:
     ),
 )
 def test_wrap_module(virtualenv: VEnv):
-    """Build and Python-wrap an out-of-tree VTK module against the fvtk-sdk.
+    """Build and Python-wrap an out-of-tree VTK module against the cvista-sdk.
 
     Installs the `wrap_module` project, which `find_package`s VTK (including the
     WrappingPythonCore component) and drives `vtk_module_scan` +
     `vtk_module_build` + `vtk_module_wrap_python` against the freshly built
-    `fvtk-sdk` wheel resolved through `--find-links`. A successful install means
+    `cvista-sdk` wheel resolved through `--find-links`. A successful install means
     the wrapper C++ compiled against the SDK headers and linked against
     `VTK::WrappingPythonCore`, proving the SDK supports both compiling AND
     Python-wrapping a downstream out-of-tree module end to end.
 
     This is a build-capability proof, mirroring `test_find_package`: it does not
     import the wrapped module at runtime, which would additionally require the
-    matching `fvtk` runtime wheel (the SDK ships the VTK libs unvendored for
+    matching `cvista` runtime wheel (the SDK ships the VTK libs unvendored for
     linking, not for loading). Instead it asserts the wrapped extension was
     produced inside the installed package.
 
     It also proves the SDK exports its abi3 (stable-ABI) wrapping setting: the
-    SDK's vtk-config re-exports FVTK_ABI3, so the downstream
+    SDK's vtk-config re-exports CVISTA_ABI3, so the downstream
     `vtk_module_wrap_python` inherits it and emits a version-INDEPENDENT
     extension (e.g. `SDKExample.abi3.so`) rather than a version-specific
     `SDKExample.cpython-3XX-<plat>.so`. The assertions below require at least one
@@ -83,6 +83,6 @@ def test_wrap_module(virtualenv: VEnv):
     versioned = [name for name in produced if version_tag.search(name)]
     assert not versioned, (
         "vtk_module_wrap_python produced a version-specific extension, so the "
-        "wrap did NOT inherit abi3 from the SDK (FVTK_ABI3 not exported): "
+        "wrap did NOT inherit abi3 from the SDK (CVISTA_ABI3 not exported): "
         f"{versioned}"
     )

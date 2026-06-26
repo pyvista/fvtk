@@ -1,19 +1,19 @@
-# fvtk-sdk
+# cvista-sdk
 
 ## Overview
 
-`fvtk-sdk` distributes the fvtk SDK (the VTK C++ headers, CMake config, and
-Python wrap tools from the same build that produced the `fvtk` runtime wheel) as
+`cvista-sdk` distributes the cvista SDK (the VTK C++ headers, CMake config, and
+Python wrap tools from the same build that produced the `cvista` runtime wheel) as
 a first-class Python wheel.
 
 The wheel registers a scikit-build-core `cmake.prefix`
 [entry point][scikit-build-core-entrypoint], so a downstream scikit-build-core
-project that depends on `fvtk-sdk` gets the bundled install tree on
+project that depends on `cvista-sdk` gets the bundled install tree on
 `CMAKE_PREFIX_PATH` automatically and `find_package(VTK CONFIG)` resolves to it.
-Install the SDK whose version matches your `fvtk` wheel.
+Install the SDK whose version matches your `cvista` wheel.
 
 ```bash
-pip install fvtk fvtk-sdk
+pip install cvista cvista-sdk
 ```
 
 ```cmake

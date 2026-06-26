@@ -10,7 +10,7 @@
 
 #include "vtkObject.h"
 #include "vtkPythonCommand.h"
-#include "vtkSMPTools.h" // fvtk: register GIL release/acquire hook for threaded SMP
+#include "vtkSMPTools.h" // cvista: register GIL release/acquire hook for threaded SMP
 #ifdef PY_LIMITED_API
 #include "vtkSmartPyObject.h"
 #endif
@@ -307,7 +307,7 @@ extern "C" int PyGILState_Check(void);
 
 namespace
 {
-// fvtk GIL-release hook for threaded SMP backends. Registered with
+// cvista GIL-release hook for threaded SMP backends. Registered with
 // vtkSMPTools::SetGilCallbacks so that, when a parallel vtkSMPTools::For runs,
 // the calling (master) thread drops the GIL while it blocks on the worker join.
 // This lets a worker thread acquire the GIL (via vtkPythonScopeGilEnsurer) to
@@ -333,7 +333,7 @@ void vtkPythonSMPGilAcquire(void* state)
 }
 
 // Register the hook the moment this Python wrapping translation unit is loaded
-// (i.e. as soon as any wrapped fvtk module is imported), independent of whether
+// (i.e. as soon as any wrapped cvista module is imported), independent of whether
 // vtkPythonUtil::Initialize() is invoked. SetGilCallbacks only stores two
 // function pointers -- no Python C-API call, no singleton -- so running it
 // during dynamic static-init is safe; the callbacks themselves touch Python
@@ -354,7 +354,7 @@ void vtkPythonUtil::Initialize()
   // create the singleton
   vtkPythonUtilCreateIfNeeded();
 
-  // fvtk: install the GIL release/acquire hook so a threaded SMP backend
+  // cvista: install the GIL release/acquire hook so a threaded SMP backend
   // (STDThread/TBB/OpenMP) does not deadlock when a worker thread invokes a
   // Python observer callback. Idempotent; harmless for the Sequential backend.
   vtkSMPTools::SetGilCallbacks(&vtkPythonSMPGilRelease, &vtkPythonSMPGilAcquire);
@@ -671,11 +671,11 @@ const char* vtkPythonUtil::GetTypeName(PyTypeObject* pytype)
   {
     return it->second.c_str();
   }
-  // The default build's tp_name is the FULL dotted name ("fvtk.vtkObject"),
+  // The default build's tp_name is the FULL dotted name ("cvista.vtkObject"),
   // which PyVTKObject_Repr and error messages embed verbatim. For a heap type
   // PyType_GetName returns only the leaf ("vtkObject") and the module lives in
   // __module__, so reconstruct "<module>.<qualname>" to stay byte-identical with
-  // the static tp_name. Builtin bases (e.g. PyLong) have no fvtk module; if
+  // the static tp_name. Builtin bases (e.g. PyLong) have no cvista module; if
   // __module__ is "builtins" or absent, fall back to the bare qualname.
   std::string s;
   PyObject* qname = PyType_GetQualName(pytype);
@@ -1227,7 +1227,7 @@ void vtkPythonUtil::AddModule(const char* name)
   vtkPythonMap->ModuleList->push_back(name);
 
   // Register module name into pending list for deferred side module loading
-  PyObject* pModule = PyImport_ImportModule("fvtk");
+  PyObject* pModule = PyImport_ImportModule("cvista");
   PyObject* pFunc = PyObject_GetAttrString(pModule, "on_vtk_module_init");
   PyObject* pArgs = PyTuple_New(1);
   PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(name));
@@ -1404,7 +1404,7 @@ void vtkPythonVoidFuncArgDelete(void* arg)
 // abi3 getset registry. The default build recovers the backing PyGetSetDef* of a
 // getset descriptor by casting the descriptor object and reading its private
 // d_getset/d_type fields (PyGetSetDescrObject is not in the stable ABI). Under
-// the limited API we instead record every PyGetSetDef* fvtk installs on a type,
+// the limited API we instead record every PyGetSetDef* cvista installs on a type,
 // keyed by (type, attribute name), at the moment the descriptor is created, and
 // look it up here. This reproduces FindGetSetDescriptor's exact result (the same
 // PyGetSetDef pointer) without touching any opaque CPython struct.

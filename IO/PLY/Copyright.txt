@@ -17,6 +17,6 @@ The vendored fast PLY parser (miniply.h / miniply.cxx) is:
 
 MIT License, Copyright (c) 2019 Vilya Harvey
 
-It backs the fvtk binary little-endian fast path in vtkPLYReader. The full MIT
+It backs the cvista binary little-endian fast path in vtkPLYReader. The full MIT
 license text is reproduced at the top of miniply.h and miniply.cxx.
 =========================================================================*/

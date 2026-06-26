@@ -1,4 +1,4 @@
-# CI closers: getting the fvtk PR gate to ≤20 min (ideal 10) on standard runners
+# CI closers: getting the cvista PR gate to ≤20 min (ideal 10) on standard runners
 
 Goal: drive the per-PR CI gate (`.github/workflows/ci.yml`) under 20 minutes
 (ideally 10) on **standard** GitHub runners (ubuntu-latest = 4 vCPU), with every
@@ -21,7 +21,7 @@ unity/2_28 work cannot reach.
     legs do **not** share ccache (separate runners). On the PR gate each leg
     builds exactly ONE python (no cross-cp sharing within a leg either), so the
     "ccache shared across the cp matrix" note in pyproject does not help the gate.
-  - `CIBW_ENVIRONMENT: FVTK_LTO=0 FVTK_SOURCE_UNITY=1`.
+  - `CIBW_ENVIRONMENT: CVISTA_LTO=0 CVISTA_SOURCE_UNITY=1`.
 - **bitexact** (`needs: build`): per-python, installs the wheel + stock vtk, runs
   the byte-exact suite. Tiny compute; cost is venv + pip + suite ≈ 1–3 min.
 - **renderexact** (`needs: build`): apt-installs Mesa, runs the pixel-exact render
@@ -47,7 +47,7 @@ support cpuset"), so builds cannot be pinned. Therefore:
   signal — not the absolute seconds, which a dedicated 4-vCPU ubuntu-latest runner
   would reproduce more cleanly (and likely faster, with no co-tenant builds).
 
-## Phase breakdown — build leg (cp312-abi3, -j4, FVTK_LTO=0 FVTK_SOURCE_UNITY=1)
+## Phase breakdown — build leg (cp312-abi3, -j4, CVISTA_LTO=0 CVISTA_SOURCE_UNITY=1)
 
 Fixed phases (validated, load-insensitive):
 
@@ -91,14 +91,14 @@ non-cacheable floor), the per-step durations are unambiguous:
 
 ## Levers (each measured at -j4)
 
-### 1. -O2 for the PR gate (release stays -O3) — `FVTK_GATE_O2=1`
+### 1. -O2 for the PR gate (release stays -O3) — `CVISTA_GATE_O2=1`
 
-Implemented in `fvtk-config/minimal.cmake` (overrides `CMAKE_CXX_FLAGS_RELEASE`/
-`CMAKE_C_FLAGS_RELEASE` to `-O2 -DNDEBUG` when `FVTK_GATE_O2=1`; release leaves it
+Implemented in `cvista-config/minimal.cmake` (overrides `CMAKE_CXX_FLAGS_RELEASE`/
+`CMAKE_C_FLAGS_RELEASE` to `-O2 -DNDEBUG` when `CVISTA_GATE_O2=1`; release leaves it
 unset → CMake's GNU Release default `-O3 -DNDEBUG`). Wired into the PR-gate
-`CIBW_ENVIRONMENT` next to `FVTK_LTO=0`.
+`CIBW_ENVIRONMENT` next to `CVISTA_LTO=0`.
 
-**Bit-exact: PROVEN.** The actual -O2 wheel (cp312-abi3, FVTK_LTO=0 FVTK_GATE_O2=1)
+**Bit-exact: PROVEN.** The actual -O2 wheel (cp312-abi3, CVISTA_LTO=0 CVISTA_GATE_O2=1)
 was run through the repo's `tests/bitexact` suite vs stock VTK 9.6.2:
 **160 passed, maxULP=0** — byte-for-byte identical. (Mechanism: without
 `-ffast-math`, GCC honours strict IEEE FP at both -O2 and -O3 and does not
@@ -140,10 +140,10 @@ cibuildwheel run — the gate builds one python per leg, so it never benefits.)
 
 The fix (implemented in `.github/workflows/ci.yml` + `CIBW_CONTAINER_ENGINE`):
 1. `push: branches: [main]` build refreshes a per-leg ccache and SAVES it under
-   `fvtk-ccache-<leg>-<run_id>`.
-2. PR-gate build restores the latest seed via `restore-keys: fvtk-ccache-<leg>-`
+   `cvista-ccache-<leg>-<run_id>`.
+2. PR-gate build restores the latest seed via `restore-keys: cvista-ccache-<leg>-`
    (branch scoping lets a PR read its base branch main's cache).
-3. `CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/fvtk-cibw-ccache:/ccache"`
+3. `CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/cvista-cibw-ccache:/ccache"`
    mounts the restored host dir into the build container so ccache actually
    reads/writes the seed (CCACHE_DIR=/ccache is already set in pyproject).
 
@@ -214,14 +214,14 @@ consolidation:
    by the `push: branches: [main]` build; mount it into the cibuildwheel container.
    Turns the COMMON case (PR iteration on a warm cache) into a **~3.5-min** build
    leg (100 % hit → 99.7 s build + overhead). This is what reaches ≤10.
-2. **-O2 gate** (lever 1, `FVTK_GATE_O2=1`) — free, bit-exact (160/160 maxULP=0),
+2. **-O2 gate** (lever 1, `CVISTA_GATE_O2=1`) — free, bit-exact (160/160 maxULP=0),
    ~4–6 % off the COLD build. Trims the cold worst-case (no-seed) margin and the
    recompile cost of large PRs. Release stays -O3.
 
 Both are in `perf/ci-closers`:
-- `fvtk-config/minimal.cmake`: `FVTK_GATE_O2` block.
+- `cvista-config/minimal.cmake`: `CVISTA_GATE_O2` block.
 - `.github/workflows/ci.yml`: `push: [main]` trigger; per-leg `actions/cache`
-  restore/save; `CIBW_ENVIRONMENT += FVTK_GATE_O2=1`;
+  restore/save; `CIBW_ENVIRONMENT += CVISTA_GATE_O2=1`;
   `CIBW_CONTAINER_ENGINE` ccache mount.
 
 ### Will it hit the targets?
@@ -254,7 +254,7 @@ the cold tail.
   convenient; not a headline.
 - **ICF-off on the gate (attack the link floor): TESTED, NOT recommended.** Since
   links are the warm floor and aren't ccache-able, dropping gold `--icf=all`
-  (`FVTK_ICF=0`, gate-only, bit-exact — ICF is layout/size only) was an obvious
+  (`CVISTA_ICF=0`, gate-only, bit-exact — ICF is layout/size only) was an obvious
   candidate to speed linking. Measured the opposite/at-best-flat: a warm
   ICF-off build's big-kit links were *not* faster than ICF-on in the runs I could
   get (libvtkCommon/libvtkFilters link wall was higher, but under heavier

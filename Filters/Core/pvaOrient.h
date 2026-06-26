@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //
-// fvtk opt-in fast polygon-orientation kernel (an fvtk original, not vendored).
+// cvista opt-in fast polygon-orientation kernel (an cvista original, not vendored).
 //
 // Parallel, deterministic replacement for vtkOrientPolyData::TraverseAndOrder --
 // the serial single-threaded BFS wave that propagates a consistent winding
@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------
 //
 //   1. Parallel connected-component labels over the cell edge-neighbor graph,
-//      via the same lock-free atomic union-find used by fvtkFastConnectivity
+//      via the same lock-free atomic union-find used by cvistaFastConnectivity
 //      (link the larger root to the smaller, so each component root == its
 //      MINIMUM cell index -- the canonical seed). The same pass detects
 //      non-manifold edges (> 2 incident cells) and builds, per cell, the
@@ -53,7 +53,7 @@
 #ifndef pvaOrient_h
 #define pvaOrient_h
 
-#ifdef FVTK_HAVE_OPENMP
+#ifdef CVISTA_HAVE_OPENMP
 
 #include "vtkIdList.h"
 #include "vtkNew.h"
@@ -70,7 +70,7 @@ namespace pva
 namespace orient
 {
 
-// Concurrent disjoint-set, matching fvtkFastConnectivity's: relaxed atomics on
+// Concurrent disjoint-set, matching cvistaFastConnectivity's: relaxed atomics on
 // parent[]; union links the LARGER root to the SMALLER so each component's final
 // root is its MINIMUM cell index (the canonical seed).
 inline vtkIdType ufLoad(vtkIdType* parent, vtkIdType x)
@@ -328,6 +328,6 @@ inline OrientResult Run(vtkPolyData* mesh, bool flipAllNormals)
 } // namespace orient
 } // namespace pva
 
-#endif // FVTK_HAVE_OPENMP
+#endif // CVISTA_HAVE_OPENMP
 #endif // pvaOrient_h
 // VTK-HeaderTest-Exclude: pvaOrient.h

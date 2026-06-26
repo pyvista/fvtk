@@ -10,7 +10,7 @@
 #include "vtkIdList.h"
 #include "vtkInformation.h"
 #include "vtkInformationVector.h"
-#include "vtkFVTKSMPDefaults.h"
+#include "vtkCVISTASMPDefaults.h"
 #include "vtkObjectFactory.h"
 #include "vtkSMPTools.h"
 #include "vtkStreamingDemandDrivenPipeline.h"
@@ -262,10 +262,10 @@ struct vtkThreshold::EvaluateCellsWorker
   {
     EvaluateCellsFunctor<TScalarArray> functor(
       self, input, scalarsArray, ghostArray, usePointScalars, keptCellsList);
-    // fvtk: per-cell boolean predicate writes only its own pre-sized insideness slot,
+    // cvista: per-cell boolean predicate writes only its own pre-sized insideness slot,
     // with a serial deterministic Reduce() — thread-count-invariant, so byte-exact vs
     // stock. Default-on (bucket 1) under the thread-count-capped LocalScope.
-    fvtk::RunSafeFilterParallel(
+    cvista::RunSafeFilterParallel(
       [&]() { vtkSMPTools::For(0, input->GetNumberOfCells(), functor); });
   }
 };

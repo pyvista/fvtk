@@ -1,16 +1,16 @@
 ---
 name: backport-vtk
-description: Sweep recently merged upstream VTK merge requests, triage the bug fixes and features that matter to fvtk's shipped modules, and land each as its own PR linked back to the original MR. Use when asked to check upstream VTK for backports, catch fvtk up on upstream fixes, or port a specific VTK MR. Drives the vtk-backport-engineer agent for the per-MR landing work.
+description: Sweep recently merged upstream VTK merge requests, triage the bug fixes and features that matter to cvista's shipped modules, and land each as its own PR linked back to the original MR. Use when asked to check upstream VTK for backports, catch cvista up on upstream fixes, or port a specific VTK MR. Drives the vtk-backport-engineer agent for the per-MR landing work.
 ---
 
-# Backporting upstream VTK fixes into fvtk
+# Backporting upstream VTK fixes into cvista
 
-fvtk is frozen on VTK **9.6.2** (upstream tag `v9.6.2`, project `vtk/vtk` id `13` on
+cvista is frozen on VTK **9.6.2** (upstream tag `v9.6.2`, project `vtk/vtk` id `13` on
 `gitlab.kitware.com`). Upstream keeps moving — its `master` is on the 9.7.0 cycle. Real bug
-fixes and useful features land upstream after the 9.6.2 cut, and fvtk should pull in the ones
+fixes and useful features land upstream after the 9.6.2 cut, and cvista should pull in the ones
 that affect the modules it ships. Each backport is **one MR → one PR, linked to the MR**.
 
-fvtk's root commit is a squash of 9.6.2, so there is **no shared git history with upstream**.
+cvista's root commit is a squash of 9.6.2, so there is **no shared git history with upstream**.
 `git cherry-pick` does not work. A backport applies the MR's diff and adapts it to the 9.6.2
 tree by hand where context has drifted.
 
@@ -29,13 +29,13 @@ agent. The ledger of what has been backported, skipped, or is pending is `docs/u
    file paths, and web_url for each.
 
 3. **Triage each MR** (heuristics in the reference file; the short version):
-   - **Skip** if every changed file is absent from the fvtk tree (`git ls-files <path>` empty) —
+   - **Skip** if every changed file is absent from the cvista tree (`git ls-files <path>` empty) —
      that module was trimmed, so the fix is irrelevant. This is the strongest, cheapest filter.
    - **Skip** infra, docs, CI, ThirdParty bumps, deprecation churn, and changes only to modules
-     fvtk does not ship.
+     cvista does not ship.
    - **Take** crash / correctness / memory-safety fixes touching shipped modules (highest
      value). Take user-visible feature or behavior fixes case by case.
-   - **Defer** performance MRs by default — fvtk has its own perf line under the parity
+   - **Defer** performance MRs by default — cvista has its own perf line under the parity
      contract, and an upstream perf change may conflict with it. Flag, do not auto-land.
    - When unsure, mark **pending** in the ledger and surface it for a human call rather than
      guessing.
@@ -62,11 +62,11 @@ Each agent, for its one MR:
    `tests/bitexact/` op to the corrected expectation and note the divergence (see the
    `parity-contract` skill). A crash/guard fix on degenerate input usually leaves valid-input
    output unchanged, so add a regression test for the degenerate case instead.
-4. Build (`PROFILE=fast ./build-fvtk.sh`) and run the relevant gate (bitexact / renderexact /
+4. Build (`PROFILE=fast ./build-cvista.sh`) and run the relevant gate (bitexact / renderexact /
    regression) to prove the fix and the parity story.
 5. Open the PR. The body **must** link the upstream MR
    (`https://gitlab.kitware.com/vtk/vtk/-/merge_requests/<iid>`), summarize the upstream defect
-   in fvtk's own words, state the parity bucket, and attach the gate evidence. Commit and PR
+   in cvista's own words, state the parity bucket, and attach the gate evidence. Commit and PR
    prose follow `.claude/CLAUDE.md` (single-line conventional commit, no AI attribution,
    prose-hygiene pass). Keep it framed around PyVista and VTK; no downstream-consumer rationale.
 6. Report back the PR number and the parity outcome.

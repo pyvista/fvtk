@@ -4,10 +4,10 @@
 PyVista never imports the gtk/tk/wx/test helper subpackages, but VTK's generated
 setup.py hardcodes them in ``packages=[...]``. Remove both the directories and the
 setup.py references so ``setup.py bdist_wheel`` doesn't fail on missing dirs.
-Mirrors the same step in build-fvtk.sh.
+Mirrors the same step in build-cvista.sh.
 
 The ``qt`` subpackage is deliberately KEPT: pyvistaqt imports ``vtkmodules.qt``
-(redirected to ``fvtk.qt``) for ``PyQtImpl`` / ``QVTKRenderWindowInteractor``, and
+(redirected to ``cvista.qt``) for ``PyQtImpl`` / ``QVTKRenderWindowInteractor``, and
 dropping it breaks pyvistaqt at import time (gh-142). It is pure Python and pulls
 in no Qt binding unless one is already imported, so shipping it is free.
 
@@ -25,8 +25,8 @@ SUBPACKAGES = ("gtk", "tk", "wx", "test")
 
 def main(build_dir: str) -> int:
     # The package dir is named after the current namespace; handle both the
-    # current "vtkmodules" and the future "fvtk" rename.
-    pkg_names = ("vtkmodules", "fvtk")
+    # current "vtkmodules" and the future "cvista" rename.
+    pkg_names = ("vtkmodules", "cvista")
     for pkg in pkg_names:
         for sub in SUBPACKAGES:
             for d in [
@@ -42,7 +42,7 @@ def main(build_dir: str) -> int:
         with open(setup_py, "r", encoding="utf-8") as fh:
             text = fh.read()
         pat = re.compile(
-            r"^.*'(?:vtkmodules|fvtk)\.(?:gtk|tk|wx|test)',?.*$\n?",
+            r"^.*'(?:vtkmodules|cvista)\.(?:gtk|tk|wx|test)',?.*$\n?",
             re.MULTILINE,
         )
         new_text, n = pat.subn("", text)

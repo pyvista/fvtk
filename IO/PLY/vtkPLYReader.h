@@ -119,7 +119,7 @@ private:
   void operator=(const vtkPLYReader&) = delete;
 
   /**
-   * fvtk fast path: bulk-column read of a binary little-endian PLY using the
+   * cvista fast path: bulk-column read of a binary little-endian PLY using the
    * vendored miniply parser. Reads only from `FileName` (not stream/string).
    * Returns 1 if it fully populated `output`, -1 if the file is outside the
    * fast path's narrow envelope (caller must fall back to the legacy reader),

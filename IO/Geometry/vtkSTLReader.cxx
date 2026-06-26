@@ -42,7 +42,7 @@ vtkCxxSetObjectMacro(vtkSTLReader, BinaryHeader, vtkUnsignedCharArray);
 
 namespace
 {
-// === fvtk fast binary-STL hash-merge ========================================
+// === cvista fast binary-STL hash-merge ========================================
 // Ported from the fast STL reader in github.com/pyvista/stl-reader: the libstl
 // 96-bit vertex hash by Aki Nyrhinen (MIT-licensed), with the VTK integration
 // by Alex Kaszynski. The 96-bit Jenkins hash + EXACT 3-word (bitwise float)
@@ -53,7 +53,7 @@ namespace
 //
 // MIT License, Copyright (c) 2016 Aki Nyrhinen; modifications (c) A. Kaszynski.
 
-inline uint32_t fvtkStlNextPow2(uint32_t v)
+inline uint32_t cvistaStlNextPow2(uint32_t v)
 {
   v--;
   v |= v >> 1;
@@ -64,7 +64,7 @@ inline uint32_t fvtkStlNextPow2(uint32_t v)
   return ++v;
 }
 
-inline uint32_t fvtkStlFinal96(uint32_t a, uint32_t b, uint32_t c)
+inline uint32_t cvistaStlFinal96(uint32_t a, uint32_t b, uint32_t c)
 {
   auto rot = [](uint32_t x, int k) { return (x << k) | (x >> (32 - k)); };
   c ^= b;
@@ -86,13 +86,13 @@ inline uint32_t fvtkStlFinal96(uint32_t a, uint32_t b, uint32_t c)
 
 // Little-endian 32-bit load (endian-agnostic; matches vtkByteSwap::Swap4LE
 // interpretation of the on-disk float bits on every host).
-inline uint32_t fvtkStlGet32LE(const uint8_t* b)
+inline uint32_t cvistaStlGet32LE(const uint8_t* b)
 {
   return static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
     (static_cast<uint32_t>(b[2]) << 16) | (static_cast<uint32_t>(b[3]) << 24);
 }
 
-inline bool fvtkStlWordFinite(uint32_t w)
+inline bool cvistaStlWordFinite(uint32_t w)
 {
   float f;
   std::memcpy(&f, &w, sizeof(f));
@@ -103,7 +103,7 @@ inline bool fvtkStlWordFinite(uint32_t w)
 // same point. Bit-equality is identical to value-equality for every finite
 // float EXCEPT this one case, so canonicalize -0.0 (0x80000000) to +0.0. The
 // stored coordinate is then +0.0, which is value-identical to either zero.
-inline uint32_t fvtkStlCanonZero(uint32_t w)
+inline uint32_t cvistaStlCanonZero(uint32_t w)
 {
   return w == 0x80000000u ? 0u : w;
 }
@@ -111,13 +111,13 @@ inline uint32_t fvtkStlCanonZero(uint32_t w)
 // Open-addressing (linear-probe) vertex merge keyed on the exact 3x32-bit
 // pattern (== bitwise float equality). Vertex ids are assigned in first-seen
 // order; Vertices() holds 3 bit-preserved floats per unique vertex.
-class fvtkStlVertexMerger
+class cvistaStlVertexMerger
 {
 public:
-  explicit fvtkStlVertexMerger(size_t estVerts)
+  explicit cvistaStlVertexMerger(size_t estVerts)
   {
     const size_t cap =
-      fvtkStlNextPow2(static_cast<uint32_t>(std::max<size_t>(estVerts * 2, 16)));
+      cvistaStlNextPow2(static_cast<uint32_t>(std::max<size_t>(estVerts * 2, 16)));
     this->Table.assign(cap, 0);
     this->Mask = static_cast<uint32_t>(cap - 1);
     this->Verts.reserve(estVerts * 3);
@@ -130,7 +130,7 @@ public:
     {
       this->Grow();
     }
-    const uint32_t hash = fvtkStlFinal96(w[0], w[1], w[2]);
+    const uint32_t hash = cvistaStlFinal96(w[0], w[1], w[2]);
     for (uint32_t i = 0;; ++i)
     {
       uint32_t& slot = this->Table[(hash + i) & this->Mask];
@@ -166,7 +166,7 @@ private:
     {
       uint32_t w[3];
       std::memcpy(w, &this->Verts[3 * vi], sizeof(w));
-      const uint32_t hash = fvtkStlFinal96(w[0], w[1], w[2]);
+      const uint32_t hash = cvistaStlFinal96(w[0], w[1], w[2]);
       for (uint32_t i = 0;; ++i)
       {
         uint32_t& slot = this->Table[(hash + i) & this->Mask];
@@ -250,7 +250,7 @@ int vtkSTLReader::RequestData(vtkInformation* vtkNotUsed(request),
     stream = fileStream;
   }
 
-  // fvtk fast path: single-pass hash-merge reader for the DEFAULT configuration
+  // cvista fast path: single-pass hash-merge reader for the DEFAULT configuration
   // (Merging on, default locator, ScalarTags off). It produces the same
   // fundamental mesh as the locator-merge path below -- same exact-coincident
   // merged point SET and the same triangles (degenerate triangles dropped) --
@@ -389,7 +389,7 @@ int vtkSTLReader::RequestData(vtkInformation* vtkNotUsed(request),
 }
 
 //------------------------------------------------------------------------------
-// fvtk fast path. Returns 1 (handled), 0 (hard error, ErrorCode set), or
+// cvista fast path. Returns 1 (handled), 0 (hard error, ErrorCode set), or
 // -1 (decline -> caller uses the legacy locator path). Currently handles BINARY
 // STL only: it stores raw IEEE-754 float bits, so merged points are byte-exact
 // vs the legacy path (positions are sacred). ASCII is declined (-1) because its
@@ -432,7 +432,7 @@ int vtkSTLReader::ReadSTLFast(vtkResourceStream* stream, vtkPolyData* output)
     return -1; // legacy reproduces the exact "Remaining file length bad" error
   }
   const vtkTypeInt64 numFile = bodyLen / 50;
-  const uint32_t numField = fvtkStlGet32LE(buf.data() + 80);
+  const uint32_t numField = cvistaStlGet32LE(buf.data() + 80);
   if (static_cast<vtkTypeInt64>(numField) != numFile && !this->RelaxedConformance)
   {
     return -1; // legacy reproduces the strict count-mismatch error
@@ -450,7 +450,7 @@ int vtkSTLReader::ReadSTLFast(vtkResourceStream* stream, vtkPolyData* output)
   this->SetHeader(reinterpret_cast<char*>(this->BinaryHeader->GetPointer(0)));
   this->BinaryHeader->Resize(80);
 
-  fvtkStlVertexMerger merger(static_cast<size_t>(numFile) * 3);
+  cvistaStlVertexMerger merger(static_cast<size_t>(numFile) * 3);
 
   // Build the triangle connectivity directly into a contiguous buffer (upper
   // bound numFile*3) rather than calling InsertNextCell per triangle; offsets
@@ -468,8 +468,8 @@ int vtkSTLReader::ReadSTLFast(vtkResourceStream* stream, vtkPolyData* output)
     uint32_t w12[12];
     for (int k = 0; k < 12; ++k)
     {
-      const uint32_t x = fvtkStlGet32LE(rec + 4 * k);
-      if (!fvtkStlWordFinite(x))
+      const uint32_t x = cvistaStlGet32LE(rec + 4 * k);
+      if (!cvistaStlWordFinite(x))
       {
         return -1; // non-finite -> legacy emits the precise error + ErrorCode
       }
@@ -478,8 +478,8 @@ int vtkSTLReader::ReadSTLFast(vtkResourceStream* stream, vtkPolyData* output)
     vtkIdType nodes[3];
     for (int v = 0; v < 3; ++v)
     {
-      const uint32_t w[3] = { fvtkStlCanonZero(w12[3 + 3 * v]),
-        fvtkStlCanonZero(w12[4 + 3 * v]), fvtkStlCanonZero(w12[5 + 3 * v]) };
+      const uint32_t w[3] = { cvistaStlCanonZero(w12[3 + 3 * v]),
+        cvistaStlCanonZero(w12[4 + 3 * v]), cvistaStlCanonZero(w12[5 + 3 * v]) };
       nodes[v] = static_cast<vtkIdType>(merger.Insert(w));
     }
     // Drop degenerate triangles (>=2 merged vertices coincide), as the legacy
@@ -494,8 +494,8 @@ int vtkSTLReader::ReadSTLFast(vtkResourceStream* stream, vtkPolyData* output)
   }
 
   // Finalize the cell array: shrink connectivity to the kept triangles and
-  // synthesize the uniform offset array (0, 3, 6, ...). Per the fvtk int32-
-  // default rule ([[fvtk-int32-default-width-relaxed]]), store offsets and
+  // synthesize the uniform offset array (0, 3, 6, ...). Per the cvista int32-
+  // default rule ([[cvista-int32-default-width-relaxed]]), store offsets and
   // connectivity as int32 when every value fits -- numFile*3 bounds both the
   // largest offset (nKept*3) and the largest vertex index (numPts <= nKept*3) --
   // widening to int64 only for >2^31-element meshes. int32 halves the cell-array

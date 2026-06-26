@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# PyVista parity gate: run PyVista's OWN full test suite against the built fvtk
-# wheel, with `vtkmodules.*` redirected to `fvtk.*`. This proves the contract
+# PyVista parity gate: run PyVista's OWN full test suite against the built cvista
+# wheel, with `vtkmodules.*` redirected to `cvista.*`. This proves the contract
 # downstream actually depends on — not just our internal bit-exact / pixel-exact
 # gates, but PyVista's thousands of behavioral + plotting assertions driving the
-# fvtk graphics + data stack.
+# cvista graphics + data stack.
 #
 # Sister to ci/run-bitexact.sh / ci/run-renderexact.sh, but instead of our own
 # vtkmodules-only scenes it installs PyVista (pinned to tests/pyvista/PYVISTA_REF)
 # and runs its suite. ONE venv: stock `vtk` is NEVER installed, so any import
-# that slips past the fvtk shim fails loud (ModuleNotFoundError) rather than
+# that slips past the cvista shim fails loud (ModuleNotFoundError) rather than
 # silently testing stock VTK — never a false green.
 #
 # Heavy by design (full suite, software GL). NOT on the PR fast path — see the
@@ -58,7 +58,7 @@ if [ ! -e "$PVDIR/pyproject.toml" ]; then
 fi
 echo ">>> PyVista @ $(git -C "$PVDIR" rev-parse --short HEAD) (pinned $REF)"
 
-# --- venv: PyVista (no deps) + test group + fvtk wheel + redirect shim -------
+# --- venv: PyVista (no deps) + test group + cvista wheel + redirect shim -------
 "$BASE_PY" -m venv /tmp/pv
 /tmp/pv/bin/pip -q install --upgrade pip
 # Non-editable: the clone dir is named `pyvista`, which an editable install
@@ -68,33 +68,33 @@ echo ">>> PyVista @ $(git -C "$PVDIR" rev-parse --short HEAD) (pinned $REF)"
 # PyVista's `test` dependency-group (pytest, pytest-xdist, pytest-pyvista, ...).
 # pytest-timeout is NOT in that group, so add it explicitly for --timeout.
 /tmp/pv/bin/pip -q install --group "$PVDIR/pyproject.toml:test" pytest-timeout
-# Built fvtk wheel. Install it FIRST with --no-index: WHEELDIR holds a pre-release
-# (.devN) wheel, and a bare `fvtk` requirement lets pip prefer a published PyPI
+# Built cvista wheel. Install it FIRST with --no-index: WHEELDIR holds a pre-release
+# (.devN) wheel, and a bare `cvista` requirement lets pip prefer a published PyPI
 # release over it — silently testing the released version instead of this build.
 # --no-index forces the local wheel (pip still tag-matches it); the second install
-# resolves fvtk's own deps (matplotlib/numpy/...) from PyPI without pulling the
-# published release (fvtk is already satisfied).
-/tmp/pv/bin/pip -q install --no-index --no-deps --find-links "$WHEELDIR" fvtk
-/tmp/pv/bin/pip -q install --find-links "$WHEELDIR" fvtk
-# vtkmodules.* -> fvtk.* redirect, active at interpreter startup via sitecustomize
+# resolves cvista's own deps (matplotlib/numpy/...) from PyPI without pulling the
+# published release (cvista is already satisfied).
+/tmp/pv/bin/pip -q install --no-index --no-deps --find-links "$WHEELDIR" cvista
+/tmp/pv/bin/pip -q install --find-links "$WHEELDIR" cvista
+# vtkmodules.* -> cvista.* redirect, active at interpreter startup via sitecustomize
 # (.pth). Same shim the bit-exact / PGO harnesses use.
 SP=$(/tmp/pv/bin/python -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')
-cp "$SRC/tools/fvtk_shim.py" "$SP/_fvtk_shim.py"
-echo "import _fvtk_shim" > "$SP/_fvtk_shim.pth"
+cp "$SRC/tools/cvista_shim.py" "$SP/_cvista_shim.py"
+echo "import _cvista_shim" > "$SP/_cvista_shim.pth"
 # Put the venv's bin on PATH: we invoke python by absolute path (no `activate`),
 # so without this the CLI tests that shell out to the bare `pyvista`/`pytest`
 # console-scripts get FileNotFoundError.
 export PATH="/tmp/pv/bin:$PATH"
 
-# --- identity: prove PyVista is driving fvtk through the shim ----------------
+# --- identity: prove PyVista is driving cvista through the shim ----------------
 /tmp/pv/bin/python - <<'PY'
 import vtkmodules
-assert "fvtk" in (vtkmodules.__file__ or ""), \
-    f"vtkmodules NOT redirected to fvtk (got {vtkmodules.__file__!r}) -- shim failed"
-import fvtk, pyvista
+assert "cvista" in (vtkmodules.__file__ or ""), \
+    f"vtkmodules NOT redirected to cvista (got {vtkmodules.__file__!r}) -- shim failed"
+import cvista, pyvista
 from vtkmodules.vtkCommonCore import vtkVersion
 print("vtkmodules ->", vtkmodules.__file__)
-print("fvtk       ->", fvtk.__file__)
+print("cvista       ->", cvista.__file__)
 print("VTK version->", vtkVersion.GetVTKVersion())
 print("pyvista    ->", pyvista.__version__, pyvista.__file__)
 PY
@@ -109,7 +109,7 @@ while IFS= read -r raw || [ -n "$raw" ]; do
     [ -n "$line" ] && DESELECT+=(--deselect "$line")
 done < "$HERE/deselect.txt"
 
-# snake_case opt-out: if this fvtk wheel was built with VTK_DISABLE_PYTHON_
+# snake_case opt-out: if this cvista wheel was built with VTK_DISABLE_PYTHON_
 # PROPERTIES, VTK emits no `obj.snake_case` descriptors and PyVista's snake_case
 # tests fail BY DESIGN, not by regression. Probe at runtime and deselect only
 # then, so the gate still exercises them against a wheel built WITH properties.

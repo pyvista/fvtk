@@ -13,7 +13,7 @@ needs no GL context and runs anywhere the wheel installs.
 
 
 def test_io_image_classes_import():
-    from fvtk.vtkIOImage import vtkPNGReader, vtkPNGWriter
+    from cvista.vtkIOImage import vtkPNGReader, vtkPNGWriter
 
     # Instantiation confirms the wrapped class is real, not just a name.
     assert vtkPNGReader() is not None

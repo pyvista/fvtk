@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Pixel-exact RENDER gate: assert the built fvtk wheel renders BYTE-FOR-BYTE
+# Pixel-exact RENDER gate: assert the built cvista wheel renders BYTE-FOR-BYTE
 # identical framebuffers to stock VTK 9.6.2 through the SAME software GL driver.
 #
 # Sister to ci/run-bitexact.sh, but for the rendering pipeline (tests/renderexact)
@@ -23,7 +23,7 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 OUT="${RENDEREXACT_OUTDIR:-/tmp/rx-out}"
 rm -rf "$OUT"
-mkdir -p "$OUT/stock" "$OUT/fvtk"
+mkdir -p "$OUT/stock" "$OUT/cvista"
 
 # Force Mesa software EGL so BOTH backends render against an identical driver.
 # On ubuntu-latest llvmpipe is the only (and therefore device-0) EGL device.
@@ -39,34 +39,34 @@ export VTK_EGL_DEVICE_INDEX="${VTK_EGL_DEVICE_INDEX:-0}"
 /tmp/rx-stock/bin/pip -q install "numpy==2.4.6" "vtk==9.6.2"
 
 # Install the freshly built wheel FIRST with --no-index: WHEELDIR holds a
-# pre-release (.devN) wheel, and a bare `fvtk` requirement lets pip prefer a
+# pre-release (.devN) wheel, and a bare `cvista` requirement lets pip prefer a
 # published PyPI release over it — silently testing the released version instead
 # of this build. --no-index forces the local wheel (pip still tag-matches it);
-# the second install resolves fvtk's deps from PyPI without pulling the published
-# release (fvtk is already satisfied).
-"$BASE_PY" -m venv /tmp/rx-fvtk
-/tmp/rx-fvtk/bin/pip -q install --upgrade pip "numpy==2.4.6"
-/tmp/rx-fvtk/bin/pip -q install --no-index --no-deps --find-links "$WHEELDIR" fvtk
-/tmp/rx-fvtk/bin/pip -q install --find-links "$WHEELDIR" fvtk
-SP=$(/tmp/rx-fvtk/bin/python -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')
-cp "$SRC/tools/fvtk_shim.py" "$SP/_fvtk_shim.py"
-echo "import _fvtk_shim" > "$SP/_fvtk_shim.pth"
+# the second install resolves cvista's deps from PyPI without pulling the published
+# release (cvista is already satisfied).
+"$BASE_PY" -m venv /tmp/rx-cvista
+/tmp/rx-cvista/bin/pip -q install --upgrade pip "numpy==2.4.6"
+/tmp/rx-cvista/bin/pip -q install --no-index --no-deps --find-links "$WHEELDIR" cvista
+/tmp/rx-cvista/bin/pip -q install --find-links "$WHEELDIR" cvista
+SP=$(/tmp/rx-cvista/bin/python -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')
+cp "$SRC/tools/cvista_shim.py" "$SP/_cvista_shim.py"
+echo "import _cvista_shim" > "$SP/_cvista_shim.pth"
 
 cd "$SRC/tests/renderexact"
 
 # Render every scene under each backend (the vtkmodules import resolves per-venv).
 /tmp/rx-stock/bin/python run_render.py "$OUT/stock"
-/tmp/rx-fvtk/bin/python  run_render.py "$OUT/fvtk"
+/tmp/rx-cvista/bin/python  run_render.py "$OUT/cvista"
 
 # Pixel-exact diff + GL-driver-match gate (exits non-zero on any diff / mismatch).
 # Use the stock venv's python — compare_render.py needs numpy.
-/tmp/rx-stock/bin/python compare_render.py "$OUT/stock" "$OUT/fvtk"
+/tmp/rx-stock/bin/python compare_render.py "$OUT/stock" "$OUT/cvista"
 
 # Hardware-selection (picking) parity: prove the GPU selection path remaps picked
 # point ids through the width-relaxed int32 vtkOriginalPointIds array to the SAME
 # original ids as stock VTK's int64 array. This path is invisible to the pixel
 # gate above, so it gets its own selected-id comparison under the same EGL driver.
-mkdir -p "$OUT/sel-stock" "$OUT/sel-fvtk"
+mkdir -p "$OUT/sel-stock" "$OUT/sel-cvista"
 /tmp/rx-stock/bin/python run_select.py "$OUT/sel-stock"
-/tmp/rx-fvtk/bin/python  run_select.py "$OUT/sel-fvtk"
-/tmp/rx-stock/bin/python compare_select.py "$OUT/sel-stock" "$OUT/sel-fvtk"
+/tmp/rx-cvista/bin/python  run_select.py "$OUT/sel-cvista"
+/tmp/rx-stock/bin/python compare_select.py "$OUT/sel-stock" "$OUT/sel-cvista"

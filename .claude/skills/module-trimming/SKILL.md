@@ -1,31 +1,31 @@
 ---
 name: module-trimming
-description: How fvtk trims VTK down to PyVista's module closure — the three levers (module deny-list, NOWRAP classes, NOCOMPILE classes), the FVTK_KEEP_CLASSES override, closure rules, and how to add, remove, or restore a class or module safely. Load when a PyVista path needs a class fvtk dropped, when shrinking the wheel further, or when a build fails because something is missing.
+description: How cvista trims VTK down to PyVista's module closure — the three levers (module deny-list, NOWRAP classes, NOCOMPILE classes), the CVISTA_KEEP_CLASSES override, closure rules, and how to add, remove, or restore a class or module safely. Load when a PyVista path needs a class cvista dropped, when shrinking the wheel further, or when a build fails because something is missing.
 ---
 
 # Module and class trimming
 
-fvtk ships ~84 modules (PyVista's measured closure) out of VTK's ~160, and within those modules
+cvista ships ~84 modules (PyVista's measured closure) out of VTK's ~160, and within those modules
 drops classes PyVista never touches. The result is a ~37 MB wheel vs stock's ~120 MB. The full
 rationale and measurements are in `docs/build-internals.md` (levers 1–11). This skill is the
 operational guide.
 
 ## The three levers
 
-All three live in `fvtk-config/`. The class lists are **append-only and closure-closed by
+All three live in `cvista-config/`. The class lists are **append-only and closure-closed by
 design** — every entry is there because nothing kept refers to it.
 
-1. **Module deny-list** — `fvtk-config/_modules_minimal.cmake`
+1. **Module deny-list** — `cvista-config/_modules_minimal.cmake`
    `VTK_BUILD_ALL_MODULES OFF`; only PyVista's closure is enabled via WANT/YES. This is ~53
    direct C++ imports plus the IO format readers reached through the object factory plus the
    rendering impl modules (`RenderingContextOpenGL2`, `RenderingGL2PSOpenGL2`).
 
-2. **Lever A — NOWRAP** — `fvtk-config/_nowrap_classes.cmake` (~1,173 classes)
+2. **Lever A — NOWRAP** — `cvista-config/_nowrap_classes.cmake` (~1,173 classes)
    The C++ compiles, but the Python wrapper is skipped. Closed under header references from kept
    classes plus the `vtkmodules` bundled imports. **Removing an entry is zero-risk** (you only
    add a wrapper back). Adding an entry needs a check that no kept Python path imports it.
 
-3. **Lever B — NOCOMPILE** — `fvtk-config/_nocompile_classes.cmake` (~742 classes)
+3. **Lever B — NOCOMPILE** — `cvista-config/_nocompile_classes.cmake` (~742 classes)
    Dropped entirely: no compile, no wrapper, no hierarchy. Closed under C++ source references,
    transitive `::New()` bases, and generated ObjectFactory registrations. **Adding an entry
    needs closure analysis** (nothing kept may reference it, directly or via factory). Removing an
@@ -39,7 +39,7 @@ A PyVista path needs `vtkFooBar`, but it was trimmed and import fails or a filte
 
 1. Find where it was dropped:
    ```bash
-   grep -rn vtkFooBar fvtk-config/_nowrap_classes.cmake fvtk-config/_nocompile_classes.cmake
+   grep -rn vtkFooBar cvista-config/_nowrap_classes.cmake cvista-config/_nocompile_classes.cmake
    ```
 2. **Two ways to restore:**
    - **Permanent** (the right fix when PyVista genuinely needs it): delete the line from the
@@ -49,11 +49,11 @@ A PyVista path needs `vtkFooBar`, but it was trimmed and import fails or a filte
    - **Ad-hoc / to test** (no canonical-list edit): pass it at configure time. This is the
      supported override:
      ```bash
-     cmake ... -DFVTK_KEEP_CLASSES="vtkFooBar;vtkBazQux"
+     cmake ... -DCVISTA_KEEP_CLASSES="vtkFooBar;vtkBazQux"
      ```
-     `FVTK_KEEP_CLASSES` subtracts each class from both deny-lists, so it compiles and wraps,
-     and leaves the canonical lists untouched. Set via env for `build-fvtk.sh`. (Added in #106.)
-3. Validate: configure in a fresh build dir, build, `python smoke-fvtk.py`, then the bitexact
+     `CVISTA_KEEP_CLASSES` subtracts each class from both deny-lists, so it compiles and wraps,
+     and leaves the canonical lists untouched. Set via env for `build-cvista.sh`. (Added in #106.)
+3. Validate: configure in a fresh build dir, build, `python smoke-cvista.py`, then the bitexact
    gate if the class affects a filter path.
 
 ## Dropping a new class to shrink further
@@ -64,12 +64,12 @@ A PyVista path needs `vtkFooBar`, but it was trimmed and import fails or a filte
    closure, since NOCOMPILE removes the hierarchy too.
 3. Add the entry to the appropriate list (append-only).
 4. Validate in a **fresh build dir** (a dirty cache hides generate-time breakage): configure,
-   build, `smoke-fvtk.py`, then the PyVista regression suite — the bar is zero new failures vs
+   build, `smoke-cvista.py`, then the PyVista regression suite — the bar is zero new failures vs
    stock 9.6.2.
 
 ## Enabling a whole module
 
-Edit `fvtk-config/_modules_minimal.cmake` to WANT/YES the module. Watch for the **WANT
+Edit `cvista-config/_modules_minimal.cmake` to WANT/YES the module. Watch for the **WANT
 silent-drop cascade**: forcing a module to NO silently removes its dependents while configure
 still succeeds, so a missing module can surface far from where you turned it off. Re-run a fresh
 configure and read the module report.

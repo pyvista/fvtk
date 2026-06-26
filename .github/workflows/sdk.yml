@@ -1,12 +1,12 @@
-# Builds and publishes the `fvtk-sdk` wheel: the VTK headers + CMake config +
-# wrap tools from the same source as the runtime fvtk wheel, packaged as a
-# scikit-build-core `cmake.prefix` distribution so `pip install fvtk-sdk` +
+# Builds and publishes the `cvista-sdk` wheel: the VTK headers + CMake config +
+# wrap tools from the same source as the runtime cvista wheel, packaged as a
+# scikit-build-core `cmake.prefix` distribution so `pip install cvista-sdk` +
 # `find_package(VTK)` works downstream. Kept separate from ci.yml and
 # path-scoped so the full SDK build only runs when SDK inputs change (plus on
 # main / release / manual).
 #
-# Built for every platform the runtime fvtk wheel ships (Linux x86_64, macOS
-# arm64, Windows x64) so downstream consumers can compile against fvtk on the
+# Built for every platform the runtime cvista wheel ships (Linux x86_64, macOS
+# arm64, Windows x64) so downstream consumers can compile against cvista on the
 # same OSes they can import it on. Each leg mirrors the runtime build's per-OS
 # toolchain (ci.yml -> [tool.cibuildwheel.<os>]); ci/build-sdk.sh picks the
 # matching init-cache and handles the platform-tag details.
@@ -63,18 +63,18 @@ jobs:
               - 'ci/cmake/linux.cmake'
               - 'ci/cmake/macos.cmake'
               - 'ci/cmake/windows.cmake'
-              - 'fvtk-config/**'
+              - 'cvista-config/**'
               - '.github/workflows/sdk.yml'
 
   build-sdk:
-    name: build fvtk-sdk (${{ matrix.os }})
+    name: build cvista-sdk (${{ matrix.os }})
     # On PRs: run only when the SDK inputs changed. On push/release/dispatch:
     # always (the `changes` job is skipped there, so the second clause carries it;
     # `!cancelled()` lets this run despite that skipped dependency).
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk == 'true') }}
     # Heavy C++ compile (same VTK kit as the runtime wheel) → Blacksmith runners
-    # when the FVTK_RUNNER_* vars are set, else the github-hosted defaults. The
+    # when the CVISTA_RUNNER_* vars are set, else the github-hosted defaults. The
     # `os` key is the stable artifact suffix; `runner.os`/uname inside the build
     # script drives the per-OS toolchain.
     runs-on: ${{ matrix.runner }}
@@ -86,16 +86,16 @@ jobs:
       matrix:
         include:
           - os: linux
-            runner: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+            runner: ${{ vars.CVISTA_RUNNER_LINUX || 'ubuntu-latest' }}
             container: quay.io/pypa/manylinux_2_28_x86_64
           - os: linux-arm64
-            runner: ${{ vars.FVTK_RUNNER_LINUX_ARM64 || 'ubuntu-24.04-arm' }}
+            runner: ${{ vars.CVISTA_RUNNER_LINUX_ARM64 || 'ubuntu-24.04-arm' }}
             container: quay.io/pypa/manylinux_2_28_aarch64
           - os: macos
-            runner: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
+            runner: ${{ vars.CVISTA_RUNNER_MACOS || 'macos-14' }}
             container: ''
           - os: windows
-            runner: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
+            runner: ${{ vars.CVISTA_RUNNER_WINDOWS || 'windows-latest' }}
             container: ''
     defaults:
       run:
@@ -146,29 +146,29 @@ jobs:
           if [ -n "${{ matrix.container }}" ]; then
             echo "CCACHE_DIR=/ccache" >> "$GITHUB_ENV"
           else
-            echo "CCACHE_DIR=$HOME/.cache/fvtk-sdk-ccache" >> "$GITHUB_ENV"
+            echo "CCACHE_DIR=$HOME/.cache/cvista-sdk-ccache" >> "$GITHUB_ENV"
           fi
       - name: Restore SDK ccache (cross-run)
         if: matrix.os != 'windows'
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: fvtk-sdk-ccache-${{ matrix.os }}-${{ github.run_id }}
+          key: cvista-sdk-ccache-${{ matrix.os }}-${{ github.run_id }}
           restore-keys: |
-            fvtk-sdk-ccache-${{ matrix.os }}-
-      - name: Build fvtk-sdk wheel
+            cvista-sdk-ccache-${{ matrix.os }}-
+      - name: Build cvista-sdk wheel
         run: ci/build-sdk.sh
       - name: Smoke-test the SDK (find_package(VTK))
         run: ci/test-sdk.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-sdk-wheels-${{ matrix.os }}
+          name: cvista-sdk-wheels-${{ matrix.os }}
           path: sdk-dist/*.whl
           if-no-files-found: error
 
   # Single stable required check. Runs on every event (always()), so it always
   # reports — make THIS the required status in the branch ruleset, never the
-  # per-OS `build fvtk-sdk (...)` legs (their names change with the matrix, and
+  # per-OS `build cvista-sdk (...)` legs (their names change with the matrix, and
   # they don't run on SDK-irrelevant PRs). Passes when build-sdk succeeded OR was
   # skipped (SDK inputs unchanged); fails on any leg failure/cancellation. See #109.
   sdk-gate:
@@ -191,28 +191,28 @@ jobs:
           fi
 
   publish-sdk:
-    name: Publish fvtk-sdk to PyPI (trusted publishing)
-    # Release-only. Requires a PyPI trusted publisher on project `fvtk-sdk`
-    # bound to repo pyvista/fvtk, workflow sdk.yml, environment pypi-sdk.
+    name: Publish cvista-sdk to PyPI (trusted publishing)
+    # Release-only. Requires a PyPI trusted publisher on project `cvista-sdk`
+    # bound to repo pyvista/cvista, workflow sdk.yml, environment pypi-sdk.
     # always() is REQUIRED: the PR-only `changes` job is skipped on release, and
     # without a status function that skip propagates down the needs chain and
     # silently skips this publish (it did, on 9.6.2.0rc2). Gate explicitly on the
     # release event AND build-sdk success instead.
     if: ${{ always() && github.event_name == 'release' && needs.build-sdk.result == 'success' }}
     needs: [build-sdk]
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     # Artifact download + PyPI upload only; cap low.
     timeout-minutes: 15
     environment:
       name: pypi-sdk
-      url: https://pypi.org/p/fvtk-sdk
+      url: https://pypi.org/p/cvista-sdk
     permissions:
       id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           # Collect every per-OS leg's wheel into one dist/ for a single upload.
-          pattern: fvtk-sdk-wheels-*
+          pattern: cvista-sdk-wheels-*
           path: dist
           merge-multiple: true
       - name: Publish to PyPI
