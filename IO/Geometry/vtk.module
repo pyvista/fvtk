@@ -27,7 +27,6 @@ PRIVATE_DEPENDS
   VTK::FiltersVerdict
   VTK::ImagingCore
   VTK::IOImage
-  VTK::RenderingCore
   VTK::vtksys
   VTK::zlib
 TEST_DEPENDS
