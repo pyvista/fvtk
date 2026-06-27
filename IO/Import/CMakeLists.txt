@@ -1,6 +1,8 @@
 set(classes
   vtk3DSImporter
   vtkGLTFImporter
+  vtkGLTFReader
+  vtkGLTFTexture
   vtkImporter
   vtkVRMLImporter
   vtkOBJImporter)

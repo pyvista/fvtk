@@ -49,7 +49,7 @@
 #ifndef vtkGLTFReader_h
 #define vtkGLTFReader_h
 
-#include "vtkIOGeometryModule.h" // For export macro
+#include "vtkIOImportModule.h" // For export macro
 #include "vtkMultiBlockDataSetAlgorithm.h"
 #include "vtkResourceStream.h" // For vtkResourceStream
 #include "vtkSmartPointer.h"   // For vtkSmartPointer
@@ -67,7 +67,7 @@ class vtkStringArray;
 class vtkTexture;
 class vtkGLTFTexture;
 
-class VTKIOGEOMETRY_EXPORT vtkGLTFReader : public vtkMultiBlockDataSetAlgorithm
+class VTKIOIMPORT_EXPORT vtkGLTFReader : public vtkMultiBlockDataSetAlgorithm
 {
 public:
   static vtkGLTFReader* New();

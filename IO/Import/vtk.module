@@ -19,6 +19,8 @@ PRIVATE_DEPENDS
   VTK::CommonDataModel
   VTK::CommonTransforms
   VTK::FiltersCore
+  VTK::FiltersGeneral
+  VTK::FiltersHybrid
   VTK::FiltersSources
   VTK::ImagingCore
   VTK::IOGeometry
