@@ -143,7 +143,7 @@ private:
     vtkResourceParser* parser, vtkPoints*, vtkCellArray*, vtkFloatArray* scalars = nullptr);
 
   /**
-   * fvtk fast path: hash-merge STL reader (binary + ASCII) that produces the
+   * cvista fast path: hash-merge STL reader (binary + ASCII) that produces the
    * same fundamental mesh as the locator-merge path (same exact-coincident
    * merged point SET + same triangles, degenerate triangles dropped) but in a
    * single pass, with point order unconstrained. Used only for the default

@@ -1,19 +1,19 @@
-"""Pytest fixtures for the fvtk bit-exactness suite.
+"""Pytest fixtures for the cvista bit-exactness suite.
 
 The suite runs ``run_ops.py`` once under a stock-VTK python and once under an
-fvtk python, then compares the two output dirs. Those two pythons are configured
+cvista python, then compares the two output dirs. Those two pythons are configured
 entirely through environment variables so the SAME suite runs unchanged locally
 and in CI:
 
   BITEXACT_STOCK_PY   path to a python whose ``vtkmodules`` is stock VTK 9.6.2
-  BITEXACT_FVTK_PY    path to a python whose ``vtkmodules`` resolves to fvtk
-                      (via the _fvtk_shim / sitecustomize redirect)
+  BITEXACT_CVISTA_PY    path to a python whose ``vtkmodules`` resolves to cvista
+                      (via the _cvista_shim / sitecustomize redirect)
   BITEXACT_STOCK_LDLP optional LD_LIBRARY_PATH for the stock python
-  BITEXACT_FVTK_LDLP  optional LD_LIBRARY_PATH for the fvtk python
+  BITEXACT_CVISTA_LDLP  optional LD_LIBRARY_PATH for the cvista python
   BITEXACT_OUTDIR     optional dir for the dumped npz/manifests (default: tmp)
 
 On a manylinux/ubuntu CI runner stock vtk+numpy are self-contained, so
-BITEXACT_STOCK_LDLP is usually empty; only the fvtk wheel needs the nix runtime
+BITEXACT_STOCK_LDLP is usually empty; only the cvista wheel needs the nix runtime
 libs (libstdc++, libz) on its loader path — exactly the pattern the smoke job in
 ci.yml already uses.
 
@@ -49,7 +49,7 @@ def _run_backend(py, ldlp, outdir, label):
     if not py:
         pytest.skip(
             f"BITEXACT_{label}_PY not set; cannot run {label} backend. "
-            "Set BITEXACT_STOCK_PY and BITEXACT_FVTK_PY to the two pythons."
+            "Set BITEXACT_STOCK_PY and BITEXACT_CVISTA_PY to the two pythons."
         )
     os.makedirs(outdir, exist_ok=True)
     proc = subprocess.run(
@@ -72,19 +72,19 @@ def results(tmp_path_factory):
         tmp_path_factory.mktemp("bitexact")
     )
     stock_dir = os.path.join(base, "stock")
-    fvtk_dir = os.path.join(base, "fvtk")
+    cvista_dir = os.path.join(base, "cvista")
 
     stock_py = os.environ.get("BITEXACT_STOCK_PY")
-    fvtk_py = os.environ.get("BITEXACT_FVTK_PY")
+    cvista_py = os.environ.get("BITEXACT_CVISTA_PY")
     stock_ldlp = os.environ.get("BITEXACT_STOCK_LDLP", "")
-    fvtk_ldlp = os.environ.get("BITEXACT_FVTK_LDLP", "")
+    cvista_ldlp = os.environ.get("BITEXACT_CVISTA_LDLP", "")
 
     out_stock = _run_backend(stock_py, stock_ldlp, stock_dir, "STOCK")
-    out_fvtk = _run_backend(fvtk_py, fvtk_ldlp, fvtk_dir, "FVTK")
-    print("\n" + out_stock + out_fvtk)
+    out_cvista = _run_backend(cvista_py, cvista_ldlp, cvista_dir, "CVISTA")
+    print("\n" + out_stock + out_cvista)
 
-    res = _compare.compare_all(stock_dir, fvtk_dir)
-    res["_dirs"] = {"stock": stock_dir, "fvtk": fvtk_dir}
+    res = _compare.compare_all(stock_dir, cvista_dir)
+    res["_dirs"] = {"stock": stock_dir, "cvista": cvista_dir}
     return res
 
 

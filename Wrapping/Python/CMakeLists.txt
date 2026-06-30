@@ -69,25 +69,25 @@ if (NOT VTK_WHEEL_BUILD)
   endif ()
 endif ()
 
-# goes in __init__.py for when fvtk is BUILD_STATIC
-set(_fvtk_static_import "_load_fvtk_static()")
+# goes in __init__.py for when cvista is BUILD_STATIC
+set(_cvista_static_import "_load_cvista_static()")
 if (BUILD_SHARED_LIBS)
-    string(PREPEND _fvtk_static_import "#")
+    string(PREPEND _cvista_static_import "#")
 endif ()
 
-set(_fvtk_all)
+set(_cvista_all)
 set(_vtk_python_imports)
 set(_vtk_python_external_imports)
 foreach (_vtk_python_module IN LISTS vtk_python_wrapped_modules)
   get_property(_vtk_python_library_name
     TARGET    "${_vtk_python_module}"
     PROPERTY  "INTERFACE_vtk_module_library_name")
-  string(APPEND _fvtk_all
+  string(APPEND _cvista_all
     "    \'${_vtk_python_library_name}\',\n")
   string(APPEND _vtk_python_imports
     "from .${_vtk_python_library_name} import *\n")
   string(APPEND _vtk_python_external_imports
-    "from fvtk.${_vtk_python_library_name} import *\n")
+    "from cvista.${_vtk_python_library_name} import *\n")
 endforeach ()
 
 set(_vtk_python_files)
@@ -100,68 +100,68 @@ foreach (_vtk_module IN LISTS vtk_modules)
 endforeach()
 
 configure_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/fvtk/generate_pyi.py"
-  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/generate_pyi.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cvista/generate_pyi.py"
+  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/cvista/generate_pyi.py"
   COPYONLY)
 list(APPEND _vtk_python_files
-  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/generate_pyi.py")
+  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/cvista/generate_pyi.py")
 
 if (BUILD_SHARED_LIBS)
   install(
-    FILES       "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/generate_pyi.py"
-    DESTINATION "${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk"
+    FILES       "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/cvista/generate_pyi.py"
+    DESTINATION "${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/cvista"
     COMPONENT   "python")
 endif ()
 
 set(python_files
-  fvtk/__init__.py.in
-  fvtk/all.py.in
-  fvtk/gtk/GtkGLExtVTKRenderWindow.py
-  fvtk/gtk/GtkGLExtVTKRenderWindowInteractor.py
-  fvtk/gtk/GtkVTKRenderWindow.py
-  fvtk/gtk/GtkVTKRenderWindowInteractor.py
-  fvtk/gtk/__init__.py
-  fvtk/numpy_interface/__init__.py
-  fvtk/numpy_interface/algorithms.py
-  fvtk/numpy_interface/dataset_adapter.py
-  fvtk/numpy_interface/internal_algorithms.py
-  fvtk/numpy_interface/numpy_algorithms.py
-  fvtk/qt/QVTKRenderWindowInteractor.py
-  fvtk/qt/__init__.py
-  fvtk/test/BlackBox.py
-  fvtk/test/ErrorObserver.py
-  fvtk/test/Testing.py
-  fvtk/test/rtImageTest.py
-  fvtk/test/__init__.py
-  fvtk/tk/__init__.py
-  fvtk/tk/vtkLoadPythonTkWidgets.py.in
-  fvtk/tk/vtkTkImageViewerWidget.py
-  fvtk/tk/vtkTkPhotoImage.py
-  fvtk/tk/vtkTkRenderWidget.py
-  fvtk/tk/vtkTkRenderWindowInteractor.py
-  fvtk/util/__init__.py
-  fvtk/util/colors.py
-  fvtk/util/data_model.py
-  fvtk/util/execution_model.py
-  fvtk/util/keys.py
-  fvtk/util/misc.py
-  fvtk/util/numpy_support.py
-  fvtk/util/xarray_support.py
-  fvtk/util/pickle_support.py
-  fvtk/util/vtkAlgorithm.py
-  fvtk/util/vtkConstants.py
-  fvtk/util/vtkImageExportToArray.py
-  fvtk/util/vtkImageImportFromArray.py
-  fvtk/util/vtkMethodParser.py
-  fvtk/util/vtkVariant.py
-  fvtk/wx/__init__.py
-  fvtk/wx/wxVTKRenderWindow.py
-  fvtk/wx/wxVTKRenderWindowInteractor.py)
+  cvista/__init__.py.in
+  cvista/all.py.in
+  cvista/gtk/GtkGLExtVTKRenderWindow.py
+  cvista/gtk/GtkGLExtVTKRenderWindowInteractor.py
+  cvista/gtk/GtkVTKRenderWindow.py
+  cvista/gtk/GtkVTKRenderWindowInteractor.py
+  cvista/gtk/__init__.py
+  cvista/numpy_interface/__init__.py
+  cvista/numpy_interface/algorithms.py
+  cvista/numpy_interface/dataset_adapter.py
+  cvista/numpy_interface/internal_algorithms.py
+  cvista/numpy_interface/numpy_algorithms.py
+  cvista/qt/QVTKRenderWindowInteractor.py
+  cvista/qt/__init__.py
+  cvista/test/BlackBox.py
+  cvista/test/ErrorObserver.py
+  cvista/test/Testing.py
+  cvista/test/rtImageTest.py
+  cvista/test/__init__.py
+  cvista/tk/__init__.py
+  cvista/tk/vtkLoadPythonTkWidgets.py.in
+  cvista/tk/vtkTkImageViewerWidget.py
+  cvista/tk/vtkTkPhotoImage.py
+  cvista/tk/vtkTkRenderWidget.py
+  cvista/tk/vtkTkRenderWindowInteractor.py
+  cvista/util/__init__.py
+  cvista/util/colors.py
+  cvista/util/data_model.py
+  cvista/util/execution_model.py
+  cvista/util/keys.py
+  cvista/util/misc.py
+  cvista/util/numpy_support.py
+  cvista/util/xarray_support.py
+  cvista/util/pickle_support.py
+  cvista/util/vtkAlgorithm.py
+  cvista/util/vtkConstants.py
+  cvista/util/vtkImageExportToArray.py
+  cvista/util/vtkImageImportFromArray.py
+  cvista/util/vtkMethodParser.py
+  cvista/util/vtkVariant.py
+  cvista/wx/__init__.py
+  cvista/wx/wxVTKRenderWindow.py
+  cvista/wx/wxVTKRenderWindowInteractor.py)
 
 foreach (python_file IN LISTS python_files)
-  # add submodules that don't begin with "_" to _fvtk_all
-  if (python_file MATCHES "^fvtk\/([A-Za-z][A-Za-z0-9_]*)(\/__init__)?[.]py")
-    string(APPEND _fvtk_all "    \'${CMAKE_MATCH_1}\',\n")
+  # add submodules that don't begin with "_" to _cvista_all
+  if (python_file MATCHES "^cvista\/([A-Za-z][A-Za-z0-9_]*)(\/__init__)?[.]py")
+    string(APPEND _cvista_all "    \'${CMAKE_MATCH_1}\',\n")
   endif ()
 endforeach ()
 
@@ -209,7 +209,7 @@ foreach (python_file IN LISTS python_files)
 endforeach ()
 
 set(vtk_build_paths_module
-  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/fvtk/_build_paths.py")
+  "${CMAKE_BINARY_DIR}/${VTK_PYTHON_SITE_PACKAGES_SUFFIX}/cvista/_build_paths.py")
 if (WIN32 AND VTK_DLL_PATHS)
   set(vtk_dll_paths_python)
   foreach (vtk_dll_path IN LISTS VTK_DLL_PATHS)

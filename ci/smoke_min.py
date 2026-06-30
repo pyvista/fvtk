@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fvtk wheel post-install smoke test (minimal, cross-platform, NO render).
+"""cvista wheel post-install smoke test (minimal, cross-platform, NO render).
 
 The offscreen-render smoke (ci/smoke_test.py) is Linux-only: it needs xvfb plus
 the OSMesa/EGL/GLX rendering stack. macOS-arm64 and Windows wheels ship a native
@@ -8,20 +8,20 @@ on the CI runners. This minimal smoke instead proves the wheel imports and that
 a non-rendering filter pipeline actually computes — enough to certify the build,
 auditwheel/delocate/delvewheel repair, and the C++ <-> Python wrapper bridge.
 
-  import fvtk -> print VTK version -> vtkSphereSource -> vtkTriangleFilter,
+  import cvista -> print VTK version -> vtkSphereSource -> vtkTriangleFilter,
   assert the output has > 0 cells.
 
-The import name stays parameterizable via FVTK_IMPORT_NAME (the fork renames
-vtkmodules to the top-level ``fvtk`` package)::
+The import name stays parameterizable via CVISTA_IMPORT_NAME (the fork renames
+vtkmodules to the top-level ``cvista`` package)::
 
-    FVTK_IMPORT_NAME=fvtk python ci/smoke_min.py
+    CVISTA_IMPORT_NAME=cvista python ci/smoke_min.py
 """
 
 import os
 import sys
 from importlib import import_module
 
-IMPORT_NAME = os.environ.get("FVTK_IMPORT_NAME", "fvtk")
+IMPORT_NAME = os.environ.get("CVISTA_IMPORT_NAME", "cvista")
 
 
 def main() -> int:
@@ -33,7 +33,7 @@ def main() -> int:
     print(f"smoke_min: VTK_VERSION = {cc.vtkVersion.GetVTKVersion()}")
 
     # The qt helper subpackage must ship so pyvistaqt (imports vtkmodules.qt ->
-    # fvtk.qt) keeps working (gh-142). Pure Python; binds no Qt unless one is
+    # cvista.qt) keeps working (gh-142). Pure Python; binds no Qt unless one is
     # already imported.
     qt = import_module(f"{IMPORT_NAME}.qt")
     assert hasattr(qt, "PyQtImpl"), f"{IMPORT_NAME}.qt missing PyQtImpl"

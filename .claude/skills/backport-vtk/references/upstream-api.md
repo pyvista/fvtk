@@ -1,7 +1,7 @@
 # Upstream VTK API and triage reference
 
 Upstream is `vtk/vtk` on `gitlab.kitware.com`, **project id `13`**, default branch `master`.
-fvtk is frozen on tag `v9.6.2`. All API access below is read-only and public; no token needed
+cvista is frozen on tag `v9.6.2`. All API access below is read-only and public; no token needed
 for public read (an unauthenticated client is rate-limited but fine for a sweep).
 
 ## List merged MRs since the watermark
@@ -31,7 +31,7 @@ curl -s "https://gitlab.kitware.com/api/v4/projects/13/merge_requests/<iid>/chan
 # Plain unified diff for the whole MR:
 curl -sL "https://gitlab.kitware.com/vtk/vtk/-/merge_requests/<iid>.diff" -o /tmp/mr-<iid>.diff
 
-# Apply onto the fvtk tree (no shared history, so 3-way against current paths):
+# Apply onto the cvista tree (no shared history, so 3-way against current paths):
 git apply --3way --whitespace=nowarn /tmp/mr-<iid>.diff
 ```
 
@@ -41,11 +41,11 @@ the equivalent edit against the 9.6.2 source. The diff is the guide, not a mecha
 
 ## Triage heuristics
 
-Decide per MR. The cheapest, strongest signal is whether the changed files even exist in fvtk.
+Decide per MR. The cheapest, strongest signal is whether the changed files even exist in cvista.
 
 1. **Shipped-module filter (run first).** For every changed path, `git ls-files <path>`. If all
-   paths are absent from the fvtk tree, the module was trimmed — **skip**. (Cross-check the trim
-   lists in `fvtk-config/` if a path is present but the class might be NOWRAP/NOCOMPILE.)
+   paths are absent from the cvista tree, the module was trimmed — **skip**. (Cross-check the trim
+   lists in `cvista-config/` if a path is present but the class might be NOWRAP/NOCOMPILE.)
 
 2. **Category from the title and diff:**
    - crash / segfault / nullptr / use-after-free / leak / overflow → **take** (correctness, high
@@ -54,7 +54,7 @@ Decide per MR. The cheapest, strongest signal is whether the changed files even 
    - render / OpenGL / EGL correctness on the shipped rendering stack → **take** (validate with
      renderexact).
    - new feature / API addition on a shipped module → **case by case**; take if PyVista benefits.
-   - performance / optimization → **defer** by default. fvtk has its own perf line under the
+   - performance / optimization → **defer** by default. cvista has its own perf line under the
      parity contract; an upstream perf change may conflict or duplicate. Flag for a human.
    - CI / docs / formatting / ThirdParty version bump / deprecation churn / build infra →
      **skip**.

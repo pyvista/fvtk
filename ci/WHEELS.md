@@ -1,7 +1,7 @@
-# fvtk wheel builds — raw-docker vs cibuildwheel (evidence + recommendation)
+# cvista wheel builds — raw-docker vs cibuildwheel (evidence + recommendation)
 
-Local, nix-free, docker-driven wheel builds for fvtk (trimmed hard-fork of
-VTK 9.6.2; `vtkmodules` renamed to the top-level `fvtk` package). Two approaches
+Local, nix-free, docker-driven wheel builds for cvista (trimmed hard-fork of
+VTK 9.6.2; `vtkmodules` renamed to the top-level `cvista` package). Two approaches
 were implemented AND actually run on this machine (docker 28.5.2, 16 cores, 62 GB
 RAM, manylinux2014_x86_64 image). All numbers below are measured, not estimated.
 Build A = raw-docker, Build B = cibuildwheel; both produced an identical
@@ -42,7 +42,7 @@ vtkGenericDataArray.h:79: incomplete type 'vtkTypeTraits<void>' ...
 
 `vtkConstantArray<int>` (used by `vtkStructuredGrid::GetCellTypes`) is
 `vtkImplicitArray<vtkConstantImplicitBackend<int>,13>`. The fork's **wrapper-unity
-lever** (`FVTK_WRAP_UNITY`, a build-speed optimization that `#include`s many
+lever** (`CVISTA_WRAP_UNITY`, a build-speed optimization that `#include`s many
 generated `*Python.cxx` into one TU) changes the order in which template
 instantiations are first seen. devtoolset-10 **GCC 10.2.1** then eagerly
 instantiates `vtkConstantArray<int>` before its backend header is complete, so the
@@ -51,7 +51,7 @@ trait's `rtype` resolves to `void` and the read-trait static_assert + a cascade 
 instantiation), which is why it never surfaced in the nix build.
 
 **Isolation proof (ran on this box):** the SAME wrapper `vtkStructuredGridPython.cxx`
-compiles **clean standalone** on GCC 10 (`FVTK_WRAP_UNITY=OFF`, target built
+compiles **clean standalone** on GCC 10 (`CVISTA_WRAP_UNITY=OFF`, target built
 868/868, 0 errors) and only fails when batched. So it's purely a GCC<12 +
 concatenation-ordering interaction, not a header bug per se.
 
@@ -59,7 +59,7 @@ concatenation-ordering interaction, not a header bug per se.
 on GCC<12 (fall back to per-class wrappers — slower to compile but correct);
 GCC≥12 / clang keep the speed lever. Verified the guard fires (85 modules report
 "disabling wrapper-unity"; ninja step count rises 5397→6946 as wrappers
-de-batch). Toggle with `FVTK_WRAP_UNITY=0`.
+de-batch). Toggle with `CVISTA_WRAP_UNITY=0`.
 
 > **Both bugs affect the EXISTING `wheels-manylinux217.yml` release recipe** — it
 > uses the same manylinux2014 / GCC 10.2.1 container and the same `minimal.cmake`.
@@ -91,7 +91,7 @@ Script: **`ci/build-wheels-linux.sh`**. Runs the exact `wheels-manylinux217.yml`
 recipe in a local `docker run` inside `quay.io/pypa/manylinux2014_x86_64`:
 yum el7 mesa → `cmake -C ci/cmake/linux.cmake` → `cmake --build` → prune →
 build-tree `setup.py bdist_wheel` → `auditwheel repair --plat
-manylinux_2_17_x86_64`. ccache is host-mounted at `~/.cache/fvtk-ccache-manylinux`
+manylinux_2_17_x86_64`. ccache is host-mounted at `~/.cache/cvista-ccache-manylinux`
 and shared across every CPython leg + re-runs. Default: cp313, LTO on.
 
 ```
@@ -100,12 +100,12 @@ ci/build-wheels-linux.sh 39 310 311 312 313   # full release matrix
 ```
 
 <!-- MEASURED RESULTS A -->
-**MEASURED (cp313, FVTK_LTO=1, 16 jobs, on this machine):**
+**MEASURED (cp313, CVISTA_LTO=1, 16 jobs, on this machine):**
 
-- Wheel tag: **`fvtk-9.6.2.dev0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl`** (43 MB) ✓ correctly tagged manylinux_2_17_x86_64
+- Wheel tag: **`cvista-9.6.2.dev0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl`** (43 MB) ✓ correctly tagged manylinux_2_17_x86_64
 - Wall-clock build time: **~415 s (6.9 min) warm-ccache** rebuild; the first cold build reached ninja step 6938/6946 in ~10 min before being interrupted at the host-client level (the C++ + wrapper compiles dominate; LTO links are the tail). Cold full build incl. bdist+auditwheel is ~12-15 min on 16 cores.
-- `import fvtk` → **VTK 9.6.2** ✓
-- `from fvtk.vtkWebCore import vtkWebApplication` → **`<class 'fvtk.vtkWebCore.vtkWebApplication'>`** ✓ (restored module imports)
+- `import cvista` → **VTK 9.6.2** ✓
+- `from cvista.vtkWebCore import vtkWebApplication` → **`<class 'cvista.vtkWebCore.vtkWebApplication'>`** ✓ (restored module imports)
 - offscreen smoke render (ci/smoke_test.py, xvfb) → **`smoke: offscreen Render() OK`** ✓
 - bit-exact suite vs stock vtk==9.6.2 → **`90 passed in 1.08s`**, `test_provenance_inputs_identical PASSED` (numpy + inputs bit-identical, both VTK 9.6.2), **maxULP == 0 on every array** ✓
 
@@ -125,8 +125,8 @@ inside the build tree" model? **Yes**, via a small in-tree PEP-517 backend.
 
 | File | Role | Size |
 |------|------|------|
-| `pyproject.toml` | `[build-system]` → `fvtk_backend` (backend-path `ci/cibw`); `[tool.cibuildwheel]` linux/macos/windows tables | ~110 lines |
-| `ci/cibw/fvtk_backend.py` | PEP-517 backend: `build_wheel()` runs cmake configure (`-C ci/cmake/linux.cmake`) → `cmake --build` → prune → build-tree `setup.py bdist_wheel` → hand wheel to pip | ~90 lines |
+| `pyproject.toml` | `[build-system]` → `cvista_backend` (backend-path `ci/cibw`); `[tool.cibuildwheel]` linux/macos/windows tables | ~110 lines |
+| `ci/cibw/cvista_backend.py` | PEP-517 backend: `build_wheel()` runs cmake configure (`-C ci/cmake/linux.cmake`) → `cmake --build` → prune → build-tree `setup.py bdist_wheel` → hand wheel to pip | ~90 lines |
 | `ci/cibw/before-build.sh` | per-leg: pip-install cmake≥3.22 + ninja≥1.11 (el7 ninja 1.10 can't do VTK's multi-output edges) | ~10 lines |
 | `ci/run-cibuildwheel-linux.sh` | local driver: `cibuildwheel --platform linux` via docker | ~35 lines |
 
@@ -147,14 +147,14 @@ ci/run-cibuildwheel-linux.sh cp313-*
 <!-- MEASURED RESULTS B -->
 **MEASURED (cp313, via `cibuildwheel --platform linux` on this machine, cibuildwheel 4.1.0):**
 
-- Wheel tag: **`fvtk-9.6.2.dev0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl`** (43 MB) ✓ identical tag to the raw-docker wheel
+- Wheel tag: **`cvista-9.6.2.dev0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl`** (43 MB) ✓ identical tag to the raw-docker wheel
 - Wall-clock time: **1092 s (18.2 min)** — fully COLD (the warm raw-docker ccache did NOT transfer; see ccache note below). cibuildwheel log: `cp313-manylinux_x86_64 finished in 18 minutes`.
-- `import fvtk` → VTK 9.6.2 ✓; `from fvtk.vtkWebCore import vtkWebApplication` ✓
+- `import cvista` → VTK 9.6.2 ✓; `from cvista.vtkWebCore import vtkWebApplication` ✓
 - CIBW_TEST_COMMAND (`ci/smoke_test.py` under xvfb, run by cibuildwheel itself) → **`smoke: offscreen Render() OK`** ✓ (102 s test step)
 - Independent re-validation of the produced wheel (import + WebCore + bit-exact) → **`90 passed in 1.08s`**, maxULP == 0 ✓ (VALIDATE_B_RC=0)
 
 Three adapter bugs were found and fixed to get this green (all in the new files,
-none in fvtk's existing code):
+none in cvista's existing code):
 1. `ModuleNotFoundError: No module named 'cmake'` — pip's build isolation runs the
    backend in a fresh env, so `cmake`/`ninja` must be in `get_requires_for_build_wheel`,
    not just CIBW_BEFORE_BUILD (which installs into the outer python). Fixed.
@@ -204,12 +204,12 @@ ccache cannot help it); that is inherent to shipping LTO wheels, not approach-sp
 
 **Yes** — and this is cibuildwheel's decisive advantage. The repo ALREADY has the
 per-OS init-caches `ci/cmake/{linux,macos,windows}.cmake`, all routing through
-`fvtk-config/minimal.cmake`'s 3-way `_FVTK_TOOLCHAIN` gate (gnu/apple/msvc). The
-`fvtk_backend` reads `FVTK_CMAKE_INIT` to pick the right one, so the
+`cvista-config/minimal.cmake`'s 3-way `_CVISTA_TOOLCHAIN` gate (gnu/apple/msvc). The
+`cvista_backend` reads `CVISTA_CMAKE_INIT` to pick the right one, so the
 `[tool.cibuildwheel.macos]` / `[tool.cibuildwheel.windows]` tables (added to
-pyproject.toml) just set `FVTK_CMAKE_INIT` + the repair tool (delocate /
+pyproject.toml) just set `CVISTA_CMAKE_INIT` + the repair tool (delocate /
 delvewheel) + the few env vars the existing wheels-macos/windows.yml already use
-(`MACOSX_DEPLOYMENT_TARGET`, `_PYTHON_HOST_PLATFORM`, `FVTK_FORCE_MSVC`). One
+(`MACOSX_DEPLOYMENT_TARGET`, `_PYTHON_HOST_PLATFORM`, `CVISTA_FORCE_MSVC`). One
 `pypa/cibuildwheel` matrix over `[ubuntu-latest, macos-14, windows-latest]`
 replaces all three current raw workflows. Draft: `wheels-cibuildwheel.yml.draft`.
 
@@ -227,7 +227,7 @@ outputs via `nix-store --references` to resolve runtime sonames) so the
 nix-built wheel + numpy import. **All of that disappears** with a container build:
 
 - The stock `vtk==9.6.2` + numpy wheels are self-contained on any manylinux/ubuntu.
-- A container-built fvtk wheel is **auditwheel-self-contained** — its NEEDED libs
+- A container-built cvista wheel is **auditwheel-self-contained** — its NEEDED libs
   are grafted in, render backends are dlopened from system mesa. No nix runtime
   libs, no `LD_LIBRARY_PATH`.
 
@@ -237,8 +237,8 @@ yum el7 mesa, build a cp313 wheel (LTO off for fast feedback) with
 
 - **smoke**: `pip install` the wheel in a clean venv → import + compute + WebCore,
   and offscreen render under xvfb (`ci/smoke_test.py`).
-- **bitexact**: stock venv (`pip install vtk==9.6.2 numpy==2.4.6`) + fvtk venv
-  (wheel + `tools/fvtk_shim.py` `.pth` + numpy) + runner venv (pytest) — the same
+- **bitexact**: stock venv (`pip install vtk==9.6.2 numpy==2.4.6`) + cvista venv
+  (wheel + `tools/cvista_shim.py` `.pth` + numpy) + runner venv (pytest) — the same
   `tests/bitexact` driver, with `BITEXACT_*_LDLP` empty for both backends.
 
 Drafts: **`ci.yml.nixfree-draft`**, **`bitexact.yml.nixfree-draft`**. They keep
@@ -270,13 +270,13 @@ Why, on the evidence:
    the same platform tag, imports (incl. WebCore), renders offscreen, and is
    bit-exact (maxULP 0) — identical outcomes to the raw-docker wheel.
 2. **The adapter is small and non-invasive** — a root `pyproject.toml` + a
-   ~90-line PEP-517 backend, no CMakeLists or fvtk-source changes. The three
+   ~90-line PEP-517 backend, no CMakeLists or cvista-source changes. The three
    adapter bugs found were all shaken out and are now encoded in the config.
 3. **ccache recovers the shared-C++ benefit** (63% hit rate, ~9.5 min/extra-leg),
    so cibuildwheel does NOT lose the raw-docker single-container cache advantage.
 4. **One config, three OSes.** This is decisive: the repo already has
    `ci/cmake/{linux,macos,windows}.cmake` + the 3-way toolchain gate, and the
-   backend honours `FVTK_CMAKE_INIT`, so macOS/Windows fall out of the same
+   backend honours `CVISTA_CMAKE_INIT`, so macOS/Windows fall out of the same
    `pyproject.toml` tables. Three bespoke workflows collapse to one matrix, and
    `CIBW_TEST_COMMAND` gives free per-wheel smoke testing on every OS.
 
@@ -294,7 +294,7 @@ recipe is not wrong; it is simply redundant once cibuildwheel covers all 3 OSes.
 ## Files added in this worktree
 
 - `ci/build-wheels-linux.sh` — raw-docker local build (Deliverable A).
-- `pyproject.toml`, `ci/cibw/fvtk_backend.py`, `ci/cibw/before-build.sh`,
+- `pyproject.toml`, `ci/cibw/cvista_backend.py`, `ci/cibw/before-build.sh`,
   `ci/run-cibuildwheel-linux.sh` — cibuildwheel adapter (Deliverable B).
 - `ci/WHEELS.md` — this report (Deliverable C).
 - `.github/workflows/wheels-cibuildwheel.yml.draft` — unified 3-OS wheels (D).

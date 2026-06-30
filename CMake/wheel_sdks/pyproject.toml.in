@@ -3,13 +3,13 @@ requires = ["pybind11", "scikit-build-core"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "fvtk-sdk"
+name = "cvista-sdk"
 version = "@VTK_WHEEL_SDK_VERSION@"
 authors = [
   { name = "Alexy Pellegrini", email = "alexy.pellegrini@kitware.com" },
   { name = "Jean-Christophe Fillion-Robin", email = "jcfr@lab78.xyz" },
 ]
-description = "fvtk SDK (headers, CMake config, wrap tools) as a first-class Python wheel"
+description = "cvista SDK (headers, CMake config, wrap tools) as a first-class Python wheel"
 readme = "README.md"
 license.file = "LICENSE"
 requires-python = ">=3.12"
@@ -31,11 +31,11 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/pyvista/fvtk"
-"Bug Tracker" = "https://github.com/pyvista/fvtk/issues"
+Homepage = "https://github.com/pyvista/cvista"
+"Bug Tracker" = "https://github.com/pyvista/cvista/issues"
 
 [project.entry-points."cmake.prefix"]
-fvtksdk = "fvtk_sdk.cmake"
+cvistasdk = "cvista_sdk.cmake"
 
 [project.optional-dependencies]
 test = [
@@ -47,7 +47,7 @@ test = [
 [tool.scikit-build]
 minimum-version = "0.8.2"
 build-dir = "build/{wheel_tag}"
-wheel.packages = ["src/fvtk_sdk"]
+wheel.packages = ["src/cvista_sdk"]
 # The SDK ships headers + CMake config + VTK shared/import libs — platform-
 # specific, but NOT tied to any CPython ABI (there is no extension module). Tag
 # it py3-none so one wheel serves every 3.12+ interpreter; without this scikit-
@@ -61,5 +61,5 @@ VTK_INSTALL_DIR = "@VTK_WHEEL_SDK_VTK_INSTALL_DIR@"
 # Carry the abi3 wrapping settings into the wheel_sdks CMake configure so the
 # proxy vtk-config can re-export them; a downstream find_package(VTK) then wraps
 # its modules with the same stable-ABI configuration this SDK was built with.
-FVTK_ABI3 = "@VTK_WHEEL_SDK_ABI3@"
-FVTK_ABI3_VERSION = "@VTK_WHEEL_SDK_ABI3_VERSION@"
+CVISTA_ABI3 = "@VTK_WHEEL_SDK_ABI3@"
+CVISTA_ABI3_VERSION = "@VTK_WHEEL_SDK_ABI3_VERSION@"

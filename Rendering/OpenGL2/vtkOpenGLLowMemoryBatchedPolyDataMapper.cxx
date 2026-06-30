@@ -514,7 +514,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
   // do we need to do anything to the point id data?
   if (currPass == vtkHardwareSelector::POINT_ID_LOW24)
   {
-    // fvtk: width-agnostic id read (int32-or-int64 passthrough array); see
+    // cvista: width-agnostic id read (int32-or-int64 passthrough array); see
     // vtkOpenGLPolyDataMapper for the bit-exactness argument.
     vtkDataArray* pointArrayId = this->PointIdArrayName
       ? vtkDataArray::SafeDownCast(pd->GetArray(this->PointIdArrayName))
@@ -559,7 +559,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
 
   if (currPass == vtkHardwareSelector::POINT_ID_HIGH24)
   {
-    // fvtk: width-agnostic id read (int32-or-int64 passthrough array); see
+    // cvista: width-agnostic id read (int32-or-int64 passthrough array); see
     // vtkOpenGLPolyDataMapper for the bit-exactness argument.
     vtkDataArray* pointArrayId = this->PointIdArrayName
       ? vtkDataArray::SafeDownCast(pd->GetArray(this->PointIdArrayName))
@@ -621,7 +621,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
 
   if (currPass == vtkHardwareSelector::CELL_ID_LOW24)
   {
-    // fvtk: width-agnostic id read (see point-id note above).
+    // cvista: width-agnostic id read (see point-id note above).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;
@@ -664,7 +664,7 @@ void vtkOpenGLLowMemoryBatchedPolyDataMapper::ProcessCompositePixelBuffers(vtkHa
 
   if (currPass == vtkHardwareSelector::CELL_ID_HIGH24)
   {
-    // fvtk: width-agnostic id read (see point-id note above).
+    // cvista: width-agnostic id read (see point-id note above).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;

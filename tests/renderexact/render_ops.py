@@ -1,16 +1,16 @@
-"""Pixel-exact RENDER scene registry for the fvtk vs stock-VTK regression suite.
+"""Pixel-exact RENDER scene registry for the cvista vs stock-VTK regression suite.
 
 Sister to ``tests/bitexact`` but for the rendering pipeline. Every scene here is
 built against the *vtkmodules* API only (no pyvista, no ``import vtk``), so the
 exact same source drives two backends:
 
   * stock VTK 9.6.2   -- ``vtkmodules`` resolves to the upstream wheel
-  * fvtk (this fork)  -- ``tools/fvtk_shim.py`` redirects ``vtkmodules.* -> fvtk.*``
+  * cvista (this fork)  -- ``tools/cvista_shim.py`` redirects ``vtkmodules.* -> cvista.*``
 
 The only thing that differs between the two render runs is the compiled C++
 backend. CRITICAL CONTROL: both sides must render against the *same* EGL/GL
 software driver (the host nix Mesa / llvmpipe), so a pixel diff reflects only
-fvtk's code, not a different bundled Mesa. The driver records GL_RENDERER /
+cvista's code, not a different bundled Mesa. The driver records GL_RENDERER /
 GL_VERSION on each side; the comparison asserts they match before trusting any
 pixel diff.
 
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import numpy as np
 
-# --- vtkmodules imports (resolve to stock vtk OR fvtk depending on the venv) ---
+# --- vtkmodules imports (resolve to stock vtk OR cvista depending on the venv) ---
 from vtkmodules.vtkCommonCore import vtkFloatArray, vtkPoints, vtkLookupTable
 from vtkmodules.vtkCommonDataModel import (
     vtkPolyData,
@@ -136,7 +136,7 @@ def scene_camera_roundtrip():
     frame; the driver's readback therefore equals a fixed-camera render iff the
     uniform path round-trips correctly. A renderer that wrongly skips changed
     uniform uploads (or fails to restore them) produces a different final image.
-    Stays byte-identical between stock VTK and fvtk because both walk the exact
+    Stays byte-identical between stock VTK and cvista because both walk the exact
     same camera sequence."""
     s = vtkSphereSource()
     s.SetThetaResolution(48)
@@ -172,7 +172,7 @@ def scene_camera_moved():
     """Companion to scene_camera_roundtrip: render once at the fixed camera, then
     move the camera and leave it there. The driver reads back the *moved* view,
     which is only correct if the changed matrix uniforms were re-uploaded for the
-    new pose. Byte-identical stock-vs-fvtk (same camera sequence)."""
+    new pose. Byte-identical stock-vs-cvista (same camera sequence)."""
     s = vtkSphereSource()
     s.SetThetaResolution(40)
     s.SetPhiResolution(40)

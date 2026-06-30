@@ -122,7 +122,7 @@ if (NOT TARGET WrapPython)
     WrapPythonInit)
 endif ()
 
-# fvtk: the Java / JavaScript / SerDes wrapper-generator tools have been removed.
+# cvista: the Java / JavaScript / SerDes wrapper-generator tools have been removed.
 # This wheel is Python-only (VTK_WRAP_PYTHON=YES; VTK_WRAP_JAVA, VTK_WRAP_JAVASCRIPT
 # and VTK_WRAP_SERIALIZATION are unsupported), so the ParseJava/WrapJava/WrapSerDes/
 # WrapJavaScript executables and their sources (vtkWrapJava*, vtkParseJava,

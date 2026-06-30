@@ -13,7 +13,7 @@
 # the backend builds a SINGLE cp312-abi3 wheel per OS: ONE Py_LIMITED_API
 # 0x030c0000 wheel that loads on CPython 3.12+ (cibuildwheel's abi3 dedup reuses it
 # for cp313/cp314, so cp312 builds and 313/314 reuse). 3.12 is the abi3 floor —
-# PyMemberDef entered the stable ABI only in 3.12. Set FVTK_ABI3=0 to build a
+# PyMemberDef entered the stable ABI only in 3.12. Set CVISTA_ABI3=0 to build a
 # legacy per-version static-type wheel instead (escape hatch, reversible).
 #
 # The C++ kit build is shared across the cp matrix on each OS via ccache
@@ -32,9 +32,9 @@ concurrency:
 jobs:
   build:
     name: wheels-${{ matrix.os }}
-    # matrix.runner = the Blacksmith tier when the FVTK_RUNNER_* variable is set,
+    # matrix.runner = the Blacksmith tier when the CVISTA_RUNNER_* variable is set,
     # else the github-hosted default. matrix.os stays the artifact suffix so the
-    # uploaded names (fvtk-wheels-ubuntu-latest / -macos-14 / -windows-latest) are
+    # uploaded names (cvista-wheels-ubuntu-latest / -macos-14 / -windows-latest) are
     # unchanged. Compile width auto-tracks the runner cores (no pinned jobs).
     runs-on: ${{ matrix.runner }}
     # Heavy per-OS optimized (LTO) wheel build; cap below the 360-min default.
@@ -44,11 +44,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            runner: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+            runner: ${{ vars.CVISTA_RUNNER_LINUX || 'ubuntu-latest' }}
           - os: macos-14
-            runner: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
+            runner: ${{ vars.CVISTA_RUNNER_MACOS || 'macos-14' }}
           - os: windows-latest
-            runner: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
+            runner: ${{ vars.CVISTA_RUNNER_WINDOWS || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -65,12 +65,12 @@ jobs:
         if: runner.os != 'Windows'
         uses: actions/cache@v4
         with:
-          path: /tmp/fvtk-cibw-ccache
-          key: fvtk-cibw-ccache-${{ matrix.os }}-${{ github.sha }}
-          restore-keys: fvtk-cibw-ccache-${{ matrix.os }}-
+          path: /tmp/cvista-cibw-ccache
+          key: cvista-cibw-ccache-${{ matrix.os }}-${{ github.sha }}
+          restore-keys: cvista-cibw-ccache-${{ matrix.os }}-
       - name: Make ccache dir world-writable (container build user differs)
         if: runner.os == 'Linux'
-        run: mkdir -p /tmp/fvtk-cibw-ccache && chmod 0777 /tmp/fvtk-cibw-ccache
+        run: mkdir -p /tmp/cvista-cibw-ccache && chmod 0777 /tmp/cvista-cibw-ccache
 
       # Put MSVC (cl.exe) + the Windows SDK on PATH for the whole job. The Ninja
       # generator does NOT auto-run vcvars, so cibuildwheel's MSVC autodetect
@@ -91,11 +91,11 @@ jobs:
         uses: pypa/cibuildwheel@v3.1.4
         # All config lives in pyproject.toml [tool.cibuildwheel]; per-OS
         # init-cache + repair tools are selected there. No env needed here for
-        # linux. macOS/windows env (FVTK_CMAKE_INIT, MACOSX_DEPLOYMENT_TARGET)
+        # linux. macOS/windows env (CVISTA_CMAKE_INIT, MACOSX_DEPLOYMENT_TARGET)
         # set in the [tool.cibuildwheel.macos|windows] tables.
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheels-${{ matrix.os }}
+          name: cvista-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
           if-no-files-found: error

@@ -13,7 +13,7 @@
 // regardless of the VTK_DISPATCH_*SOA* switches. In the stock single "bulk" TU an
 // earlier #include of the SOA instantiation sources already pulled in those
 // template DEFINITIONS, so the type was complete. When this instantiation is
-// compiled as its own TU (fvtk FVTK_SPLIT_BULK_INSTANTIATE — split for build
+// compiled as its own TU (cvista CVISTA_SPLIT_BULK_INSTANTIATE — split for build
 // parallelism), that sharing is gone, so include the .txx definitions here. These
 // are plain header includes (no VTK_*_INSTANTIATING define), so they only make the
 // templates COMPLETE — they do NOT force any explicit instantiation, and the

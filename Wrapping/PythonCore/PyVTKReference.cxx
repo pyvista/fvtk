@@ -759,7 +759,7 @@ static PyObject* PyVTKReference_New(PyTypeObject*, PyObject* args, PyObject* kwd
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "fvtk.vtkCommonCore.reference", // tp_name
+  "cvista.vtkCommonCore.reference", // tp_name
   sizeof(PyVTKReference), // tp_basicsize
   0,                      // tp_itemsize
   PyVTKReference_Delete,  // tp_dealloc
@@ -812,7 +812,7 @@ PyTypeObject PyVTKReference_Type = {
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKNumberReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "fvtk.vtkCommonCore.number_reference", // tp_name
+  "cvista.vtkCommonCore.number_reference", // tp_name
   sizeof(PyVTKReference),   // tp_basicsize
   0,                        // tp_itemsize
   PyVTKReference_Delete,    // tp_dealloc
@@ -865,7 +865,7 @@ PyTypeObject PyVTKNumberReference_Type = {
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKStringReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "fvtk.vtkCommonCore.string_reference", // tp_name
+  "cvista.vtkCommonCore.string_reference", // tp_name
   sizeof(PyVTKReference),         // tp_basicsize
   0,                              // tp_itemsize
   PyVTKReference_Delete,          // tp_dealloc
@@ -918,7 +918,7 @@ PyTypeObject PyVTKStringReference_Type = {
 //------------------------------------------------------------------------------
 PyTypeObject PyVTKTupleReference_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "fvtk.vtkCommonCore.tuple_reference", // tp_name
+  "cvista.vtkCommonCore.tuple_reference", // tp_name
   sizeof(PyVTKReference),     // tp_basicsize
   0,                          // tp_itemsize
   PyVTKReference_Delete,      // tp_dealloc
@@ -996,7 +996,7 @@ static PyType_Slot PyVTKReference_Slots[] = {
   { 0, nullptr }
 };
 static PyType_Spec PyVTKReference_Spec = {
-  "fvtk.vtkCommonCore.reference", sizeof(PyVTKReference), 0,
+  "cvista.vtkCommonCore.reference", sizeof(PyVTKReference), 0,
   // Py_TPFLAGS_BASETYPE is required so number/string/tuple_reference can subclass
   // `reference` via PyType_FromSpecWithBases (the limited API enforces the
   // BASETYPE flag on a base, unlike static types where direct tp_base assignment
@@ -1046,7 +1046,7 @@ static PyType_Slot PyVTKNumberReference_Slots[] = {
   { 0, nullptr }
 };
 static PyType_Spec PyVTKNumberReference_Spec = {
-  "fvtk.vtkCommonCore.number_reference", sizeof(PyVTKReference), 0,
+  "cvista.vtkCommonCore.number_reference", sizeof(PyVTKReference), 0,
   Py_TPFLAGS_DEFAULT, PyVTKNumberReference_Slots
 };
 
@@ -1071,7 +1071,7 @@ static PyType_Slot PyVTKStringReference_Slots[] = {
   { 0, nullptr }
 };
 static PyType_Spec PyVTKStringReference_Spec = {
-  "fvtk.vtkCommonCore.string_reference", sizeof(PyVTKReference), 0,
+  "cvista.vtkCommonCore.string_reference", sizeof(PyVTKReference), 0,
   Py_TPFLAGS_DEFAULT, PyVTKStringReference_Slots
 };
 
@@ -1089,7 +1089,7 @@ static PyType_Slot PyVTKTupleReference_Slots[] = {
   { 0, nullptr }
 };
 static PyType_Spec PyVTKTupleReference_Spec = {
-  "fvtk.vtkCommonCore.tuple_reference", sizeof(PyVTKReference), 0,
+  "cvista.vtkCommonCore.tuple_reference", sizeof(PyVTKReference), 0,
   Py_TPFLAGS_DEFAULT, PyVTKTupleReference_Slots
 };
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# ci/build-wheels-linux.sh — build fvtk manylinux_2_28_x86_64 wheel(s) LOCALLY
+# ci/build-wheels-linux.sh — build cvista manylinux_2_28_x86_64 wheel(s) LOCALLY
 # via a raw `docker run` inside quay.io/pypa/manylinux_2_28_x86_64.
 #
 # This is the NIX-FREE local mirror of the cibuildwheel release recipe:
@@ -9,7 +9,7 @@
 # configure with ci/cmake/linux.cmake, cmake --build, generated build-tree
 # `setup.py bdist_wheel`, then `auditwheel repair --plat manylinux_2_28_x86_64`.
 #
-# Unlike the local nix build (build-fvtk.sh), the container wheel is fully
+# Unlike the local nix build (build-cvista.sh), the container wheel is fully
 # auditwheel-self-contained: no nix runtime libs, no LD_LIBRARY_PATH dance.
 #
 # Usage:
@@ -19,13 +19,13 @@
 #
 # Env knobs:
 #   IMAGE      manylinux image (default quay.io/pypa/manylinux_2_28_x86_64)
-#   FVTK_SOURCE_UNITY  1 (default) per-module source UNITY_BUILD (needs GCC>=12;
+#   CVISTA_SOURCE_UNITY  1 (default) per-module source UNITY_BUILD (needs GCC>=12;
 #                      active on the 2_28/GCC-14 image)
 #   BUILD_JOBS parallel compile jobs (default: nproc)
 #   CCACHE_DIR host ccache dir, mounted into the container so the python-
 #              INDEPENDENT C++ kits are shared across the cp matrix AND across
-#              re-runs (default: ~/.cache/fvtk-ccache-manylinux)
-#   FVTK_LTO   1 (default) production LTO wheel; 0 for a fast iteration build
+#              re-runs (default: ~/.cache/cvista-ccache-manylinux)
+#   CVISTA_LTO   1 (default) production LTO wheel; 0 for a fast iteration build
 #   OUTDIR     host wheelhouse (default: <repo>/wheelhouse)
 #
 # All CPython legs run in ONE container invocation so they share the same ccache
@@ -36,24 +36,24 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="${IMAGE:-quay.io/pypa/manylinux_2_28_x86_64}"
 BUILD_JOBS="${BUILD_JOBS:-$(nproc)}"
-CCACHE_DIR="${CCACHE_DIR:-$HOME/.cache/fvtk-ccache-manylinux}"
+CCACHE_DIR="${CCACHE_DIR:-$HOME/.cache/cvista-ccache-manylinux}"
 OUTDIR="${OUTDIR:-$REPO/wheelhouse}"
-FVTK_LTO="${FVTK_LTO:-1}"
-FVTK_SOURCE_UNITY="${FVTK_SOURCE_UNITY:-1}"
+CVISTA_LTO="${CVISTA_LTO:-1}"
+CVISTA_SOURCE_UNITY="${CVISTA_SOURCE_UNITY:-1}"
 
 PYVERS=("$@")
 [ "${#PYVERS[@]}" -gt 0 ] || PYVERS=("313")
 
 mkdir -p "$CCACHE_DIR" "$OUTDIR"
 
-echo "=== fvtk manylinux_2_28 local docker build ==="
+echo "=== cvista manylinux_2_28 local docker build ==="
 echo "  image            : $IMAGE"
 echo "  pythons          : ${PYVERS[*]}"
 echo "  jobs             : $BUILD_JOBS"
 echo "  ccache           : $CCACHE_DIR (mounted -> /ccache)"
 echo "  outdir           : $OUTDIR"
-echo "  FVTK_LTO         : $FVTK_LTO"
-echo "  FVTK_SOURCE_UNITY: $FVTK_SOURCE_UNITY"
+echo "  CVISTA_LTO         : $CVISTA_LTO"
+echo "  CVISTA_SOURCE_UNITY: $CVISTA_SOURCE_UNITY"
 echo
 
 # The whole recipe runs as a single bash script inside the container. The repo is
@@ -65,14 +65,14 @@ docker run --rm \
   -v "$OUTDIR":/out \
   -e PYVERS="${PYVERS[*]}" \
   -e BUILD_JOBS="$BUILD_JOBS" \
-  -e FVTK_LTO="$FVTK_LTO" \
-  -e FVTK_SOURCE_UNITY="$FVTK_SOURCE_UNITY" \
+  -e CVISTA_LTO="$CVISTA_LTO" \
+  -e CVISTA_SOURCE_UNITY="$CVISTA_SOURCE_UNITY" \
   "$IMAGE" \
   bash -euxo pipefail -c '
     # ---- toolchain + AlmaLinux 8 rendering deps (system mesa = GL backend) ---
     # System GCC 14.2.1 + gold + LTO plugin are already on PATH in the
     # manylinux_2_28 image. All package names match the el7 set (dnf, no EPEL).
-    # mold = the fast ELF linker the build defaults to (FVTK_FAST_LINKER=mold);
+    # mold = the fast ELF linker the build defaults to (CVISTA_FAST_LINKER=mold);
     # lld is the validated fallback. Both install from the stock 2_28 repos.
     dnf install -y \
       mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel \
@@ -113,7 +113,7 @@ docker run --rm \
       # are python-version-specific). But the ccache shares the python-independent
       # C++ kit objects across legs, so only the first leg pays the full C++ cost.
       rm -rf "$BUILD"
-      FVTK_LTO="$FVTK_LTO" FVTK_SOURCE_UNITY="$FVTK_SOURCE_UNITY" \
+      CVISTA_LTO="$CVISTA_LTO" CVISTA_SOURCE_UNITY="$CVISTA_SOURCE_UNITY" \
         cmake -S /work -B "$BUILD" -G Ninja \
         -C ci/cmake/linux.cmake \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -121,7 +121,7 @@ docker run --rm \
         -DPython3_EXECUTABLE="$PYBIN/python" \
         -DPython3_FIND_STRATEGY=LOCATION
 
-      FVTK_LTO="$FVTK_LTO" FVTK_SOURCE_UNITY="$FVTK_SOURCE_UNITY" \
+      CVISTA_LTO="$CVISTA_LTO" CVISTA_SOURCE_UNITY="$CVISTA_SOURCE_UNITY" \
         cmake --build "$BUILD" --parallel "$BUILD_JOBS"
       ccache --show-stats | grep -Ei "hit|miss|cache size" || true
 

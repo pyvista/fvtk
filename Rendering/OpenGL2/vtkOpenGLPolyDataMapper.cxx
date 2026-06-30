@@ -3408,7 +3408,7 @@ void vtkOpenGLPolyDataMapper::UpdateMaximumPointCellIds(vtkRenderer* ren, vtkAct
   vtkIdType maxPointId = this->CurrentInput->GetPoints()->GetNumberOfPoints() - 1;
   if (this->CurrentInput && this->CurrentInput->GetPointData())
   {
-    // fvtk: width-agnostic id read (GetRange works on any vtkDataArray); the
+    // cvista: width-agnostic id read (GetRange works on any vtkDataArray); the
     // int32-or-int64 passthrough array must size the id-bit allocation correctly.
     vtkDataArray* pointArrayId = this->PointIdArrayName
       ? vtkDataArray::SafeDownCast(
@@ -3446,7 +3446,7 @@ void vtkOpenGLPolyDataMapper::UpdateMaximumPointCellIds(vtkRenderer* ren, vtkAct
 
   if (this->CurrentInput && this->CurrentInput->GetCellData())
   {
-    // fvtk: width-agnostic id read (GetRange works on any vtkDataArray).
+    // cvista: width-agnostic id read (GetRange works on any vtkDataArray).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(
           this->CurrentInput->GetCellData()->GetArray(this->CellIdArrayName))
@@ -4749,7 +4749,7 @@ void vtkOpenGLPolyDataMapper::ProcessSelectorPixelBuffers(
 
   if (currPass == vtkHardwareSelector::POINT_ID_LOW24)
   {
-    // fvtk: width-agnostic id-array read. The point-id passthrough array may be
+    // cvista: width-agnostic id-array read. The point-id passthrough array may be
     // stored as int32 (width-relaxed) or int64; fetch as vtkDataArray and read
     // values via GetComponent so an int32 container is NOT silently dropped (a
     // vtkArrayDownCast<vtkIdTypeArray> on an int32 array returns null -> the id
@@ -4787,7 +4787,7 @@ void vtkOpenGLPolyDataMapper::ProcessSelectorPixelBuffers(
 
   if (currPass == vtkHardwareSelector::POINT_ID_HIGH24)
   {
-    // fvtk: width-agnostic id-array read. The point-id passthrough array may be
+    // cvista: width-agnostic id-array read. The point-id passthrough array may be
     // stored as int32 (width-relaxed) or int64; fetch as vtkDataArray and read
     // values via GetComponent so an int32 container is NOT silently dropped (a
     // vtkArrayDownCast<vtkIdTypeArray> on an int32 array returns null -> the id
@@ -4861,7 +4861,7 @@ void vtkOpenGLPolyDataMapper::ProcessSelectorPixelBuffers(
   // process the cellid array?
   if (currPass == vtkHardwareSelector::CELL_ID_LOW24)
   {
-    // fvtk: width-agnostic id-array read (see point-id note above).
+    // cvista: width-agnostic id-array read (see point-id note above).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;
@@ -4899,7 +4899,7 @@ void vtkOpenGLPolyDataMapper::ProcessSelectorPixelBuffers(
 
   if (currPass == vtkHardwareSelector::CELL_ID_HIGH24)
   {
-    // fvtk: width-agnostic id-array read (see point-id note above).
+    // cvista: width-agnostic id-array read (see point-id note above).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;

@@ -34,15 +34,15 @@ vtk_module_add_module(VTK::WrappingPythonCore
   PRIVATE_HEADERS ${private_headers}
   LIBRARY_NAME_SUFFIX "${vtk_python_version_major}.${vtk_python_version_minor}")
 
-# fvtk: Python stable-ABI (abi3) — EXPERIMENTAL. See docs/abi3-feasibility.md.
+# cvista: Python stable-ABI (abi3) — EXPERIMENTAL. See docs/abi3-feasibility.md.
 # Compile the wrapper runtime itself against the CPython limited API so it can
 # be linked into a single cp3x-abi3 wheel. Currently a diagnostic lever: this
 # runtime is not yet limited-API clean, so the build surfaces the porting
 # worklist rather than producing a working library.
-if (FVTK_ABI3)
+if (CVISTA_ABI3)
   vtk_module_definitions(VTK::WrappingPythonCore
     PRIVATE
-      "Py_LIMITED_API=${FVTK_ABI3_VERSION}")
+      "Py_LIMITED_API=${CVISTA_ABI3_VERSION}")
 endif ()
 
 if (NOT VTK_ABI_NAMESPACE_NAME STREQUAL "<DEFAULT>" AND NOT DEFINED ENV{CI})

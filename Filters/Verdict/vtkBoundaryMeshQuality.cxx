@@ -107,7 +107,7 @@ int vtkBoundaryMeshQuality::RequestData(vtkInformation* vtkNotUsed(request),
   output->ShallowCopy(geometryFilter->GetOutput());
 
   // Use vtkDataArray* (not vtkIdTypeArray*) so the lookup is width-agnostic:
-  // fvtk's geometry filter may store vtkOriginalCellIds as vtkTypeInt32Array
+  // cvista's geometry filter may store vtkOriginalCellIds as vtkTypeInt32Array
   // when the mesh is small enough to fit int32 (parity-equivalent values,
   // narrower container). GetComponent(i,0) handles any integer/floating width.
   vtkDataArray* const originalCellIds =

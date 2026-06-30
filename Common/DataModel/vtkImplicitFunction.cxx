@@ -96,7 +96,7 @@ private:
   vtkAbstractTransform* Transform;
 };
 
-// fvtk: the array overloads below evaluate the implicit function in parallel
+// cvista: the array overloads below evaluate the implicit function in parallel
 // (FunctionWorker -> vtkSMPTools::For -> EvaluateFunction per point). Several
 // implicit functions lazily build internal state on the first EvaluateFunction
 // -- e.g. vtkPolyPlane::ComputeNormals, guarded only by an MTime -- which is a

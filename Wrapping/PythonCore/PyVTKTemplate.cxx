@@ -256,7 +256,7 @@ static PyObject* PyVTKTemplate_Call(PyObject*, PyObject*, PyObject*)
 // clang-format off
 PyTypeObject PyVTKTemplate_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "fvtk.vtkCommonCore.template", // tp_name
+  "cvista.vtkCommonCore.template", // tp_name
   0,                        // tp_basicsize
   0,                        // tp_itemsize
   nullptr,                  // tp_dealloc
@@ -320,7 +320,7 @@ static PyType_Slot PyVTKTemplate_Slots[] = {
   { 0, nullptr }
 };
 static PyType_Spec PyVTKTemplate_Spec = {
-  "fvtk.vtkCommonCore.template", 0, 0, Py_TPFLAGS_DEFAULT, PyVTKTemplate_Slots
+  "cvista.vtkCommonCore.template", 0, 0, Py_TPFLAGS_DEFAULT, PyVTKTemplate_Slots
 };
 
 // Backing pointer for the `#define PyVTKTemplate_Type (*ptr)` shim.

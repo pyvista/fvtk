@@ -27,10 +27,10 @@ context cannot be created on the host.
 
 import pytest
 
-from fvtk.vtkCommonCore import VTK_FLOAT
-from fvtk.vtkRenderingCore import vtkRenderWindow
-import fvtk.vtkRenderingOpenGL2  # noqa: F401  (registers the OpenGL factory)
-from fvtk.vtkRenderingOpenGL2 import vtkTextureObject
+from cvista.vtkCommonCore import VTK_FLOAT
+from cvista.vtkRenderingCore import vtkRenderWindow
+import cvista.vtkRenderingOpenGL2  # noqa: F401  (registers the OpenGL factory)
+from cvista.vtkRenderingOpenGL2 import vtkTextureObject
 
 
 def _make_context():

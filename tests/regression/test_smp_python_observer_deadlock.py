@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Regression: a threaded SMP backend never runs a Python observer on a worker.
 
-fvtk defaults the vtkSMPTools backend to STDThread, so hundreds of filters run
+cvista defaults the vtkSMPTools backend to STDThread, so hundreds of filters run
 their ``vtkSMPTools::For`` loops multithreaded by default. Several filters report
 progress/abort from *inside* the parallel functor using VTK's idiom
 ``if (vtkSMPTools::GetSingleThread()) this->UpdateProgress(...)``. Under the
@@ -47,9 +47,9 @@ _CHILD = textwrap.dedent(
     import sys
     import threading
 
-    from fvtk.vtkCommonCore import vtkSMPTools, vtkCommand
-    from fvtk.vtkImagingCore import vtkRTAnalyticSource
-    from fvtk.vtkFiltersCore import vtkThreshold
+    from cvista.vtkCommonCore import vtkSMPTools, vtkCommand
+    from cvista.vtkImagingCore import vtkRTAnalyticSource
+    from cvista.vtkFiltersCore import vtkThreshold
 
     main_ident = threading.get_ident()
 

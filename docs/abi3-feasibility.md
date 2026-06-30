@@ -1,7 +1,7 @@
-# fvtk Python stable-ABI (abi3 / `Py_LIMITED_API`) feasibility
+# cvista Python stable-ABI (abi3 / `Py_LIMITED_API`) feasibility
 
 Status: **ENABLED BY DEFAULT (two-wheel scheme).** The increment ladder (below)
-is complete and the final product decision was taken: fvtk ships **TWO wheels** —
+is complete and the final product decision was taken: cvista ships **TWO wheels** —
 a normal **static `cp311`** wheel for Python 3.11, and a single **`cp312-abi3`**
 stable-ABI wheel for Python 3.12+ (covers 3.12/3.13/3.14/future). The abi3 floor
 is **3.12, not 3.11**: `PyMemberDef` and the `Py_T_*`/`Py_READONLY` member
@@ -10,7 +10,7 @@ constants the heap-type wrappers emit only entered the stable ABI in 3.12
 stable-ABI target and is served by the static wheel instead. The abi3 wheel is
 bit-exact with stock VTK 9.6.2 except for the one documented `type.__flags__`
 HEAPTYPE/IMMUTABLETYPE divergence (every limited-API type is a heap type); the
-static cp311 wheel is byte-for-byte incl. `__flags__`. `FVTK_ABI3=0` rebuilds the
+static cp311 wheel is byte-for-byte incl. `__flags__`. `CVISTA_ABI3=0` rebuilds the
 legacy per-version static-type wheels for every version. See **Increment 6** at
 the top of the status log for the two-wheel reconciliation; Increment 5 (the
 earlier single-`cp311-abi3` attempt at a 3.11 floor) is retained for history but
@@ -41,11 +41,11 @@ fragile sub-3.12 compat shim, the abi3 floor moved to **3.12** (`0x030c0000`) an
 still supported — just not via abi3. The matrix is now two wheels.
 
 **What changed (vs Increment 5).**
-- `fvtk-config/minimal.cmake`: `FVTK_ABI3_VERSION` floor `0x030b0000` (3.11) →
-  **`0x030c0000` (3.12)**. `FVTK_ABI3` stays default ON (a plain build is abi3);
+- `cvista-config/minimal.cmake`: `CVISTA_ABI3_VERSION` floor `0x030b0000` (3.11) →
+  **`0x030c0000` (3.12)**. `CVISTA_ABI3` stays default ON (a plain build is abi3);
   the cibuildwheel backend forces it OFF only on the cp311 leg.
-- `ci/cibw/fvtk_backend.py`: `_abi3_enabled()` is now **per-leg version-aware** —
-  True iff the build python is ≥ 3.12 (and `FVTK_ABI3` ≠ 0). So the cp311 leg
+- `ci/cibw/cvista_backend.py`: `_abi3_enabled()` is now **per-leg version-aware** —
+  True iff the build python is ≥ 3.12 (and `CVISTA_ABI3` ≠ 0). So the cp311 leg
   builds a STATIC `cp311-cp311` wheel and cp312+ builds the `cp312-abi3` wheel,
   in one cibuildwheel matrix run. `ABI3_FLOOR_TAG`/`_VERSION` = `cp312`/`(3,12)`.
 - `pyproject.toml`: `[tool.cibuildwheel].build` single `cp312-*` →
@@ -56,7 +56,7 @@ still supported — just not via abi3. The matrix is now two wheels.
   **3.11 → static wheel under STRICT parity** (`BITEXACT_ABI3=0`, byte-identical
   `__flags__`), **3.12/3.13 → cp312-abi3 wheel under ABI3-AWARE parity**
   (`BITEXACT_ABI3=1`). `renderexact` runs on 3.11 (static) and 3.13 (abi3). The
-  install step uses `pip install --no-index --find-links <dir> fvtk` so pip picks
+  install step uses `pip install --no-index --find-links <dir> cvista` so pip picks
   the tag-compatible wheel from the two-wheel artifact dir.
 - A `<3.12` compat shim (`Wrapping/PythonCore/vtkPythonTypeAccess.h`, commit
   `5f9093c`) was added during the abandoned 3.11-floor attempt; it is **inert at
@@ -72,22 +72,22 @@ floor).
 The `__flags__`-divergence product decision (pinned in Increment 2's parity-wall
 entry) was taken: **enable abi3 by default.** The single documented divergence —
 `type(x).__flags__` HEAPTYPE/IMMUTABLETYPE (every limited-API type is a heap
-type) — is accepted; everything else stays bit-exact with stock VTK 9.6.2. fvtk
+type) — is accepted; everything else stays bit-exact with stock VTK 9.6.2. cvista
 now ships ONE stable-ABI wheel instead of a per-minor matrix.
 
 **What flipped.**
-- `fvtk-config/minimal.cmake`: `FVTK_ABI3` default **OFF → ON**, and
-  `FVTK_ABI3_VERSION` floor **`0x030d0000` (3.13) → `0x030b0000` (3.11)** so the
-  wheel is `cp311-abi3` and loads on CPython 3.11+. `-DFVTK_ABI3=OFF` is the
+- `cvista-config/minimal.cmake`: `CVISTA_ABI3` default **OFF → ON**, and
+  `CVISTA_ABI3_VERSION` floor **`0x030d0000` (3.13) → `0x030b0000` (3.11)** so the
+  wheel is `cp311-abi3` and loads on CPython 3.11+. `-DCVISTA_ABI3=OFF` is the
   escape hatch back to the legacy static-type wheel.
 - `pyproject.toml`: `[tool.cibuildwheel].build` `cp311-* cp312-* cp313-* cp314-*`
   → **single `cp311-*`** leg. The wrappers compile once against the limited API;
   the emitted wheel is abi3-tagged so extra cp legs would only duplicate it.
-- `ci/cibw/fvtk_backend.py`: `_retag_abi3()` rewrites the build-tree
+- `ci/cibw/cvista_backend.py`: `_retag_abi3()` rewrites the build-tree
   `setup.py`-produced wheel (which tags by the build python's version, unaware of
   `Py_LIMITED_API`) into `…-cp311-abi3-<plat>.whl` — flips the filename + the
   WHEEL `Tag:` line + the RECORD entry for WHEEL. The backend passes
-  `-DFVTK_ABI3={ON|OFF}` (mirroring `FVTK_ABI3=0` in env) so cmake and the retag
+  `-DCVISTA_ABI3={ON|OFF}` (mirroring `CVISTA_ABI3=0` in env) so cmake and the retag
   stay in lockstep, and keys the build dir on `…-abi3`. `CMake/setup.py.in`
   package_data gains `*.abi3.so` so the stable-ABI modules are packaged.
 - Parity gate (`tests/bitexact/wrapper_parity.py`): `_is_abi3()` default
@@ -107,13 +107,13 @@ now ships ONE stable-ABI wheel instead of a per-minor matrix.
 zero-cost support for every future CPython minor (the stable-ABI `.so` is
 forward-compatible; no cp315/… rebuild).
 
-**Validation (executor, end-to-end on the DEFAULT build, no FVTK_ABI3 override;
+**Validation (executor, end-to-end on the DEFAULT build, no CVISTA_ABI3 override;
 isolated tree `~/tmp/abi3-default-5d74a8a` from a clean `git archive` of the branch,
 cp313 nix python, floor `0x030b0000`).**
-- DEFAULT configure (no `-DFVTK_ABI3`): `CMakeCache.txt` reports
-  `FVTK_ABI3:BOOL=ON` / `FVTK_ABI3_VERSION:STRING=0x030b0000` — the default took.
+- DEFAULT configure (no `-DCVISTA_ABI3`): `CMakeCache.txt` reports
+  `CVISTA_ABI3:BOOL=ON` / `CVISTA_ABI3_VERSION:STRING=0x030b0000` — the default took.
 - Full build: clean, **85 `vtkXxx.abi3.so`** wrapper modules emitted. Import on
-  cp313: `from fvtk.vtkCommonCore import vtkObject` OK,
+  cp313: `from cvista.vtkCommonCore import vtkObject` OK,
   `type(vtkObject()).__flags__ & HEAPTYPE == True` (heap types in effect).
 - **Numeric bitexact + abi3-aware parity gate (`BITEXACT_ABI3=1`): 140 passed /
   0 failed** — 138 `test_bitexact` numeric cases `maxULP=0` vs stock VTK 9.6.2
@@ -122,14 +122,14 @@ cp313 nix python, floor `0x030b0000`).**
   zero-copy shared+byte-identical, mro/isinstance/repr/weakref/instance-dict
   identical, ONLY `__flags__` diverges), `test_abi3_heaptypes_in_effect` PASSED
   (every probed type actually became a heap type).
-- **Escape hatch:** `-DFVTK_ABI3=OFF` rebuilds the legacy static-type wheel
+- **Escape hatch:** `-DCVISTA_ABI3=OFF` rebuilds the legacy static-type wheel
   (`vtkCommonCore.cpython-313-x86_64-linux-gnu.so`, version-tagged, NOT abi3) and
   passes the STRICT parity gate (`BITEXACT_ABI3=0`): **139 passed / 1 skipped** —
   `test_wrapper_behavior_parity` PASSED byte-for-byte INCL. `__flags__` (static
   types, HEAPTYPE=0/IMMUTABLETYPE=1 matching stock exactly),
   `test_abi3_heaptypes_in_effect` correctly skipped.
 - **Wheel tag:** the backend's `_retag_abi3()` produces
-  `fvtk-…-cp311-abi3-<plat>.whl` (filename + WHEEL `Tag:` + RECORD), verified to
+  `cvista-…-cp311-abi3-<plat>.whl` (filename + WHEEL `Tag:` + RECORD), verified to
   install via pip into a clean venv.
 
 **cp311-floor limited-API gap + fix (CI-caught; the cp313 validation masked it).**
@@ -204,7 +204,7 @@ is unchanged.
   guards the static `PyNumberMethods`.
 - wrapper preamble includes `vtkPythonTypeAccess.h`.
 
-**Wheel plumbing.** `CMake/vtkModuleWrapPython.cmake`: under `FVTK_ABI3` the
+**Wheel plumbing.** `CMake/vtkModuleWrapPython.cmake`: under `CVISTA_ABI3` the
 wrapper modules get the stable-ABI `.abi3.so` suffix (forward-compatible loader
 name) instead of `.cpython-3XX-<plat>.so`. A retag helper produces the final
 `cp311-abi3-<plat>` wheel filename + WHEEL tag.
@@ -223,7 +223,7 @@ name) instead of `.cpython-3XX-<plat>.so`. A retag helper produces the final
 **Validation (executor, cp313 limited API, `Py_LIMITED_API=0x030b0000`, isolated
 tree `~/tmp/abi3-final-afc6`).**
 - Full abi3 build: `ninja all` exit 0, clean link, 85 wrapper modules.
-- Import: `fvtk.vtkCommonCore / vtkCommonDataModel / vtkCommonMath` import as heap
+- Import: `cvista.vtkCommonCore / vtkCommonDataModel / vtkCommonMath` import as heap
   types; numpy zero-copy buffer **shared + byte-identical**, `vtkVariant` hash,
   special-type subclassing (`vtkQuaterniond` MRO), enums, and instance `__dict__`
   all work.
@@ -252,7 +252,7 @@ at the now-externally-linked `PyVTKObject_AsBuffer_GetBuffer/ReleaseBuffer`), an
 the per-instance dict/weakref layout via a **`Py_tp_members` synthetic
 `__dictoffset__`/`__weaklistoffset__`** pair (`Py_T_PYSSIZET`/`Py_READONLY`), plus
 the `vtkAlgorithm`/`vtkCollection`/`vtkCollectionIterator` special slots and the
-`BASETYPE|HAVE_GC` flags. Verified: a default rebuild (FVTK_ABI3 OFF) regenerates
+`BASETYPE|HAVE_GC` flags. Verified: a default rebuild (CVISTA_ABI3 OFF) regenerates
 + compiles vtkCommonCore wrappers clean and byte-identical (the `#else` static
 path is unchanged; the added lines are preprocessor-only). The generated
 `vtkObjectPython.cxx` now carries the `PyvtkObject_Spec`/`PyvtkObject_Slots` block
@@ -271,7 +271,7 @@ under `#if defined(Py_LIMITED_API)`.
 
 **(b) MEASUREMENT — real numbers (executor, cp313, minimal profile).**
 - Scope of the wrapper compile: **85 Python modules, 1664 generated wrapper
-  `.cxx` sources**, compiled (fvtk uses unity builds for wrappers) into **97
+  `.cxx` sources**, compiled (cvista uses unity builds for wrappers) into **97
   unity wrapper TUs**.
 - Per-unity-wrapper-TU true compile cost (ccache bypassed, measured on 4
   representative module unity-0 TUs): **1.10 / 1.48 / 1.53 / 1.36 s → ~1.35 s avg**.
@@ -291,7 +291,7 @@ under `#if defined(Py_LIMITED_API)`.
   ~2–3× larger, so the absolute saving scales up proportionally.
 - **Wheel tag flip (the one-line product change, once the runtime glue lands):**
   `pyproject.toml` `build = "cp311-* cp312-* cp313-* cp314-*"` → `build = "cp311-*"`
-  (single leg), and the wrapper SOABI tag in `ci/cibw/fvtk_backend.py:47`
+  (single leg), and the wrapper SOABI tag in `ci/cibw/cvista_backend.py:47`
   (`sysconfig.get_config_var("SOABI")`, currently `cpython-313-…`) becomes `abi3`
   so the one wheel is tagged `cp311-abi3-<plat>` and installs on cp311+.
 
@@ -305,18 +305,18 @@ casts + the `_PyType_Lookup`/`Py_HashPointer`/`FindGetSetDescriptor`/`tp_name`
 sites enumerated in the Increment-2 entry. Then the wheel-tag flip above.
 
 
-Validation context: executor host, warm ninja tree at `~/tmp/fvtk`, numeric
+Validation context: executor host, warm ninja tree at `~/tmp/cvista`, numeric
 bit-exact suite (`tests/bitexact/`, 124 cases) vs stock VTK 9.6.2 + a new
 wrapper-behavior parity gate (`test_wrapper_parity.py`). The abi3 leg is built
-in an ISOLATED tree (`~/tmp/abi3-acd-afc6`, `-DFVTK_ABI3=ON`, minimal profile,
+in an ISOLATED tree (`~/tmp/abi3-acd-afc6`, `-DCVISTA_ABI3=ON`, minimal profile,
 cp313) so it never disturbs the shared default-build tree other agents validate
-against; the default leg is built there too (`build-default/`, FVTK_ABI3 OFF) to
+against; the default leg is built there too (`build-default/`, CVISTA_ABI3 OFF) to
 confirm byte-identity.
 
 ### Increment 2 (heap-type crossing) — runtime type-definitions PORTED + buffer slots + abi3-aware gate — LANDED; runtime non-type tail DOCUMENTED
 
 Decision taken (per the product go-ahead): cross the static→heap wall behind
-`FVTK_ABI3`, accepting the single `__flags__` (HEAPTYPE=1/IMMUTABLETYPE=0)
+`CVISTA_ABI3`, accepting the single `__flags__` (HEAPTYPE=1/IMMUTABLETYPE=0)
 divergence proven in the prior entry, keeping everything else bit-exact.
 
 **What landed (compiles clean both legs; default byte-identical).**
@@ -368,12 +368,12 @@ divergence proven in the prior entry, keeping everything else bit-exact.
   (static-build) gate still passes 1/1 against the proven default backends.
 
 **Validation.**
-- DEFAULT leg (FVTK_ABI3 OFF) in the isolated tree: `WrappingPythonCore` rebuilds
+- DEFAULT leg (CVISTA_ABI3 OFF) in the isolated tree: `WrappingPythonCore` rebuilds
   clean, all 13 TUs compile; parity gate passes against the shared proven
   backends (1 passed / abi3-positive test correctly skipped). Default codegen
   unchanged — every edit is either `Py_LIMITED_API`-guarded or a new inline that
   expands to the exact prior field access.
-- ABI3 leg (FVTK_ABI3 ON, cp313 limited API): **all five hand-written
+- ABI3 leg (CVISTA_ABI3 ON, cp313 limited API): **all five hand-written
   runtime type-definition TUs now compile cleanly** — `PyVTKReference`,
   `PyVTKNamespace`, `PyVTKTemplate`, `PyVTKMethodDescriptor`, `PyVTKExtras`
   (the latter builds the four reference heap types). The residual abi3 errors are
@@ -475,14 +475,14 @@ landed; the proven wall below is why.
   isinstance, identity, repr shape, the numpy zero-copy buffer protocol,
   weakref, instance `__dict__`) is reproducible under heap types; only the two
   flag bits are not. Whether that single divergence is acceptable is a
-  **product decision** (does any fvtk consumer branch on `__flags__` /
+  **product decision** (does any cvista consumer branch on `__flags__` /
   `Py_TPFLAGS_HEAPTYPE`?), not a coding one — which is exactly why the
   heap-type conversion is held here behind that decision rather than shipped.
 
 - **What this means for the ladder.** Increments 0–2 are all bit-exact and
   independently valuable *today* (CI trim; B2 accessor hygiene; the parity
   gate + the wall pinned with evidence). The static→heap port (former
-  "Increment 2/3") is **ready to implement behind `FVTK_ABI3`** — the accessor
+  "Increment 2/3") is **ready to implement behind `CVISTA_ABI3`** — the accessor
   layer + parity gate are the scaffolding for it — but is gated on accepting
   the `__flags__` divergence. The accessor `Py_LIMITED_API` branches and the
   parity gate are in place so that, the day that decision is made, the heap
@@ -515,7 +515,7 @@ landed; the proven wall below is why.
   / isinstance / issubclass, repr shape, **numpy zero-copy buffer protocol
   (byte-identical values + shared-memory mutation, the B5 risk surface)**,
   weakref, instance `__dict__`, `override` presence — all identical (modulo the
-  intentional `vtkmodules`→`fvtk` package rename, normalized out).
+  intentional `vtkmodules`→`cvista` package rename, normalized out).
 - **New safety net.** `tests/bitexact/wrapper_parity.py` +
   `test_wrapper_parity.py` — the wrapper-behavior parity gate, to be run every
   subsequent increment. This is the instrument that will catch the heap-type
@@ -576,7 +576,7 @@ bit-exact, independently-valuable **increment ladder** at the top of this doc
 (0: CI trim; 1: accessor shim + parity gate; 2: finish B2 hygiene + locate the
 wall). Each is a net win on its own; the heap-type port that crosses the wall
 is the only piece held, gated on the `__flags__`-divergence product decision.
-The `FVTK_ABI3` lever keeps the remaining worklist measurable.
+The `CVISTA_ABI3` lever keeps the remaining worklist measurable.
 
 ---
 
@@ -585,11 +585,11 @@ The `FVTK_ABI3` lever keeps the remaining worklist measurable.
 A build option that compiles the Python wrapper TUs against the limited API, so
 the blocker set is reproducible as compiler output rather than prose:
 
-- `fvtk-config/minimal.cmake` — new `option(FVTK_ABI3 ... OFF)` and
-  `FVTK_ABI3_VERSION` (default `0x030d0000` = CPython 3.13, the would-be
+- `cvista-config/minimal.cmake` — new `option(CVISTA_ABI3 ... OFF)` and
+  `CVISTA_ABI3_VERSION` (default `0x030d0000` = CPython 3.13, the would-be
   `cp313-abi3` floor).
-- `CMake/vtkModuleWrapPython.cmake` (~line 692) — when `FVTK_ABI3` is ON, adds
-  `Py_LIMITED_API=${FVTK_ABI3_VERSION}` to every generated per-module wrapper
+- `CMake/vtkModuleWrapPython.cmake` (~line 692) — when `CVISTA_ABI3` is ON, adds
+  `Py_LIMITED_API=${CVISTA_ABI3_VERSION}` to every generated per-module wrapper
   target (alongside the existing `PYTHON_PACKAGE` define).
 - `Wrapping/PythonCore/CMakeLists.txt` — same define on `VTK::WrappingPythonCore`
   (the runtime library) via `vtk_module_definitions`.
@@ -760,7 +760,7 @@ no cheap win here.
 Given the *bit-exact VTK 9.6.2* mandate, the recommendation is to **defer full
 abi3** and instead:
 
-1. **Keep the lever, keep it OFF.** `FVTK_ABI3` is landed as a measurement tool.
+1. **Keep the lever, keep it OFF.** `CVISTA_ABI3` is landed as a measurement tool.
    Re-run it after any wrapper-runtime change to watch the blocker count.
 
 2. **Cheaper matrix win first (no ABI change).** The C++ core is already built
@@ -784,7 +784,7 @@ abi3** and instead:
      `override()`, weakref/dict semantics). If parity holds, switch
      `[tool.cibuildwheel].build` to a single `cp313-*` leg producing
      `cp313-abi3` (drop the SOABI tag in `CMake/vtkModuleWrapPython.cmake` /
-     `ci/cibw/fvtk_backend.py`).
+     `ci/cibw/cvista_backend.py`).
 
    **Rough total: 4–7 engineer-weeks of implementation + an unbounded parity
    tail.** The parity tail, not the C-API port, is what makes this a "later"
@@ -803,10 +803,10 @@ abi3** and instead:
 ## Reproducing the diagnostic
 
 ```sh
-cmake -S . -B build-abi3 -C fvtk-config/minimal.cmake -DFVTK_ABI3=ON
+cmake -S . -B build-abi3 -C cvista-config/minimal.cmake -DCVISTA_ABI3=ON
 cmake --build build-abi3   # wrapper TUs fail; failures = the B1/B2/B5 worklist
 ```
 
-(`FVTK_ABI3_VERSION` defaults to `0x030d0000`; lower it only after the runtime is
+(`CVISTA_ABI3_VERSION` defaults to `0x030d0000`; lower it only after the runtime is
 ported.) The empirical probe results above were obtained directly against the
 CPython 3.12 limited-API headers, independent of a full configure.

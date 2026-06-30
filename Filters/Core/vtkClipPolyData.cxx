@@ -21,7 +21,7 @@
 #include "vtkTriangle.h"
 #include "vtkTypeInt64Array.h"
 
-#include "fvtkFastClipPoly.h" // fvtk opt-in parallel polys-only clip (EnableFast)
+#include "cvistaFastClipPoly.h" // cvista opt-in parallel polys-only clip (EnableFast)
 
 #include <cmath>
 
@@ -273,7 +273,7 @@ int vtkClipPolyData::RequestData(vtkInformation* vtkNotUsed(request),
   cellScalars = vtkFloatArray::New();
   cellScalars->Allocate(VTK_CELL_SIZE);
 
-  // fvtk opt-in parallel fast path (env FVTK_FAST / fvtk.EnableFast()). Engages
+  // cvista opt-in parallel fast path (env CVISTA_FAST / cvista.EnableFast()). Engages
   // only for the single-output, polys-only surface-clip regime; replaces the
   // serial per-cell Clip loop + shared-locator merge below with a threaded
   // per-cell clip and a coincident-point merge. POINTS-relaxed (same point set
@@ -286,7 +286,7 @@ int vtkClipPolyData::RequestData(vtkInformation* vtkNotUsed(request),
   const bool copyScalars = (this->GenerateClipScalars != 0) ||
     (input->GetPointData()->GetScalars() != nullptr);
   if (!this->GenerateClippedOutput &&
-    fvtk::FastClipPolyData(
+    cvista::FastClipPolyData(
       input, output, clipScalars, this->Value, this->InsideOut, inPD, inCD, copyScalars))
   {
     // The fast path filled `output` (points + polys + interpolated point data +

@@ -189,7 +189,7 @@ static PyMemberDef PyVTKMethodDescriptor_Members[] = {
 // clang-format off
 PyTypeObject PyVTKMethodDescriptor_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "fvtk.vtkCommonCore.method_descriptor", // tp_name
+  "cvista.vtkCommonCore.method_descriptor", // tp_name
   sizeof(PyMethodDescrObject),             // tp_basicsize
   0,                                       // tp_itemsize
   PyVTKMethodDescriptor_Delete,            // tp_dealloc
@@ -256,7 +256,7 @@ static PyType_Slot PyVTKMethodDescriptor_Slots[] = {
   { 0, nullptr }
 };
 static PyType_Spec PyVTKMethodDescriptor_Spec = {
-  "fvtk.vtkCommonCore.method_descriptor", sizeof(PyMethodDescrObject), 0,
+  "cvista.vtkCommonCore.method_descriptor", sizeof(PyMethodDescrObject), 0,
   Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, PyVTKMethodDescriptor_Slots
 };
 

@@ -58,7 +58,7 @@
 #define PVU_LPT_PREFETCH_W(addr) ((void)0)
 #endif
 
-// fvtk portability edit: the upstream source uses GCC/Clang __atomic_* builtins
+// cvista portability edit: the upstream source uses GCC/Clang __atomic_* builtins
 // for the int32 atomic-min below; MSVC lacks them, so route through the
 // _Interlocked* intrinsic on MSVC (declared in <intrin.h>).
 #if defined(_MSC_VER)

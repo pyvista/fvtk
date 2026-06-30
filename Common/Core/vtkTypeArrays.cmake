@@ -41,8 +41,8 @@ macro(_generate_array_specialization array_prefix vtk_type concrete_type depreca
   else ()
     string(REPLACE " " "_" _suffix "${concrete_type}")
   endif ()
-  if (FVTK_SPLIT_BULK_INSTANTIATE)
-    # fvtk split mode: compile each generated specialization (e.g. the
+  if (CVISTA_SPLIT_BULK_INSTANTIATE)
+    # cvista split mode: compile each generated specialization (e.g. the
     # vtkType*Array.cxx that define vtkTypeFloat32Array::New() etc.) as its own TU
     # directly, rather than #include-ing it into the per-type bulk TU. Without this
     # these New() definitions would be generated but never compiled -> undefined
@@ -84,16 +84,16 @@ foreach (array_prefix IN ITEMS Affine Composite Constant Indexed)
   endforeach ()
 endforeach ()
 
-# fvtk: StdFunction + Strided are the two dead families (FVTK_DROP_DEAD_ARRAYS,
+# cvista: StdFunction + Strided are the two dead families (CVISTA_DROP_DEAD_ARRAYS,
 # default ON) — omit their fixed-size specialization classes from the generated
 # set. The keep set always includes the load-bearing AOS/SOA/ScaledSOA + the
 # implicit Affine/Composite/Constant/Indexed families (used by PyVista's
 # ImageData/structured grids and the dispatcher).
-set(_fvtk_specialization_prefixes Affine Composite Constant Indexed ScaledSOA SOA)
-if (NOT FVTK_DROP_DEAD_ARRAYS)
-  list(APPEND _fvtk_specialization_prefixes StdFunction Strided)
+set(_cvista_specialization_prefixes Affine Composite Constant Indexed ScaledSOA SOA)
+if (NOT CVISTA_DROP_DEAD_ARRAYS)
+  list(APPEND _cvista_specialization_prefixes StdFunction Strided)
 endif ()
-foreach (array_prefix IN LISTS _fvtk_specialization_prefixes)
+foreach (array_prefix IN LISTS _cvista_specialization_prefixes)
   foreach (type IN LISTS vtk_fixed_size_numeric_types)
     vtk_fixed_size_type_to_without_prefix("${type}" "vtk" without_vtk_prefix)
     _generate_array_specialization("${array_prefix}" "${without_vtk_prefix}" "${type}" 0)
@@ -157,8 +157,8 @@ foreach (type IN LISTS vtk_fixed_size_numeric_types)
     # append generated source to the bulk instantiation of concrete_type
     vtk_get_fixed_size_type_mapping("${type}" numeric_type)
     string(REPLACE " " "_" _suffix "${numeric_type}")
-    if (FVTK_SPLIT_BULK_INSTANTIATE)
-      # fvtk split mode: compile the plain vtkType*Array.cxx (vtkTypeFloat64Array
+    if (CVISTA_SPLIT_BULK_INSTANTIATE)
+      # cvista split mode: compile the plain vtkType*Array.cxx (vtkTypeFloat64Array
       # etc., which define their New()/ctor) as its own TU instead of #include-ing
       # it into the per-type bulk TU. See the matching branch in the macro above;
       # append to `sources` (read by vtk_module_add_module later) since this runs

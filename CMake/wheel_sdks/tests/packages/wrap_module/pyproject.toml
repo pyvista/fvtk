@@ -1,16 +1,16 @@
 [build-system]
-requires = ["scikit-build-core", "fvtk-sdk"]
+requires = ["scikit-build-core", "cvista-sdk"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "fvtk-sdk-wrap-test"
+name = "cvista-sdk-wrap-test"
 version = "1.0.0"
-description = "Out-of-tree VTK module compiled and Python-wrapped against the fvtk-sdk"
+description = "Out-of-tree VTK module compiled and Python-wrapped against the cvista-sdk"
 dependencies = []
 
 [tool.scikit-build]
 # The wrapped module is abi3 (stable ABI), inherited from the SDK: the SDK's
-# vtk-config re-exports FVTK_ABI3, so `vtk_module_wrap_python` here builds a
+# vtk-config re-exports CVISTA_ABI3, so `vtk_module_wrap_python` here builds a
 # version-independent `.abi3.so` rather than a version-specific extension. Tag
 # the wheel cp312-abi3 (limited API, 3.12 floor) to match, so one wheel serves
 # every CPython 3.12+.

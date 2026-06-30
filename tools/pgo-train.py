@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PGO training workload — runs against the instrumented fvtk to record profiles.
+"""PGO training workload — runs against the instrumented cvista to record profiles.
 
 Goal: exercise the breadth of PyVista's CPU hot paths in REALISTIC proportion, so
 the profile reflects how the filter stack is actually used. Each representative

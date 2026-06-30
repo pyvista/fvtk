@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "vtkOrientPolyData.h"
 
-#include "fvtkFastOrient.h"      // fvtk opt-in parallel orientation pass
-#include "vtkFVTKSMPDefaults.h"  // fvtk::FastModeEnabled
+#include "cvistaFastOrient.h"      // cvista opt-in parallel orientation pass
+#include "vtkCVISTASMPDefaults.h"  // cvista::FastModeEnabled
 
 #include "vtkCellArray.h"
 #include "vtkCellData.h"
@@ -186,7 +186,7 @@ int vtkOrientPolyData::RequestData(vtkInformation* vtkNotUsed(request),
   links->SetDataSet(output);
   links->ShallowCopy(input->GetLinks());
 
-  // fvtk opt-in fast lane: replace the serial single-threaded BFS wave
+  // cvista opt-in fast lane: replace the serial single-threaded BFS wave
   // (TraverseAndOrder), the last fully serial order-locked stage in the default
   // vtkPolyDataNormals (Consistency=1) pipeline, with a deterministic parallel
   // orientation kernel. Restricted to the MANIFOLD, consistency-only case; the
@@ -205,10 +205,10 @@ int vtkOrientPolyData::RequestData(vtkInformation* vtkNotUsed(request),
   // vtkPolyDataNormals then computes for it -- geometrically valid and internally
   // consistent, but possibly opposite to stock for that component. This only ever
   // happens with fast mode ON; the default path (below) is unchanged and
-  // byte-exact. No-op unless fvtk::FastModeEnabled().
-  if (fvtk::FastModeEnabled())
+  // byte-exact. No-op unless cvista::FastModeEnabled().
+  if (cvista::FastModeEnabled())
   {
-    if (fvtk::FastOrientPolyData(input, output, this->Consistency, this->FlipNormals,
+    if (cvista::FastOrientPolyData(input, output, this->Consistency, this->FlipNormals,
           this->AutoOrientNormals, this->NonManifoldTraversal))
     {
       this->UpdateProgress(1.00);

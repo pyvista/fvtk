@@ -63,7 +63,7 @@ namespace
 // that per-component static_cast<double>, producing identical double[3] values.
 // Any non-AOS (or unexpected-type) storage falls back to the virtual GetPoint,
 // so the read is correct for every input. Name is file-unique to avoid
-// anon-namespace collisions under FVTK_SOURCE_UNITY.
+// anon-namespace collisions under CVISTA_SOURCE_UNITY.
 struct TubeInPointReader
 {
   explicit TubeInPointReader(vtkPoints* points)

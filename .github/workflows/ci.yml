@@ -13,7 +13,7 @@
 #              means the cp312-* cp313-* cp314-* selectors yield exactly ONE build
 #              and ONE wheel. cibuildwheel handles host-checkout -> build in the
 #              container -> auditwheel repair (--plat manylinux_2_28_x86_64), so we
-#              don't hand-roll any docker. Uploads fvtk-wheels-linux-cp312abi3.
+#              don't hand-roll any docker. Uploads cvista-wheels-linux-cp312abi3.
 #              GCC 14 activates the GCC>=12-gated unity + array-split build-time
 #              levers that are inert on the old manylinux2014/GCC-10.2.1 image.
 #   build (macos/windows) : the build-other-os matrix — one job per OS (macos-14,
@@ -21,9 +21,9 @@
 #              cibuildwheel on a native runner and the in-cibuildwheel smoke. Runs
 #              on EVERY PR (and push-to-main + workflow_dispatch) so AppleClang/MSVC
 #              build breaks are caught BEFORE merge, not after. Per-OS ccache keeps
-#              the warm cost bounded (keyed fvtk-cibw-ccache-<os>)
+#              the warm cost bounded (keyed cvista-cibw-ccache-<os>)
 #              shares the python-independent C++ across runs. Each OS uploads
-#              fvtk-wheels-<os> (a DISJOINT artifact prefix from the Linux gate).
+#              cvista-wheels-<os> (a DISJOINT artifact prefix from the Linux gate).
 #   bitexact : install the cp312-abi3 LINUX wheel on the host (per-python via
 #              setup-python) alongside stock vtk==9.6.2 and assert byte-for-byte
 #              identical output (maxULP=0). No container — only the build needs old
@@ -33,7 +33,7 @@
 #              (both install the one abi3 wheel). stock vtk==9.6.2 only ships Linux
 #              wheels, so this gate is Linux-only.
 #   renderexact : same idea for the RENDERING pipeline (tests/renderexact). Renders
-#              the scenes offscreen via vtkEGLRenderWindow under stock vtk and fvtk
+#              the scenes offscreen via vtkEGLRenderWindow under stock vtk and cvista
 #              through the SAME host Mesa software GL (llvmpipe) and asserts
 #              pixel-for-pixel identical RGBA + Z framebuffers. A sibling of bitexact
 #              (reuses the Linux build artifact). Run on py3.13 (the abi3 wheel);
@@ -41,8 +41,8 @@
 #              reason).
 #   build-lto / bitexact-lto / renderexact-lto : MAIN-ONLY legs (skipped on PRs
 #              via `if: github.event_name != 'pull_request'`). They rebuild the
-#              Linux wheel in the SHIPPED config (-flto=auto + -O3, both FVTK_LTO
-#              and FVTK_GATE_O2 unset) and re-run the byte-for-byte + pixel-exact
+#              Linux wheel in the SHIPPED config (-flto=auto + -O3, both CVISTA_LTO
+#              and CVISTA_GATE_O2 unset) and re-run the byte-for-byte + pixel-exact
 #              gates against it, so the configuration we actually release is
 #              bit-exact-validated on every merge — without paying LTO's ~2-3x
 #              build cost on PRs. Separate ccache namespace + artifact prefix
@@ -52,7 +52,7 @@
 #              constants are 3.12+), so they ship as six per-version wheels across
 #              the three desktop OSes. RELEASE-ONLY: built only when a Release is
 #              published (where `publish` ships them), so they add nothing to
-#              per-merge CI cost. FVTK_ABI3=0 selects the legacy path.
+#              per-merge CI cost. CVISTA_ABI3=0 selects the legacy path.
 #   publish : RELEASE-ONLY (if: github.event_name == 'release'). Uploads the
 #              SHIPPED wheels to PyPI via trusted publishing (OIDC, no stored
 #              token) — the four abi3 wheels (LTO Linux x86_64 + aarch64 + macOS +
@@ -60,7 +60,7 @@
 #              bit-exact + pixel-exact legs and the legacy legs being green. A final
 #              step then attaches those same ten wheels to the GitHub Release (gh
 #              release upload) so every wheel is downloadable from the Release page
-#              too, not only PyPI. Wheels-only (fvtk_backend has no sdist).
+#              too, not only PyPI. Wheels-only (cvista_backend has no sdist).
 name: CI
 
 on:
@@ -94,11 +94,11 @@ jobs:
   build:
     name: build cp312-abi3 (manylinux_2_28)
     # Heavy VTK C++ compile — runs on the Blacksmith 16-vcpu runner when the org/
-    # repo variable FVTK_RUNNER_LINUX is set, else falls back to github-hosted
+    # repo variable CVISTA_RUNNER_LINUX is set, else falls back to github-hosted
     # ubuntu-latest. The compile width auto-tracks the runner's cores (no pinned
-    # FVTK_BUILD_JOBS — see pyproject), so changing the variable to a bigger/
+    # CVISTA_BUILD_JOBS — see pyproject), so changing the variable to a bigger/
     # smaller tier is the ONLY knob; nothing here hardcodes a core count.
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX || 'ubuntu-latest' }}
     # Hard cap so a hung compile/link can't run to GitHub's 360-min default and
     # burn paid-runner minutes. Warm ccache build is well under this.
     timeout-minutes: 60
@@ -121,14 +121,14 @@ jobs:
       # can read caches from its base branch (main) and its own branch, so the
       # seed naturally comes from main.
       - name: Make ccache dir world-writable (container build user differs)
-        run: mkdir -p /tmp/fvtk-cibw-ccache && chmod 0777 /tmp/fvtk-cibw-ccache
+        run: mkdir -p /tmp/cvista-cibw-ccache && chmod 0777 /tmp/cvista-cibw-ccache
       - name: Restore ccache seed (cross-run)
         uses: actions/cache@v4
         with:
-          path: /tmp/fvtk-cibw-ccache
-          key: fvtk-ccache-linux-cp312abi3-${{ github.run_id }}
+          path: /tmp/cvista-cibw-ccache
+          key: cvista-ccache-linux-cp312abi3-${{ github.run_id }}
           restore-keys: |
-            fvtk-ccache-linux-cp312abi3-
+            cvista-ccache-linux-cp312abi3-
 
       - name: Build wheel + offscreen smoke (cibuildwheel)
         uses: pypa/cibuildwheel@v3.1.4
@@ -137,26 +137,26 @@ jobs:
           # build (pyproject `build` selector already restricts to cp312+).
           CIBW_BUILD: "cp312-* cp313-* cp314-*"
           # PR/push builds are LTO-OFF + -O2 for a fast/cheap BIT-EXACT gate:
-          #   FVTK_LTO=0      drops -flto (changes inlining, not FP values).
-          #   FVTK_GATE_O2=1  drops the per-TU optimizer from -O3 to -O2 (faster
+          #   CVISTA_LTO=0      drops -flto (changes inlining, not FP values).
+          #   CVISTA_GATE_O2=1  drops the per-TU optimizer from -O3 to -O2 (faster
           #                   codegen; bit-exact — no -ffast-math, so IEEE FP is
           #                   identical at -O2 and -O3). Release builds
           #                   (wheels-cibuildwheel.yml) leave both unset -> -O3 +
           #                   LTO, so shipped wheels stay fully optimized.
-          #   FVTK_SOURCE_UNITY=1  per-module source UNITY_BUILD (byte-identical
+          #   CVISTA_SOURCE_UNITY=1  per-module source UNITY_BUILD (byte-identical
           #                   objects; GCC>=12-gated, active on this 2_28 image),
           #                   together with the GCC<12-gated wrapper-unity
-          #                   (FVTK_WRAP_UNITY, default ON) and the array-TU split.
-          CIBW_ENVIRONMENT: FVTK_LTO=0 FVTK_GATE_O2=1 FVTK_SOURCE_UNITY=1
+          #                   (CVISTA_WRAP_UNITY, default ON) and the array-TU split.
+          CIBW_ENVIRONMENT: CVISTA_LTO=0 CVISTA_GATE_O2=1 CVISTA_SOURCE_UNITY=1
           # Mount the restored host ccache dir into the build container so ccache
           # actually reads/writes the persisted seed (CCACHE_DIR=/ccache is set in
           # pyproject [tool.cibuildwheel.linux.environment]). Without this mount
           # the in-container /ccache is discarded at container exit and the seed is
           # never consulted.
-          CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/fvtk-cibw-ccache:/ccache"
+          CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/cvista-cibw-ccache:/ccache"
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheels-linux-cp312abi3
+          name: cvista-wheels-linux-cp312abi3
           path: wheelhouse/*.whl
           if-no-files-found: error
 
@@ -168,10 +168,10 @@ jobs:
     # leg but fails AppleClang/MSVC, and a main-only gate caught it only post-merge.
     # Cost is bounded — single cp312-abi3 wheel, one job per OS.
     # runs-on comes from matrix.runner: the Blacksmith macOS (M4) / Windows-2025
-    # runner when the FVTK_RUNNER_MACOS / FVTK_RUNNER_WINDOWS variable is set, else
+    # runner when the CVISTA_RUNNER_MACOS / CVISTA_RUNNER_WINDOWS variable is set, else
     # the github-hosted default. `os` is kept ONLY as the stable artifact suffix so
-    # downstream jobs (publish, bitexact) keep finding fvtk-wheels-macos-14 /
-    # fvtk-wheels-windows-latest unchanged. runner.os (Windows/macOS) still drives
+    # downstream jobs (publish, bitexact) keep finding cvista-wheels-macos-14 /
+    # cvista-wheels-windows-latest unchanged. runner.os (Windows/macOS) still drives
     # the per-OS `if:` steps and is correct on Blacksmith runners too.
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -185,9 +185,9 @@ jobs:
       matrix:
         include:
           - os: macos-14
-            runner: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
+            runner: ${{ vars.CVISTA_RUNNER_MACOS || 'macos-14' }}
           - os: windows-latest
-            runner: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
+            runner: ${{ vars.CVISTA_RUNNER_WINDOWS || 'windows-latest' }}
     # MSVC/AppleClang full VTK compile; cap below the 360-min default.
     timeout-minutes: 90
     steps:
@@ -200,9 +200,9 @@ jobs:
         if: runner.os != 'Windows'
         uses: actions/cache@v4
         with:
-          path: /tmp/fvtk-cibw-ccache
-          key: fvtk-cibw-ccache-${{ matrix.os }}-${{ github.sha }}
-          restore-keys: fvtk-cibw-ccache-${{ matrix.os }}-
+          path: /tmp/cvista-cibw-ccache
+          key: cvista-cibw-ccache-${{ matrix.os }}-${{ github.sha }}
+          restore-keys: cvista-cibw-ccache-${{ matrix.os }}-
       # Put MSVC (cl.exe) + the Windows SDK on PATH for the whole job. The Ninja
       # generator does NOT auto-run vcvars, so without this cmake auto-selects the
       # mingw GCC that ships on the windows runner (C:\mingw64\bin\cc.exe) — or
@@ -215,20 +215,20 @@ jobs:
           arch: x64
       - name: Build wheel + smoke (cibuildwheel)
         uses: pypa/cibuildwheel@v3.1.4
-        # No env here: per-OS config (archs, FVTK_CMAKE_INIT, ccache launcher,
+        # No env here: per-OS config (archs, CVISTA_CMAKE_INIT, ccache launcher,
         # test-command) is all in pyproject [tool.cibuildwheel.<os>]. The shipped
-        # macOS/Windows wheels stay fully optimized (no FVTK_LTO=0 override).
+        # macOS/Windows wheels stay fully optimized (no CVISTA_LTO=0 override).
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheels-${{ matrix.os }}
+          name: cvista-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
           if-no-files-found: error
 
   bitexact:
-    name: fvtk == stock VTK 9.6.2 (bit-exact, py${{ matrix.python }})
+    name: cvista == stock VTK 9.6.2 (bit-exact, py${{ matrix.python }})
     needs: build
     # Cheap, short gate (~3 min) — the small Blacksmith tier or github fallback.
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -245,14 +245,14 @@ jobs:
           python-version: ${{ matrix.python }}
       - uses: actions/download-artifact@v4
         with:
-          # ONLY the Linux build leg (fvtk-wheels-linux-*); pip --find-links picks
+          # ONLY the Linux build leg (cvista-wheels-linux-*); pip --find-links picks
           # the cp312-abi3 wheel (tag-compatible on 3.12 and 3.13). The
-          # macOS/Windows artifacts (fvtk-wheels-macos-14 / -windows-latest) are a
+          # macOS/Windows artifacts (cvista-wheels-macos-14 / -windows-latest) are a
           # DISJOINT prefix, so they never reach this Linux gate.
-          pattern: fvtk-wheels-linux-*
+          pattern: cvista-wheels-linux-*
           merge-multiple: true
           path: dist
-      - name: Bit-exact suite (fvtk vs stock VTK 9.6.2)
+      - name: Bit-exact suite (cvista vs stock VTK 9.6.2)
         # The single abi3 wheel is always tested ABI3-AWARE (BITEXACT_ABI3=1):
         # the heap-type wrappers differ from stock only in type __flags__
         # (HEAPTYPE/IMMUTABLETYPE); every numeric value stays maxULP=0.
@@ -268,9 +268,9 @@ jobs:
           if-no-files-found: ignore
 
   regression:
-    name: fvtk behavior regressions (py${{ matrix.python }})
+    name: cvista behavior regressions (py${{ matrix.python }})
     needs: build
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -293,16 +293,16 @@ jobs:
         with:
           # ONLY the Linux build leg; pip --find-links picks the cp312-abi3
           # wheel. macOS/Windows artifacts are a disjoint prefix.
-          pattern: fvtk-wheels-linux-*
+          pattern: cvista-wheels-linux-*
           merge-multiple: true
           path: dist
-      - name: Behavior regression suite (built fvtk wheel)
+      - name: Behavior regression suite (built cvista wheel)
         run: ci/run-regression.sh dist python
 
   renderexact:
-    name: fvtk == stock VTK 9.6.2 (pixel-exact render, py${{ matrix.python }})
+    name: cvista == stock VTK 9.6.2 (pixel-exact render, py${{ matrix.python }})
     needs: build
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -324,10 +324,10 @@ jobs:
             libegl1 libgl1-mesa-dri libglx-mesa0 libgles2 libosmesa6 libxcb1
       - uses: actions/download-artifact@v4
         with:
-          pattern: fvtk-wheels-linux-*
+          pattern: cvista-wheels-linux-*
           merge-multiple: true
           path: dist
-      - name: Pixel-exact render suite (fvtk vs stock VTK 9.6.2, software EGL)
+      - name: Pixel-exact render suite (cvista vs stock VTK 9.6.2, software EGL)
         run: ci/run-renderexact.sh dist python
       - name: Upload render diff artifacts on failure
         if: failure()
@@ -343,7 +343,7 @@ jobs:
   # on pull_request; merge_group / dispatch satisfy the `pyvista` if on their own.
   changes:
     name: detect PyVista-related changes
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     # Trivial git-diff detector; should finish in seconds.
     timeout-minutes: 10
     outputs:
@@ -370,9 +370,9 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
 
   pyvista:
-    name: PyVista suite (built fvtk wheel, py3.13)
+    name: PyVista suite (built cvista wheel, py3.13)
     needs: [build, changes]
-    # PyVista's OWN full test suite driving fvtk (vtkmodules->fvtk shim) — the
+    # PyVista's OWN full test suite driving cvista (vtkmodules->cvista shim) — the
     # downstream contract gate, sister to bitexact/renderexact. HEAVY, so it is
     # kept OFF the PR fast path: it runs in the merge queue (the blocking gate
     # before a squash lands), on manual dispatch, and on any PR that either carries
@@ -389,7 +389,7 @@ jobs:
       (github.event_name == 'pull_request' &&
         (contains(github.event.pull_request.labels.*.name, 'pyvista-full') ||
          needs.changes.outputs.pyvista_ref == 'true'))
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     # Heavy downstream suite; cap below the 360-min default.
     timeout-minutes: 45
     steps:
@@ -409,13 +409,13 @@ jobs:
             xvfb libgl1-mesa-dri libglx-mesa0 libegl1 libgles2 libosmesa6 libxcb1
       - uses: actions/download-artifact@v4
         with:
-          # The FAST O2 Linux wheel (fvtk-wheels-linux-*); pip --find-links picks
+          # The FAST O2 Linux wheel (cvista-wheels-linux-*); pip --find-links picks
           # the cp312-abi3 wheel (tag-compatible on 3.13). macOS/Windows artifacts
           # are a disjoint prefix and never reach this Linux gate.
-          pattern: fvtk-wheels-linux-*
+          pattern: cvista-wheels-linux-*
           merge-multiple: true
           path: dist
-      - name: PyVista suite (pinned ref, vtkmodules->fvtk shim)
+      - name: PyVista suite (pinned ref, vtkmodules->cvista shim)
         run: ci/run-pyvista.sh dist python
       - name: Upload pytest logs + junit
         if: always()
@@ -437,7 +437,7 @@ jobs:
     name: PyVista gate
     needs: pyvista
     if: ${{ always() }}
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     steps:
       - name: Require the PyVista suite to pass or be skipped
         run: |
@@ -451,13 +451,13 @@ jobs:
           fi
 
   # === LTO-on-main legs (push-to-main / workflow_dispatch ONLY) ==============
-  # The PR gate above builds the FAST Linux wheel (FVTK_LTO=0 + -O2) so PRs stay
+  # The PR gate above builds the FAST Linux wheel (CVISTA_LTO=0 + -O2) so PRs stay
   # cheap — but that means the configuration we actually SHIP (the tag-gated
   # wheels-cibuildwheel.yml build: -flto + -O3) was never run through the
   # byte-for-byte / pixel-exact gates. These legs close that gap: on merge to
   # main (and manual dispatch) ONLY — never on PRs, so PR latency is untouched —
-  # rebuild the Linux wheel exactly as shipped (FVTK_LTO + FVTK_GATE_O2 both
-  # UNSET => -flto=auto + -O3, per fvtk-config/minimal.cmake) and re-run both
+  # rebuild the Linux wheel exactly as shipped (CVISTA_LTO + CVISTA_GATE_O2 both
+  # UNSET => -flto=auto + -O3, per cvista-config/minimal.cmake) and re-run both
   # gates against it. LTO/-O3 change inlining + codegen, NOT IEEE FP values (no
   # -ffast-math anywhere), so this is expected to stay maxULP=0 — these legs
   # PROVE it per-merge instead of only at release time.
@@ -465,7 +465,7 @@ jobs:
     name: build cp312-abi3 LTO (manylinux_2_28, main only)
     if: github.event_name != 'pull_request'
     # Heavy compile + LTO link (64GB on the 16-vcpu tier is ample headroom).
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX || 'ubuntu-latest' }}
     # LTO link is the slowest build (~2-3x the fast build); cap with headroom.
     timeout-minutes: 90
     steps:
@@ -477,37 +477,37 @@ jobs:
       # The non-LTO `build` job still runs on push-to-main and keeps refreshing
       # the seed that PRs restore, so PR build time is unaffected.
       - name: Make ccache dir world-writable (container build user differs)
-        run: mkdir -p /tmp/fvtk-cibw-ccache-lto && chmod 0777 /tmp/fvtk-cibw-ccache-lto
+        run: mkdir -p /tmp/cvista-cibw-ccache-lto && chmod 0777 /tmp/cvista-cibw-ccache-lto
       - name: Restore ccache seed (cross-run, LTO namespace)
         uses: actions/cache@v4
         with:
-          path: /tmp/fvtk-cibw-ccache-lto
-          key: fvtk-ccache-linux-cp312abi3-lto-${{ github.run_id }}
+          path: /tmp/cvista-cibw-ccache-lto
+          key: cvista-ccache-linux-cp312abi3-lto-${{ github.run_id }}
           restore-keys: |
-            fvtk-ccache-linux-cp312abi3-lto-
+            cvista-ccache-linux-cp312abi3-lto-
       - name: Build LTO wheel + offscreen smoke (cibuildwheel)
         uses: pypa/cibuildwheel@v3.1.4
         env:
           CIBW_BUILD: "cp312-* cp313-* cp314-*"
-          # Ship config: FVTK_LTO + FVTK_GATE_O2 left UNSET => -flto=auto + -O3
-          # (the release default). FVTK_SOURCE_UNITY=1 stays on (byte-identical
+          # Ship config: CVISTA_LTO + CVISTA_GATE_O2 left UNSET => -flto=auto + -O3
+          # (the release default). CVISTA_SOURCE_UNITY=1 stays on (byte-identical
           # objects). This is byte-for-byte the wheels-cibuildwheel.yml config.
-          CIBW_ENVIRONMENT: FVTK_SOURCE_UNITY=1
-          CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/fvtk-cibw-ccache-lto:/ccache"
+          CIBW_ENVIRONMENT: CVISTA_SOURCE_UNITY=1
+          CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/cvista-cibw-ccache-lto:/ccache"
       - uses: actions/upload-artifact@v4
         with:
-          # DISTINCT prefix (fvtk-wheels-lto-*) so the non-LTO gates' download
-          # pattern (fvtk-wheels-linux-*) never picks up the LTO wheel and the
+          # DISTINCT prefix (cvista-wheels-lto-*) so the non-LTO gates' download
+          # pattern (cvista-wheels-linux-*) never picks up the LTO wheel and the
           # LTO gates below never pick up the fast wheel.
-          name: fvtk-wheels-lto-linux-cp312abi3
+          name: cvista-wheels-lto-linux-cp312abi3
           path: wheelhouse/*.whl
           if-no-files-found: error
 
   bitexact-lto:
-    name: fvtk == stock VTK 9.6.2 (bit-exact LTO, py${{ matrix.python }})
+    name: cvista == stock VTK 9.6.2 (bit-exact LTO, py${{ matrix.python }})
     if: github.event_name != 'pull_request'
     needs: build-lto
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -522,7 +522,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - uses: actions/download-artifact@v4
         with:
-          pattern: fvtk-wheels-lto-linux-*
+          pattern: cvista-wheels-lto-linux-*
           merge-multiple: true
           path: dist
       - name: Bit-exact suite (LTO wheel vs stock VTK 9.6.2)
@@ -538,10 +538,10 @@ jobs:
           if-no-files-found: ignore
 
   renderexact-lto:
-    name: fvtk == stock VTK 9.6.2 (pixel-exact render LTO, py${{ matrix.python }})
+    name: cvista == stock VTK 9.6.2 (pixel-exact render LTO, py${{ matrix.python }})
     if: github.event_name != 'pull_request'
     needs: build-lto
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -561,7 +561,7 @@ jobs:
             libegl1 libgl1-mesa-dri libglx-mesa0 libgles2 libosmesa6 libxcb1
       - uses: actions/download-artifact@v4
         with:
-          pattern: fvtk-wheels-lto-linux-*
+          pattern: cvista-wheels-lto-linux-*
           merge-multiple: true
           path: dist
       - name: Pixel-exact render suite (LTO wheel vs stock VTK 9.6.2, software EGL)
@@ -580,15 +580,15 @@ jobs:
   # aarch64-specific break is caught BEFORE merge, not after — and whose artifact
   # is what `publish` ships. No LTO/non-LTO split (that exists only for x86_64,
   # whose fast wheel feeds the Linux-only bitexact/render gates); aarch64 has no
-  # such gates, so one fully-optimized build (FVTK_LTO/FVTK_GATE_O2 unset => -flto
+  # such gates, so one fully-optimized build (CVISTA_LTO/CVISTA_GATE_O2 unset => -flto
   # + -O3) both validates and ships. Native (not QEMU): the full VTK compile under
   # emulation is prohibitively slow. Runner: the Blacksmith arm64 tier when
-  # FVTK_RUNNER_LINUX_ARM64 is set, else github-hosted ubuntu-24.04-arm.
+  # CVISTA_RUNNER_LINUX_ARM64 is set, else github-hosted ubuntu-24.04-arm.
   # cibuildwheel's offscreen smoke (test-command, xvfb) proves the wheel imports
   # and computes on its native platform.
   build-arm:
     name: build cp312-abi3 (manylinux_2_28 aarch64)
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_ARM64 || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_ARM64 || 'ubuntu-24.04-arm' }}
     # Native aarch64 full VTK compile; cap below the 360-min default.
     timeout-minutes: 90
     steps:
@@ -596,29 +596,29 @@ jobs:
         with:
           fetch-depth: 0
       - name: Make ccache dir world-writable (container build user differs)
-        run: mkdir -p /tmp/fvtk-cibw-ccache-arm && chmod 0777 /tmp/fvtk-cibw-ccache-arm
+        run: mkdir -p /tmp/cvista-cibw-ccache-arm && chmod 0777 /tmp/cvista-cibw-ccache-arm
       - name: Restore ccache seed (cross-run, arm64 namespace)
         uses: actions/cache@v4
         with:
-          path: /tmp/fvtk-cibw-ccache-arm
-          key: fvtk-ccache-linux-arm64-cp312abi3-${{ github.run_id }}
+          path: /tmp/cvista-cibw-ccache-arm
+          key: cvista-ccache-linux-arm64-cp312abi3-${{ github.run_id }}
           restore-keys: |
-            fvtk-ccache-linux-arm64-cp312abi3-
+            cvista-ccache-linux-arm64-cp312abi3-
       - name: Build wheel + offscreen smoke (cibuildwheel)
         uses: pypa/cibuildwheel@v3.1.4
         env:
           CIBW_BUILD: "cp312-* cp313-* cp314-*"
           # Build aarch64 (overrides the pyproject [tool.cibuildwheel.linux]
           # x86_64 archs/image/repair-plat) on the manylinux_2_28 aarch64 image.
-          # Optimized ship config (no FVTK_LTO=0 / FVTK_GATE_O2 override).
+          # Optimized ship config (no CVISTA_LTO=0 / CVISTA_GATE_O2 override).
           CIBW_ARCHS_LINUX: aarch64
           CIBW_MANYLINUX_AARCH64_IMAGE: quay.io/pypa/manylinux_2_28_aarch64
-          CIBW_ENVIRONMENT: FVTK_SOURCE_UNITY=1
+          CIBW_ENVIRONMENT: CVISTA_SOURCE_UNITY=1
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --strip --plat manylinux_2_28_aarch64 -w {dest_dir} {wheel}"
-          CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/fvtk-cibw-ccache-arm:/ccache"
+          CIBW_CONTAINER_ENGINE: "docker; create_args: -v /tmp/cvista-cibw-ccache-arm:/ccache"
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheels-linux-arm64-cp312abi3
+          name: cvista-wheels-linux-arm64-cp312abi3
           path: wheelhouse/*.whl
           if-no-files-found: error
 
@@ -628,7 +628,7 @@ jobs:
   # (gh-93274). So they ship as version-specific (non-abi3) wheels — six in all:
   # cp310 + cp311 x {Linux, Windows, macOS}. The backend emits the legacy static
   # per-version wheel automatically when the build interpreter is < 3.12 or
-  # FVTK_ABI3=0 (set belt-and-suspenders below), so there is NO new build logic.
+  # CVISTA_ABI3=0 (set belt-and-suspenders below), so there is NO new build logic.
   #
   # RELEASE-ONLY: these build only when a Release is published — where `publish`
   # collects their artifacts and ships them to PyPI + the Release alongside the four
@@ -643,7 +643,7 @@ jobs:
     if: github.event_name == 'release'
     # Two non-abi3 cp legs + LTO link is the heaviest build; generous cap, still
     # well below the 360-min default so a hung leg can't drain paid runners.
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX || 'ubuntu-latest' }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -662,7 +662,7 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64"
           # OVERRIDE the pyproject before-all (AlmaLinux-8/dnf specific, installs
           # mold+lld that do NOT exist on CentOS 7). On el7 we use yum, drop
-          # mold/lld, and rely on the gold linker (FVTK_FAST_LINKER below). EPEL is
+          # mold/lld, and rely on the gold linker (CVISTA_FAST_LINKER below). EPEL is
           # enabled first for xvfb + a couple of mesa devel packages.
           CIBW_BEFORE_ALL_LINUX: >-
             yum install -y epel-release &&
@@ -673,12 +673,12 @@ jobs:
             mesa-dri-drivers xorg-x11-server-Xvfb ccache git &&
             mkdir -p /ccache && chmod 0777 /ccache
           CIBW_BEFORE_BUILD_LINUX: "{project}/ci/cibw/before-build.sh"
-          # Toolchain accommodations for CentOS 7 / GCC 10.2.1: FVTK_ABI3=0 forces
+          # Toolchain accommodations for CentOS 7 / GCC 10.2.1: CVISTA_ABI3=0 forces
           # the legacy per-version path; gold linker (mold absent on el7); LTO + -O3
           # kept (GCC 10 OK); the GCC>=12 unity/array-split levers auto-disable.
           CIBW_ENVIRONMENT_LINUX: >-
-            FVTK_ABI3=0
-            FVTK_FAST_LINKER=gold
+            CVISTA_ABI3=0
+            CVISTA_FAST_LINKER=gold
             CCACHE_DIR=/ccache
             CMAKE_C_COMPILER_LAUNCHER=ccache
             CMAKE_CXX_COMPILER_LAUNCHER=ccache
@@ -687,7 +687,7 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --plat manylinux2014_x86_64 -w {dest_dir} {wheel}"
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheels-legacy-linux
+          name: cvista-wheels-legacy-linux
           path: wheelhouse/*.whl
           if-no-files-found: error
 
@@ -697,7 +697,7 @@ jobs:
     # published (where `publish` ships them). Kept off push-to-main / PRs / dispatch
     # so they never add to per-merge CI cost; they are validated at release time.
     if: github.event_name == 'release'
-    runs-on: ${{ vars.FVTK_RUNNER_WINDOWS || 'windows-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_WINDOWS || 'windows-latest' }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -716,11 +716,11 @@ jobs:
           # CIBW_ENVIRONMENT REPLACES the pyproject [tool.cibuildwheel.windows.
           # environment] table, so re-declare the Windows build vars: the MSVC
           # init-cache (link-closure restore for trimmed render classes), the MSVC
-          # toolchain gate, and FVTK_ABI3=0 for the legacy per-version path.
-          CIBW_ENVIRONMENT: "FVTK_ABI3=0 FVTK_CMAKE_INIT=ci/cmake/windows.cmake FVTK_FORCE_MSVC=ON"
+          # toolchain gate, and CVISTA_ABI3=0 for the legacy per-version path.
+          CIBW_ENVIRONMENT: "CVISTA_ABI3=0 CVISTA_CMAKE_INIT=ci/cmake/windows.cmake CVISTA_FORCE_MSVC=ON"
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheels-legacy-windows
+          name: cvista-wheels-legacy-windows
           path: wheelhouse/*.whl
           if-no-files-found: error
 
@@ -730,7 +730,7 @@ jobs:
     # published (where `publish` ships them). Kept off push-to-main / PRs / dispatch
     # so they never add to per-merge CI cost; they are validated at release time.
     if: github.event_name == 'release'
-    runs-on: ${{ vars.FVTK_RUNNER_MACOS || 'macos-14' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_MACOS || 'macos-14' }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -743,20 +743,20 @@ jobs:
           # CIBW_ENVIRONMENT REPLACES the pyproject [tool.cibuildwheel.macos.
           # environment] table, so re-declare every macOS build var (init-cache,
           # target OS, deployment target + host-platform tag, ccache launchers) and
-          # add FVTK_ABI3=0. archs/before-build/repair/test-command are NOT in the
+          # add CVISTA_ABI3=0. archs/before-build/repair/test-command are NOT in the
           # environment table, so they survive from pyproject (arm64, delocate+strip
           # repair, smoke_min) unchanged.
           CIBW_ENVIRONMENT: >-
-            FVTK_ABI3=0
-            FVTK_CMAKE_INIT=ci/cmake/macos.cmake
-            FVTK_TARGET_OS=macos
+            CVISTA_ABI3=0
+            CVISTA_CMAKE_INIT=ci/cmake/macos.cmake
+            CVISTA_TARGET_OS=macos
             MACOSX_DEPLOYMENT_TARGET=11.0
             _PYTHON_HOST_PLATFORM=macosx-11.0-arm64
             CMAKE_C_COMPILER_LAUNCHER=ccache
             CMAKE_CXX_COMPILER_LAUNCHER=ccache
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheels-legacy-macos
+          name: cvista-wheels-legacy-macos
           path: wheelhouse/*.whl
           if-no-files-found: error
 
@@ -773,15 +773,15 @@ jobs:
     if: github.event_name == 'release'
     needs: [build-lto, build-arm, build-other-os, bitexact-lto, renderexact-lto,
             build-legacy-linux, build-legacy-windows, build-legacy-macos]
-    runs-on: ${{ vars.FVTK_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CVISTA_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     # Artifact download + PyPI upload only; cap low.
     timeout-minutes: 15
-    # Matches the PyPI trusted-publisher configuration (repo pyvista/fvtk,
+    # Matches the PyPI trusted-publisher configuration (repo pyvista/cvista,
     # workflow ci.yml, environment pypi). id-token: write mints the short-lived
     # OIDC token PyPI exchanges for an upload token — no API token/secret stored.
     environment:
       name: pypi
-      url: https://pypi.org/p/fvtk
+      url: https://pypi.org/p/cvista
     permissions:
       # id-token: write mints the OIDC token PyPI trusted publishing exchanges.
       # contents: write lets the final step attach the same wheels to the Release.
@@ -790,28 +790,28 @@ jobs:
     steps:
       # Collect EXACTLY the four shipped wheels into dist/ (Linux x86_64 + aarch64,
       # macOS, Windows). We pull them by exact artifact name rather than a
-      # `fvtk-wheels-*` glob so the non-LTO gate wheel (fvtk-wheels-linux-cp312abi3)
+      # `cvista-wheels-*` glob so the non-LTO gate wheel (cvista-wheels-linux-cp312abi3)
       # — which shares the LTO wheel's filename — can never sneak in and shadow the
       # wheel we mean to ship.
       - name: Download shipped Linux x86_64 (LTO) wheel
         uses: actions/download-artifact@v4
         with:
-          name: fvtk-wheels-lto-linux-cp312abi3
+          name: cvista-wheels-lto-linux-cp312abi3
           path: dist
       - name: Download shipped Linux aarch64 wheel
         uses: actions/download-artifact@v4
         with:
-          name: fvtk-wheels-linux-arm64-cp312abi3
+          name: cvista-wheels-linux-arm64-cp312abi3
           path: dist
       - name: Download macOS wheel
         uses: actions/download-artifact@v4
         with:
-          name: fvtk-wheels-macos-14
+          name: cvista-wheels-macos-14
           path: dist
       - name: Download Windows wheel
         uses: actions/download-artifact@v4
         with:
-          name: fvtk-wheels-windows-latest
+          name: cvista-wheels-windows-latest
           path: dist
       # The six legacy (cp310 + cp311) wheels — Linux, Windows, macOS — into the
       # SAME dist/. They ship to PyPI and (via the attach step below) to the Release
@@ -819,17 +819,17 @@ jobs:
       - name: Download legacy Linux wheels (cp310+cp311)
         uses: actions/download-artifact@v4
         with:
-          name: fvtk-wheels-legacy-linux
+          name: cvista-wheels-legacy-linux
           path: dist
       - name: Download legacy Windows wheels (cp310+cp311)
         uses: actions/download-artifact@v4
         with:
-          name: fvtk-wheels-legacy-windows
+          name: cvista-wheels-legacy-windows
           path: dist
       - name: Download legacy macOS wheels (cp310+cp311)
         uses: actions/download-artifact@v4
         with:
-          name: fvtk-wheels-legacy-macos
+          name: cvista-wheels-legacy-macos
           path: dist
       - name: List + sanity-check the release wheels
         run: |

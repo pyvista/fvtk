@@ -53,12 +53,12 @@ jobs:
     name: wheels-${{ matrix.os }} (cp313)
     needs: matrix
     # matrix.os stays the github label (artifact identity + the per-OS `if:`
-    # steps); map it to the matching Blacksmith tier when the FVTK_RUNNER_*
+    # steps); map it to the matching Blacksmith tier when the CVISTA_RUNNER_*
     # variable is set, else fall back to that same github label.
     runs-on: >-
-      ${{ (matrix.os == 'ubuntu-latest'  && (vars.FVTK_RUNNER_LINUX   || 'ubuntu-latest'))
-       || (matrix.os == 'macos-14'       && (vars.FVTK_RUNNER_MACOS   || 'macos-14'))
-       || (matrix.os == 'windows-latest' && (vars.FVTK_RUNNER_WINDOWS || 'windows-latest'))
+      ${{ (matrix.os == 'ubuntu-latest'  && (vars.CVISTA_RUNNER_LINUX   || 'ubuntu-latest'))
+       || (matrix.os == 'macos-14'       && (vars.CVISTA_RUNNER_MACOS   || 'macos-14'))
+       || (matrix.os == 'windows-latest' && (vars.CVISTA_RUNNER_WINDOWS || 'windows-latest'))
        || matrix.os }}
     # Single cp313 wheel build + smoke; cap below the 360-min default.
     timeout-minutes: 90
@@ -89,6 +89,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fvtk-wheel-test-${{ matrix.os }}
+          name: cvista-wheel-test-${{ matrix.os }}
           path: wheelhouse/*.whl
           if-no-files-found: error

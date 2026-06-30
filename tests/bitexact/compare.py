@@ -1,4 +1,4 @@
-"""Bit-exact comparison of two run_ops.py output dirs (stock vs fvtk).
+"""Bit-exact comparison of two run_ops.py output dirs (stock vs cvista).
 
 The assertion is the strictest possible: ``np.array_equal`` on the raw bytes of
 every output array (points + every point/cell data array + topology), with the
@@ -162,7 +162,7 @@ def _compare_cell_count_only(a, b, per, ok):
 
     vtkFlyingEdges3D (the EnableFast image-data contour) produces the SAME
     isosurface as the stock vtkSynchronizedTemplates3D -- identical iso-crossing
-    point set (coords byte-exact after fvtk's double-precision interpolation fix)
+    point set (coords byte-exact after cvista's double-precision interpolation fix)
     and identical triangle COUNT -- but at the ~2% of cases where the marching
     cube emits a planar quad the two algorithms split it along the OPPOSITE
     diagonal. Same surface, same points, same cell count; a fraction of triangles
@@ -176,7 +176,7 @@ def _compare_cell_count_only(a, b, per, ok):
     na, nb = len(ra[0]), len(rb[0])
     eq = bool(na == nb)
     per["__cells__"] = {"equal": eq, "mode": "points-only-count",
-                        "ncells_stock": na, "ncells_fvtk": nb}
+                        "ncells_stock": na, "ncells_cvista": nb}
     return ok and eq
 
 
@@ -191,7 +191,7 @@ _NORMAL_ULP_TOL = 8
 
 
 def _wide_float_eq(x, y):
-    """Values-preserved equality tolerant to a float WIDTH difference (fvtk may
+    """Values-preserved equality tolerant to a float WIDTH difference (cvista may
     preserve input float64 where stock downcasts to float32). Same dtype -> strict
     byte-equal; differing float widths -> the wider array downcast to the narrower
     width must be byte-identical (only storage widened, no value changed); integers
@@ -214,14 +214,14 @@ def _compare_points_only(a, b, names):
     FlyingEdges produces the SAME isosurface, but: points/cells are emitted in
     thread-block order; planar quads are split on the opposite diagonal; surface
     NORMALS come from a different (equally valid) gradient estimate (~1 float32
-    ULP); and fvtk preserves the input attribute precision where stock downcasts
+    ULP); and cvista preserves the input attribute precision where stock downcasts
     (float64 in -> float64 out vs stock's float32, values preserved on downcast).
     The iso-crossing COORDINATES are byte-exact. So:
 
       * canonicalize points by COORDS only -- byte-exact and unique per active
         edge, so the ordering is unambiguous (asserted: no duplicate coords);
       * assert COORDS byte-exact under that ordering;
-      * assert INTERPOLATED point-data values-preserved (width-relaxed: fvtk's
+      * assert INTERPOLATED point-data values-preserved (width-relaxed: cvista's
         float64 downcast to stock's float32 is byte-identical);
       * assert COMPUTED normals/gradients within a snug ULP tolerance;
       * assert equal cell COUNT (the cell multiset is negotiable: quad diagonal).
@@ -240,7 +240,7 @@ def _compare_points_only(a, b, names):
     per["__points__"] = {"equal": coords_eq and dup_a == 0 and dup_b == 0,
                          "mode": "points-only", "npoints": int(ca.shape[0]),
                          "coords_byte_exact": coords_eq,
-                         "dup_coords_stock": dup_a, "dup_coords_fvtk": dup_b}
+                         "dup_coords_stock": dup_a, "dup_coords_cvista": dup_b}
     ok &= per["__points__"]["equal"]
     for name in names:
         if not name.startswith("pd:"):
@@ -260,7 +260,7 @@ def _compare_points_only(a, b, names):
             # interpolated -> values preserved (width-relaxed float/int).
             eq, note = _wide_float_eq(xa, xb)
             per[name] = {"equal": bool(eq), "mode": "points-only-" + note,
-                         "dtype_stock": str(xa.dtype), "dtype_fvtk": str(xb.dtype)}
+                         "dtype_stock": str(xa.dtype), "dtype_cvista": str(xb.dtype)}
         ok &= per[name]["equal"]
     # cells: count only (quad-diagonal split differs; same surface, same count).
     ok = _compare_cell_count_only(a, b, per, ok)
@@ -299,7 +299,7 @@ def _compare_order_relaxed(a, b, relax_points=False, point_data_tol=0.0, points_
         return bool(ok), per
     # relax_points: canonicalize points by (coords, point-data) on both sides.
     # lexsort's primary key is the coordinate columns, which are bit-identical
-    # between stock and fvtk, so the permutation aligns points by COORDS even when
+    # between stock and cvista, so the permutation aligns points by COORDS even when
     # an interpolated point-data column differs by tolerance-scale noise.
     pa_perm, ranka, ka = _point_canonicalization(a, names)
     pb_perm, rankb, kb = _point_canonicalization(b, names)
@@ -342,18 +342,18 @@ def _compare_order_relaxed(a, b, relax_points=False, point_data_tol=0.0, points_
 
 
 def _compare_corrects_stock(a, b, input_dtype):
-    """Divergence-ledger comparison for filters fvtk deliberately CORRECTS.
+    """Divergence-ledger comparison for filters cvista deliberately CORRECTS.
 
     Stock VTK 9.6.2 has a long-standing bug where ~30 point-producing filters
     ignore OutputPointsPrecision==DEFAULT and emit float32 output points even for
-    float64 input. fvtk fixes them to preserve the input precision. For ops that
+    float64 input. cvista fixes them to preserve the input precision. For ops that
     exercise such a filter directly the byte-exact-vs-stock gate is no longer the
     right oracle (it would flag the correction as a regression); instead we assert
     the CORRECTION without losing rigor:
 
-      * fvtk 'points' dtype == the input point dtype (the fix did its job),
+      * cvista 'points' dtype == the input point dtype (the fix did its job),
       * stock 'points' is the buggy narrower float type (the bug really existed),
-      * fvtk points DOWNCAST to stock's width are byte-identical to stock's
+      * cvista points DOWNCAST to stock's width are byte-identical to stock's
         points -- i.e. ONLY the storage width widened, not a single VALUE changed,
       * every other array (point/cell data, topology) is byte-identical, with the
         usual width-relaxed comparison for integer (index/offset/celltype) arrays.
@@ -364,21 +364,21 @@ def _compare_corrects_stock(a, b, input_dtype):
     ok = True
     want = np.dtype(input_dtype)
     for name in sorted(set(a.files) & set(b.files)):
-        x, y = a[name], b[name]  # x = stock, y = fvtk
+        x, y = a[name], b[name]  # x = stock, y = cvista
         if name == "points":
-            fvtk_dtype_ok = y.dtype == want
+            cvista_dtype_ok = y.dtype == want
             # Stock is expected to be the buggy narrower float; if stock somehow
             # already matches the input dtype there was nothing to correct and a
             # plain byte-equal still holds.
             stock_is_narrower = x.dtype.kind == "f" and x.dtype.itemsize < want.itemsize
             values_preserved = bool(
                 x.shape == y.shape and np.array_equal(x, y.astype(x.dtype)))
-            eq = bool(fvtk_dtype_ok and values_preserved and
+            eq = bool(cvista_dtype_ok and values_preserved and
                       (stock_is_narrower or x.dtype == want))
             per[name] = {
                 "equal": eq, "mode": "corrects-stock",
-                "stock_dtype": str(x.dtype), "fvtk_dtype": str(y.dtype),
-                "expected_fvtk_dtype": str(want),
+                "stock_dtype": str(x.dtype), "cvista_dtype": str(y.dtype),
+                "expected_cvista_dtype": str(want),
                 "values_preserved_on_downcast": values_preserved,
                 "stock_was_narrower": bool(stock_is_narrower),
             }
@@ -396,14 +396,14 @@ def _compare_corrects_stock(a, b, input_dtype):
     return bool(ok), per
 
 
-def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=False,
+def compare_case(stock_dir, cvista_dir, key, order_relaxed=False, points_relaxed=False,
                  point_data_tol=0.0, corrects_stock=False, input_dtype=None,
                  points_only=False):
     """Return (ok: bool, detail: dict) for a single case key."""
     sp = os.path.join(stock_dir, key + ".npz")
-    fp = os.path.join(fvtk_dir, key + ".npz")
+    fp = os.path.join(cvista_dir, key + ".npz")
     if not os.path.exists(sp) or not os.path.exists(fp):
-        return False, {"reason": "missing npz", "stock": os.path.exists(sp), "fvtk": os.path.exists(fp)}
+        return False, {"reason": "missing npz", "stock": os.path.exists(sp), "cvista": os.path.exists(fp)}
     a = np.load(sp)
     b = np.load(fp)
     names_a, names_b = set(a.files), set(b.files)
@@ -411,10 +411,10 @@ def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=F
         return False, {
             "reason": "array set mismatch",
             "only_stock": sorted(names_a - names_b),
-            "only_fvtk": sorted(names_b - names_a),
+            "only_cvista": sorted(names_b - names_a),
         }
     if corrects_stock:
-        # Divergence ledger: fvtk deliberately corrects a stock precision bug.
+        # Divergence ledger: cvista deliberately corrects a stock precision bug.
         # Assert the corrected output precision + value-preservation instead of
         # byte-matching stock's (buggy) downcast output. See _compare_corrects_stock.
         ok, per = _compare_corrects_stock(a, b, input_dtype)
@@ -434,9 +434,9 @@ def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=F
     ok = True
     for name in sorted(names_a):
         x, y = a[name], b[name]
-        # Width-relaxed comparison for INTEGER arrays (fvtk-wide int32-default
+        # Width-relaxed comparison for INTEGER arrays (cvista-wide int32-default
         # rule): integer VALUES are sacred, but the storage CONTAINER WIDTH is
-        # negotiable -- fvtk defaults topology/index/offset arrays to int32 while
+        # negotiable -- cvista defaults topology/index/offset arrays to int32 while
         # stock VTK uses int64. So for integer-kind arrays compare values
         # normalized to int64 and ignore the dtype tag. FLOAT (and other) arrays
         # stay strict: identical dtype + exact bytes (maxULP=0).
@@ -457,7 +457,7 @@ def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=F
         per_array[name] = {
             "equal": equal,
             "shape_stock": list(x.shape),
-            "shape_fvtk": list(y.shape),
+            "shape_cvista": list(y.shape),
             "dtype": str(x.dtype),
             "ulp": ulp,
         }
@@ -465,20 +465,20 @@ def compare_case(stock_dir, fvtk_dir, key, order_relaxed=False, points_relaxed=F
     return ok, {"arrays": per_array}
 
 
-def compare_all(stock_dir, fvtk_dir):
+def compare_all(stock_dir, cvista_dir):
     """Compare every case present in BOTH manifests. Returns a results dict."""
     ms = load_manifest(stock_dir)
-    mf = load_manifest(fvtk_dir)
+    mf = load_manifest(cvista_dir)
 
     # Provenance sanity: numpy versions must match (bit-identical inputs).
     prov = {
         "numpy_stock": ms["provenance"]["numpy"],
-        "numpy_fvtk": mf["provenance"]["numpy"],
+        "numpy_cvista": mf["provenance"]["numpy"],
         "numpy_match": ms["provenance"]["numpy"] == mf["provenance"]["numpy"],
         "vtk_stock": ms["provenance"]["vtk_version"],
-        "vtk_fvtk": mf["provenance"]["vtk_version"],
+        "vtk_cvista": mf["provenance"]["vtk_version"],
         "inputs_digest_f64_stock": ms["provenance"]["inputs_digest_f64"],
-        "inputs_digest_f64_fvtk": mf["provenance"]["inputs_digest_f64"],
+        "inputs_digest_f64_cvista": mf["provenance"]["inputs_digest_f64"],
         "inputs_digest_match": (
             ms["provenance"]["inputs_digest_f64"]
             == mf["provenance"]["inputs_digest_f64"]
@@ -495,14 +495,14 @@ def compare_all(stock_dir, fvtk_dir):
         if "error" in cs or "error" in cf:
             cases[key] = {
                 "ok": False,
-                "detail": {"reason": "op errored", "stock": cs.get("error"), "fvtk": cf.get("error")},
+                "detail": {"reason": "op errored", "stock": cs.get("error"), "cvista": cf.get("error")},
                 "group": cs.get("group"),
             }
             continue
         # A case is order/points-relaxed if EITHER manifest marks it (both agree).
         order_relaxed = bool(cs.get("order_relaxed") or cf.get("order_relaxed"))
         points_relaxed = bool(cs.get("points_relaxed") or cf.get("points_relaxed"))
-        # Divergence ledger: fvtk corrects a stock precision bug for this op.
+        # Divergence ledger: cvista corrects a stock precision bug for this op.
         corrects_stock = bool(cs.get("corrects_stock") or cf.get("corrects_stock"))
         # Opt-in interpolated-point-data tolerance (clip fast lane). Both sides
         # carry the same flag; take the max so a 0 on one side can't loosen it.
@@ -513,7 +513,7 @@ def compare_all(stock_dir, fvtk_dir):
         # is checked by COUNT only (see _compare_cell_count_only).
         points_only = bool(cs.get("points_only") or cf.get("points_only"))
         ok, detail = compare_case(
-            stock_dir, fvtk_dir, key, order_relaxed=order_relaxed, points_relaxed=points_relaxed,
+            stock_dir, cvista_dir, key, order_relaxed=order_relaxed, points_relaxed=points_relaxed,
             point_data_tol=point_data_tol, corrects_stock=corrects_stock,
             input_dtype=cs.get("dtype"), points_only=points_only)
         cases[key] = {"ok": ok, "detail": detail, "group": cs.get("group"),

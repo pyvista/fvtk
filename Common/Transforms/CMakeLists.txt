@@ -16,8 +16,8 @@ set(classes
   vtkTransformCollection
   vtkWarpTransform)
 
-# fvtk SIMD: vtkLinearTransform.cxx carries the target_clones("default","avx2")
-# multi-versioned 4x4 matrix*point kernel (fvtkLinearTransformPointRange). The
+# cvista SIMD: vtkLinearTransform.cxx carries the target_clones("default","avx2")
+# multi-versioned 4x4 matrix*point kernel (cvistaLinearTransformPointRange). The
 # matrix*point math is the canonical a*b+c FMA shape; FMA contraction would
 # diverge from stock VTK 9.6.2 by 1 ULP on adversarial data, so this TU MUST be
 # compiled with -ffp-contract=off for the avx2 (and default) clone to stay

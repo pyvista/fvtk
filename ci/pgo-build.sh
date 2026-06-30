@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 3-phase PGO release build of fvtk: instrument -> train -> rebuild with profile.
+# 3-phase PGO release build of cvista: instrument -> train -> rebuild with profile.
 #
 # Self-contained for CI/release (no machine-specific paths). Phases:
-#   1. instrument:  FVTK_PGO=gen (LTO/ICF off, unstripped) -> instrumented wheel
+#   1. instrument:  CVISTA_PGO=gen (LTO/ICF off, unstripped) -> instrumented wheel
 #   2. train:       run tools/pgo-train.py (contour-weighted + general hot paths)
 #                   against the instrumented wheel inside the shell.nix GL env, so
 #                   real branch/call frequencies land in .gcda next to the objects
-#   3. rebuild:     FVTK_PGO=use + LTO + ICF + strip -> final profile-guided wheel
+#   3. rebuild:     CVISTA_PGO=use + LTO + ICF + strip -> final profile-guided wheel
 #
 # gen and use MUST share $BUILD (the .gcda are keyed to object paths). We drop
 # CMakeCache.txt between phases so the use-configure starts from clean base flags
@@ -16,13 +16,13 @@
 # absent), JOBS (default nproc).
 set -euo pipefail
 REPO="${REPO:-$PWD}"
-BUILD="${BUILD:-$REPO/build-fvtk-pgo}"
+BUILD="${BUILD:-$REPO/build-cvista-pgo}"
 PYVISTA_DIR="${PYVISTA_DIR:-$REPO/_pyvista_train}"
 JOBS="${JOBS:-$(nproc)}"
-TRAIN_VENV="${TRAIN_VENV:-/tmp/fvtk-pgo-train-venv}"
+TRAIN_VENV="${TRAIN_VENV:-/tmp/cvista-pgo-train-venv}"
 
 echo "::group::PGO phase 1/3 — instrument build"
-FVTK_PGO=gen FVTK_LTO=0 FVTK_ICF=0 FVTK_STRIP=0 BUILD="$BUILD" BUILD_JOBS="$JOBS" "$REPO/build-fvtk.sh"
+CVISTA_PGO=gen CVISTA_LTO=0 CVISTA_ICF=0 CVISTA_STRIP=0 BUILD="$BUILD" BUILD_JOBS="$JOBS" "$REPO/build-cvista.sh"
 WHEEL_GEN="$(ls "$BUILD"/dist/*.whl)"
 echo "instrumented wheel: $WHEEL_GEN"
 echo "::endgroup::"
@@ -49,10 +49,10 @@ nix-shell "$REPO/shell.nix" --run '
   # train against stock VTK — any un-redirected vtkmodules import must fail loud.
   "$TRAIN_VENV/bin/python" -m pip -q uninstall -y vtk 2>/dev/null || true
   "$TRAIN_VENV/bin/python" -m pip -q install "$WHEEL_GEN"
-  # redirect vtkmodules.* -> fvtk.* so pyvista drives the instrumented wheel
+  # redirect vtkmodules.* -> cvista.* so pyvista drives the instrumented wheel
   SP="$("$TRAIN_VENV/bin/python" -c "import site;print(site.getsitepackages()[0])")"
-  cp "$REPO/tools/fvtk_shim.py" "$SP/_fvtk_shim.py"
-  echo "import _fvtk_shim" > "$SP/_fvtk_shim.pth"
+  cp "$REPO/tools/cvista_shim.py" "$SP/_cvista_shim.py"
+  echo "import _cvista_shim" > "$SP/_cvista_shim.pth"
   "$TRAIN_VENV/bin/python" "$REPO/tools/pgo-train.py"
 '
 echo "::endgroup::"
@@ -63,7 +63,7 @@ echo "profile data: $N .gcda files"
 
 echo "::group::PGO phase 3/3 — rebuild with profile (LTO+ICF+strip)"
 rm -f "$BUILD/CMakeCache.txt"
-FVTK_PGO=use FVTK_LTO=1 FVTK_ICF=1 FVTK_STRIP=1 BUILD="$BUILD" BUILD_JOBS="$JOBS" "$REPO/build-fvtk.sh"
+CVISTA_PGO=use CVISTA_LTO=1 CVISTA_ICF=1 CVISTA_STRIP=1 BUILD="$BUILD" BUILD_JOBS="$JOBS" "$REPO/build-cvista.sh"
 echo "::endgroup::"
 
 echo "PGO release wheel: $(ls "$BUILD"/dist/*.whl)"

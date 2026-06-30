@@ -1,13 +1,13 @@
 """Regression: vtkXMLWriter parallel block compression is byte-exact.
 
-fvtk compresses the independent BlockSize-sized data blocks of an XML binary
+cvista compresses the independent BlockSize-sized data blocks of an XML binary
 write (.vti/.vtp/.vtu ...) concurrently instead of one-at-a-time, then writes the
 resulting zlib streams sequentially in block order. Because each block is an
 independent zlib stream and the write order is preserved, the compressed bytes
 must be identical to the serial path -- only the work order changes.
 
-The serial path is stock VTK code that fvtk leaves untouched, so proving
-"parallel payload == serial payload" within fvtk also proves the parallel
+The serial path is stock VTK code that cvista leaves untouched, so proving
+"parallel payload == serial payload" within cvista also proves the parallel
 compression matches stock's, without depending on a full-file comparison.
 
 We compare only the ``AppendedData`` payload (the concatenated compression
@@ -25,11 +25,11 @@ multi-threaded write of the identical dataset.
 import numpy as np
 import pytest
 
-from fvtk.vtkCommonCore import vtkSMPTools
-from fvtk.vtkCommonDataModel import vtkImageData
-from fvtk.vtkIOXML import vtkXMLImageDataWriter, vtkXMLImageDataReader, vtkXMLPolyDataWriter
-from fvtk.vtkFiltersSources import vtkSphereSource
-from fvtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+from cvista.vtkCommonCore import vtkSMPTools
+from cvista.vtkCommonDataModel import vtkImageData
+from cvista.vtkIOXML import vtkXMLImageDataWriter, vtkXMLImageDataReader, vtkXMLPolyDataWriter
+from cvista.vtkFiltersSources import vtkSphereSource
+from cvista.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
 
 def _image_with_large_array(dtype):

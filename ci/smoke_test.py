@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""fvtk wheel post-install smoke test (offscreen / headless).
+"""cvista wheel post-install smoke test (offscreen / headless).
 
 Imports the package and does a minimal offscreen render to prove the rendering
 stack links and runs without a real display (xvfb on Linux, software/native GL
 elsewhere).
 
-The fork ships with vtkmodules renamed to the top-level ``fvtk`` package, so the
-importable namespace is ``fvtk`` (e.g. ``from fvtk.vtkCommonCore import ...``).
-The import name stays parameterizable via FVTK_IMPORT_NAME for ad-hoc testing of
+The fork ships with vtkmodules renamed to the top-level ``cvista`` package, so the
+importable namespace is ``cvista`` (e.g. ``from cvista.vtkCommonCore import ...``).
+The import name stays parameterizable via CVISTA_IMPORT_NAME for ad-hoc testing of
 a differently-named build::
 
-    FVTK_IMPORT_NAME=fvtk python ci/smoke_test.py
+    CVISTA_IMPORT_NAME=cvista python ci/smoke_test.py
 """
 
 import os
 import sys
 
-IMPORT_NAME = os.environ.get("FVTK_IMPORT_NAME", "fvtk")
+IMPORT_NAME = os.environ.get("CVISTA_IMPORT_NAME", "cvista")
 
 
 def main() -> int:
@@ -36,7 +36,7 @@ def main() -> int:
     from importlib import import_module
 
     # The qt helper subpackage must ship: pyvistaqt imports vtkmodules.qt
-    # (redirected to fvtk.qt) at import time, so a wheel that drops it breaks
+    # (redirected to cvista.qt) at import time, so a wheel that drops it breaks
     # pyvistaqt (gh-142). It is pure Python and binds no Qt unless one is already
     # imported, so this import is safe with no Qt installed.
     qt = import_module(f"{IMPORT_NAME}.qt")
