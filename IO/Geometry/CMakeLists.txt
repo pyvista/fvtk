@@ -8,8 +8,6 @@ set(classes
   vtkFLUENTReader
   vtkGAMBITReader
   vtkGLTFDocumentLoader
-  vtkGLTFReader
-  vtkGLTFTexture
   vtkGLTFWriter
   vtkHoudiniPolyDataWriter
   vtkIVWriter

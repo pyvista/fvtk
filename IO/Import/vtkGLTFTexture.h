@@ -5,7 +5,7 @@
 #define vtkGLTFTexture_h
 
 #include "GLTFSampler.h"         // For Sampler
-#include "vtkIOGeometryModule.h" // For export macro
+#include "vtkIOImportModule.h" // For export macro
 #include "vtkObject.h"
 #include "vtkSetGet.h"       // For vtkTypeMacro
 #include "vtkSmartPointer.h" // For vtkSmartPointer
@@ -14,7 +14,7 @@ VTK_ABI_NAMESPACE_BEGIN
 class vtkImageData;
 class vtkTexture;
 
-class VTKIOGEOMETRY_EXPORT vtkGLTFTexture : public vtkObject
+class VTKIOIMPORT_EXPORT vtkGLTFTexture : public vtkObject
 {
 public:
   vtkTypeMacro(vtkGLTFTexture, vtkObject);
