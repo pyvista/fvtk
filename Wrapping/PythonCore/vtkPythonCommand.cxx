@@ -5,7 +5,7 @@
 #include "vtkABINamespace.h"
 #include "vtkObject.h"
 #include "vtkPythonUtil.h"
-#include "vtkSMPTools.h" // fvtk: never run a Python observer on an SMP worker thread
+#include "vtkSMPTools.h" // cvista: never run a Python observer on an SMP worker thread
 
 #include <iostream>
 
@@ -68,7 +68,7 @@ void vtkPythonCommand::Execute(vtkObject* ptr, unsigned long eventtype, void* ca
     return;
   }
 
-  // fvtk: never run a Python observer callback on an SMP worker thread. With a
+  // cvista: never run a Python observer callback on an SMP worker thread. With a
   // threaded backend, a parallel filter may fire a progress/error/warning event
   // from inside its functor on a worker thread; calling into Python there would
   // either deadlock (the worker blocks on the GIL the parked launcher holds) or

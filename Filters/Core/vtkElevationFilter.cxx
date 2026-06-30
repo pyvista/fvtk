@@ -11,7 +11,7 @@
 #include "vtkInformation.h"
 #include "vtkInformationVector.h"
 #include "vtkMath.h"
-#include "vtkFVTKSMPDefaults.h"
+#include "vtkCVISTASMPDefaults.h"
 #include "vtkObjectFactory.h"
 #include "vtkPointData.h"
 #include "vtkPointSet.h"
@@ -107,11 +107,11 @@ struct Elevate
     PointArrayT* pointArray, vtkElevationFilter* filter, double* v, double l2, float* scalars)
   {
     // Okay now generate samples using SMP tools.
-    // fvtk: this For writes scalars[ptId] = f(point[ptId]) into a pre-sized
+    // cvista: this For writes scalars[ptId] = f(point[ptId]) into a pre-sized
     // output array, so it is bit-exact under any thread count -> opt into the
-    // fvtk default-on multithreading (capped at 4, overridable via VTK SMP APIs).
+    // cvista default-on multithreading (capped at 4, overridable via VTK SMP APIs).
     vtkElevationAlgorithm<PointArrayT> algo{ pointArray, filter, scalars, v, l2 };
-    fvtk::RunSafeFilterParallel(
+    cvista::RunSafeFilterParallel(
       [&]() { vtkSMPTools::For(0, pointArray->GetNumberOfTuples(), algo); });
   }
 };

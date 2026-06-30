@@ -8,7 +8,7 @@
 #include "vtkCellData.h"
 #include "vtkDataArray.h"
 #include "vtkDataSet.h"
-#include "vtkFVTKSMPDefaults.h" // fvtk: opt into default multithreading (bit-exact)
+#include "vtkCVISTASMPDefaults.h" // cvista: opt into default multithreading (bit-exact)
 #include "vtkIdList.h"
 #include "vtkInformation.h"
 #include "vtkInformationVector.h"
@@ -339,7 +339,7 @@ struct PointDataToCellDataCategoricalWorker
     vtkPointDataToCellData* filter)
   {
     PointDataToCellDataCategoricalFunctor<ArrayType> pd2cd(input, inPD, outCD, scalars, filter);
-    fvtk::RunSafeFilterParallel(
+    cvista::RunSafeFilterParallel(
       [&]() { vtkSMPTools::For(0, input->GetNumberOfCells(), pd2cd); });
   }
 };
@@ -506,7 +506,7 @@ int vtkPointDataToCellData::RequestData(
   {
     // Thread the process
     PointDataToCellDataFunctor pd2cd(input, inPD, outCD, this);
-    fvtk::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numCells, pd2cd); });
+    cvista::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numCells, pd2cd); });
   }
   // Create a threaded fast path for categorical data.
   else

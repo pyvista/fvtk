@@ -1,6 +1,6 @@
-# fvtk CI init-cache: Linux x86_64 manylinux_2_28 wheel.
+# cvista CI init-cache: Linux x86_64 manylinux_2_28 wheel.
 #
-# Reuses fvtk-config/minimal.cmake (the deny-by-default PyVista closure +
+# Reuses cvista-config/minimal.cmake (the deny-by-default PyVista closure +
 # wheel-build knobs + the LTO / gold-ICF / hash-style / no-semantic-interposition
 # levers). minimal.cmake already configures the Linux rendering stack we want:
 # X/GLX + EGL + OSMesa with a non-headless default.
@@ -12,4 +12,4 @@
 # plugin all present; the GCC>=12 toolchain ACTIVATES the unity + array-split
 # build-time levers (inert on the old manylinux2014/GCC-10.2.1 image).
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../fvtk-config/minimal.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../cvista-config/minimal.cmake")

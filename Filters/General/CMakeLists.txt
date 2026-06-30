@@ -142,8 +142,8 @@ set(templates)
 set(no_wrap_classes
   vtkReflectionUtilities)
 
-# fvtk SIMD: vtkWarpVector.cxx carries the target_clones("default","avx2")
-# multi-versioned warp kernel (fvtkWarpVectorRange). xo = xi + sf*v is the
+# cvista SIMD: vtkWarpVector.cxx carries the target_clones("default","avx2")
+# multi-versioned warp kernel (cvistaWarpVectorRange). xo = xi + sf*v is the
 # canonical a*b+c FMA shape; FMA contraction would diverge from stock VTK 9.6.2
 # by 1 ULP on adversarial data, so this TU MUST compile with -ffp-contract=off
 # for the avx2 (and default) clone to stay bit-exact. The global build does not

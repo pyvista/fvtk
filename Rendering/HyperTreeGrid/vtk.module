@@ -15,4 +15,5 @@ DEPENDS
   VTK::RenderingCore
 PRIVATE_DEPENDS
   VTK::FiltersHybrid
+  VTK::FiltersHybridRendering
   VTK::FiltersHyperTree

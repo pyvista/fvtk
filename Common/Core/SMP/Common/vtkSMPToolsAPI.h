@@ -76,9 +76,9 @@ public:
 
   ///@{
   /**
-   * fvtk GIL-release hook (Python deadlock avoidance).
+   * cvista GIL-release hook (Python deadlock avoidance).
    *
-   * When fvtk runs under Python with a threaded SMP backend (STDThread/TBB/
+   * When cvista runs under Python with a threaded SMP backend (STDThread/TBB/
    * OpenMP), the calling (master) thread holds the Python GIL across
    * vtkSMPTools::For and blocks on the worker join barrier. If a worker thread
    * then invokes a Python observer (a progress/error/warning event routed
@@ -271,7 +271,7 @@ private:
   //--------------------------------------------------------------------------------
   void RefreshNumberOfThread();
 
-  // fvtk GIL-release hook (see SetGilCallbacks). Null unless the Python layer
+  // cvista GIL-release hook (see SetGilCallbacks). Null unless the Python layer
   // registered them; never touched for the Sequential backend.
   static GilReleaseFn GilRelease;
   static GilAcquireFn GilAcquire;

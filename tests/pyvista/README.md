@@ -1,11 +1,11 @@
 # PyVista parity gate
 
-Runs **PyVista's own full test suite** against the built fvtk wheel, with
-`vtkmodules.*` redirected to `fvtk.*`. Where `tests/bitexact/` and
-`tests/renderexact/` prove fvtk is byte- and pixel-identical to stock VTK 9.6.2
+Runs **PyVista's own full test suite** against the built cvista wheel, with
+`vtkmodules.*` redirected to `cvista.*`. Where `tests/bitexact/` and
+`tests/renderexact/` prove cvista is byte- and pixel-identical to stock VTK 9.6.2
 on our own scenes, this gate proves the contract a real downstream depends on:
 PyVista's thousands of behavioral and plotting assertions pass when PyVista is
-driving fvtk.
+driving cvista.
 
 Driver: [`ci/run-pyvista.sh`](../../ci/run-pyvista.sh). CI job: `pyvista` in
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml).
@@ -17,9 +17,9 @@ One venv, no stock `vtk`:
 1. Clone PyVista at the pinned SHA in [`PYVISTA_REF`](PYVISTA_REF) (shallow,
    single commit — its committed `image_cache` rides along).
 2. `pip install --no-deps ./pyvista` + its `test` dependency-group + the built
-   fvtk wheel.
-3. Drop `tools/fvtk_shim.py` as a `.pth` so `import vtkmodules.*` resolves to
-   `fvtk.*` at interpreter startup. Stock `vtk` is never installed, so any
+   cvista wheel.
+3. Drop `tools/cvista_shim.py` as a `.pth` so `import vtkmodules.*` resolves to
+   `cvista.*` at interpreter startup. Stock `vtk` is never installed, so any
    un-redirected import fails loud instead of silently testing stock VTK.
 4. Run core then plotting as two pytest invocations (matches PyVista's tox
    split), offscreen via Mesa software EGL (llvmpipe), `-n auto`.
@@ -59,7 +59,7 @@ reproducible.
 runs weekly: it resolves PyVista's current `main` HEAD and, if it differs, opens
 a PR bumping `PYVISTA_REF` with the `pyvista-full` label. Either the label or the
 pin change itself runs the full suite on that PR (and the merge queue runs it on
-enqueue), so the pin only advances through a gate that proves fvtk still matches
+enqueue), so the pin only advances through a gate that proves cvista still matches
 that PyVista revision — including any upstream `image_cache` regeneration.
 
 > Auto-running the suite on the bump PR's checks needs a token that can trigger
@@ -71,7 +71,7 @@ that PyVista revision — including any upstream `image_cache` regeneration.
 ## Triage: `deselect.txt`
 
 [`deselect.txt`](deselect.txt) is the deselect list for tests that fail for
-reasons that are not a real fvtk regression — chiefly **image-regression drift**
+reasons that are not a real cvista regression — chiefly **image-regression drift**
 (PyVista's committed `image_cache` was generated against a VTK whose pixels
 differ from stock 9.6.2). Each entry needs a one-line WHY. Two failure classes
 are handled automatically and must **not** be added there:
@@ -80,5 +80,5 @@ are handled automatically and must **not** be added there:
 - snake_case opt-out tests — deselected at runtime, but only when the wheel
   disables `VTK_DISABLE_PYTHON_PROPERTIES`.
 
-Every static deselect is a coverage hole. Prefer fixing fvtk or bumping the pin
+Every static deselect is a coverage hole. Prefer fixing cvista or bumping the pin
 over a permanent entry.

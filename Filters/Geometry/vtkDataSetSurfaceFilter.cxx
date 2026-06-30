@@ -44,10 +44,10 @@
 #include "vtkVoxel.h"
 #include "vtkWedge.h"
 
-// fvtk opt-in fast path (EnableFast): vendored pyvista-algorithms OpenMP kernel,
-// isolated in its own translation unit (fvtkFastSurface.cxx) so the OpenMP/omp.h
+// cvista opt-in fast path (EnableFast): vendored pyvista-algorithms OpenMP kernel,
+// isolated in its own translation unit (cvistaFastSurface.cxx) so the OpenMP/omp.h
 // dependency and the vendored code stay out of this (unity-built) file.
-#include "fvtkFastSurface.h"
+#include "cvistaFastSurface.h"
 
 #include <algorithm>
 #include <cassert>
@@ -1327,12 +1327,12 @@ int vtkDataSetSurfaceFilter::UnstructuredGridExecute(
 {
   vtkUnstructuredGrid* input = vtkUnstructuredGrid::SafeDownCast(dataSetInput);
 
-  // fvtk opt-in fast path: when EnableFast() is active and the grid is made of
+  // cvista opt-in fast path: when EnableFast() is active and the grid is made of
   // supported linear 3D cells, extract the boundary surface with the vendored
   // parallel OpenMP kernel (order-relaxed output). Returns false -> fall through
   // to the standard byte-exact path. Honors PassThroughPointIds/CellIds + names.
   if (input &&
-    fvtk::FastUnstructuredSurface(input, output, this->PassThroughPointIds, this->PassThroughCellIds,
+    cvista::FastUnstructuredSurface(input, output, this->PassThroughPointIds, this->PassThroughCellIds,
       this->GetOriginalPointIdsName(), this->GetOriginalCellIdsName()))
   {
     return 1;

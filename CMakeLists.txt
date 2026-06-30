@@ -139,7 +139,7 @@ set(CMAKE_CXX_VISIBILITY_PRESET "hidden")
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 
-# fvtk: the Remote/ subdirectory (download-on-demand external modules:
+# cvista: the Remote/ subdirectory (download-on-demand external modules:
 # MomentInvariants, RenderingLookingGlass, vtkDICOM) was physically removed from
 # this Python-only wheel fork. It is never built: minimal.cmake hard-sets
 # VTK_ENABLE_REMOTE_MODULES=OFF, so neither the add_subdirectory() here nor the
@@ -441,7 +441,7 @@ if (vtk_rejected_modules)
   list(REMOVE_DUPLICATES vtk_rejected_modules)
 endif ()
 
-# fvtk: these module directories were physically removed from this Python-only
+# cvista: these module directories were physically removed from this Python-only
 # fork (never built: Java, Catalyst, MPI, WebGPU, serialization). vtk_module_scan
 # reports a rejected module whose vtk.module file is absent as "unrecognized"
 # (CMake/vtkModule.cmake:1217) and fails the configure. Since the modules no
@@ -478,7 +478,7 @@ endif ()
 
 include(vtkModule)
 include(vtkModuleDebugging)
-# fvtk: Accelerators, Geovis, GUISupport, and Serialization were physically
+# cvista: Accelerators, Geovis, GUISupport, and Serialization were physically
 # removed from this Python-only wheel fork (never in the minimal closure).
 # vtk_module_find_modules silently ignores a missing directory, so their stale
 # entries here were inert -- dropped to keep the source-dir list truthful.
@@ -500,7 +500,7 @@ set(vtk_source_directories
   "${CMAKE_CURRENT_SOURCE_DIR}/Web"
   "${CMAKE_CURRENT_SOURCE_DIR}/Wrapping")
 
-# fvtk: VTK_ENABLE_REMOTE_MODULES + the Remote/ source directory were removed
+# cvista: VTK_ENABLE_REMOTE_MODULES + the Remote/ source directory were removed
 # (see the note above). This Python-only wheel never fetches remote modules.
 
 vtk_module_find_modules(vtk_module_files ${vtk_source_directories})
@@ -719,7 +719,7 @@ if (VTK_WRAP_PYTHON)
   vtk_module_wrap_python(
     MODULES         ${vtk_modules}
     INSTALL_EXPORT  VTKPython
-    PYTHON_PACKAGE  "fvtk"
+    PYTHON_PACKAGE  "cvista"
     LIBRARY_DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     MODULE_DESTINATION  "${VTK_PYTHON_SITE_PACKAGES_SUFFIX}"
     CMAKE_DESTINATION   "${vtk_cmake_destination}"
@@ -753,7 +753,7 @@ if (VTK_WRAP_PYTHON)
     COMPONENT   "development")
 endif ()
 
-# fvtk: Java wrapping removed (Python-only wheel). The Wrapping/Java tree and the
+# cvista: Java wrapping removed (Python-only wheel). The Wrapping/Java tree and the
 # VTK::Java module were deleted; VTK_WRAP_JAVA is unsupported in this fork.
 
 if (VTK_WRAP_JAVASCRIPT)
@@ -867,7 +867,7 @@ if (VTK_BUILD_TESTING)
   add_subdirectory(Testing/Install)
 endif ()
 
-# fvtk is a Python-wheel-only fork; the Doxygen/Sphinx documentation builds and
+# cvista is a Python-wheel-only fork; the Doxygen/Sphinx documentation builds and
 # their generator trees (Utilities/Doxygen, Utilities/Sphinx) were removed. The
 # old VTK_BUILD_DOCUMENTATION / VTK_BUILD_SPHINX_DOCUMENTATION option blocks +
 # add_subdirectory() calls are dropped with them.

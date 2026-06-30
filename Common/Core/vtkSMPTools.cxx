@@ -36,7 +36,7 @@ void vtkSMPTools::SetGilCallbacks(void* (*release)(), void (*acquire)(void*))
 }
 
 //------------------------------------------------------------------------------
-// fvtk: per-thread flag marking SMP pool worker threads. Pool threads set this
+// cvista: per-thread flag marking SMP pool worker threads. Pool threads set this
 // once at startup (and never the launcher thread), so reading it answers "am I
 // a worker?" with zero synchronization.
 static thread_local bool vtkSMPToolsThreadIsWorker = false;

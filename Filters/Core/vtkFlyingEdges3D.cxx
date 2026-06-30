@@ -116,7 +116,7 @@ public:
   // Output data. Threads write to partitioned memory.
   TPtr NewScalars;
   vtkCellArray* NewTris;
-  // fvtk: NewPoints is double (was float) so the index->physical interpolation
+  // cvista: NewPoints is double (was float) so the index->physical interpolation
   // and the subsequent vtkImageTransform scaling happen in double and round to
   // float ONCE at output time -- matching vtkSynchronizedTemplates3D, which
   // interpolates in double and stores into a float vtkPoints. Eliminates the
@@ -1634,7 +1634,7 @@ int vtkFlyingEdges3D::RequestData(
   vtkNew<vtkCellArray> newTris;
   newTris->UseFixedSizeDefaultStorage(3);
   vtkNew<vtkPoints> newPts;
-  // fvtk: accumulate coordinates in double (see NewPoints note above); the
+  // cvista: accumulate coordinates in double (see NewPoints note above); the
   // double->float downcast happens once after vtkImageTransform, below.
   newPts->SetDataTypeToDouble();
   vtkSmartPointer<vtkDataArray> newScalars;
@@ -1700,7 +1700,7 @@ int vtkFlyingEdges3D::RequestData(
   // the points are still double, so the index->physical scaling stays in double.
   vtkImageTransform::TransformPointSet(input, output);
 
-  // fvtk: downcast the double coordinates to float ONCE, reproducing upstream
+  // cvista: downcast the double coordinates to float ONCE, reproducing upstream
   // FlyingEdges' float output dtype -- but with a single rounding from the true
   // double physical coordinate, which is what vtkSynchronizedTemplates3D (the
   // stock vtkContourFilter image path) produces. Without this, FlyingEdges

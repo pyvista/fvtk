@@ -90,7 +90,7 @@ void vtkDataSetMapper::Render(vtkRenderer* ren, vtkActor* act)
     this->PolyDataMapper = pm;
   }
 
-  // fvtk: push this mapper's state onto the internal PolyDataMapper only when
+  // cvista: push this mapper's state onto the internal PolyDataMapper only when
   // something on THIS mapper has changed since the last push, not every frame.
   // The pushes below are all idempotent vtkSetMacro calls (no Modified() when the
   // value is unchanged), so re-applying them every frame leaves the internal

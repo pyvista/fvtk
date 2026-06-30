@@ -18,7 +18,7 @@
 #include "vtkStreamingDemandDrivenPipeline.h"
 #include "vtkUnsignedCharArray.h"
 
-#include "fvtkFastCleanPoly.h" // fvtk opt-in fast coincident-point merge
+#include "cvistaFastCleanPoly.h" // cvista opt-in fast coincident-point merge
 
 #include <unordered_map>
 
@@ -242,15 +242,15 @@ int vtkCleanPolyData::RequestData(vtkInformation* vtkNotUsed(request),
     return 1;
   }
 
-  // fvtk opt-in fast path: vendored OpenMP coincident-point merge for the common
-  // polys-only exact-merge case. Engages only under fvtk.EnableFast()/FVTK_FAST;
+  // cvista opt-in fast path: vendored OpenMP coincident-point merge for the common
+  // polys-only exact-merge case. Engages only under cvista.EnableFast()/CVISTA_FAST;
   // returns false (and we fall through to the standard path) for anything it does
   // not handle exactly (verts/lines/strips, real tolerance, global-ids/ghosts, or
   // any cell that would degenerate to a line/vertex).
   {
     const double effTol =
       (this->ToleranceIsAbsolute ? this->AbsoluteTolerance : this->Tolerance * input->GetLength());
-    if (fvtk::FastCleanPolyData(
+    if (cvista::FastCleanPolyData(
           input, output, this->PointMerging != 0, effTol, this->OutputPointsPrecision))
     {
       return 1;

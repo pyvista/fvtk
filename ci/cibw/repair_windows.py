@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Windows delvewheel repair wrapper that points delvewheel at fvtk's build-tree
+"""Windows delvewheel repair wrapper that points delvewheel at cvista's build-tree
 DLL directory.
 
 WHY THIS EXISTS
 ---------------
-fvtk is built with ``VTK_ENABLE_KITS=ON`` (fvtk-config/minimal.cmake): most VTK
+cvista is built with ``VTK_ENABLE_KITS=ON`` (cvista-config/minimal.cmake): most VTK
 modules are folded into a handful of larger "kit" shared libraries (vtkCommon,
 vtkFilters, vtkRendering, vtkOpenGL, vtkImaging, vtkInteraction, vtkViews,
 vtkParallel, vtkIO). A kit member's per-module DLL is NOT built — its
@@ -28,7 +28,7 @@ PATH problem — NOT a kit/per-module name mismatch — so ``--add-path <bin>`` 
 the build tree resolves ALL of them (kit DLLs + standalone module DLLs +
 vendored third-party DLLs) in one shot.
 
-The fvtk backend (ci/cibw/fvtk_backend.py) keys each python leg's build tree by
+The cvista backend (ci/cibw/cvista_backend.py) keys each python leg's build tree by
 SOABI as ``build-cibw-<SOABI>``; this wrapper globs every ``build-cibw*/bin``
 under the project root (plus a couple of fallbacks) and passes them all to
 delvewheel via repeated ``--add-path``.
@@ -51,12 +51,12 @@ import sys
 
 
 def _bin_dirs(project: str) -> list[str]:
-    """Every build-tree directory that may hold fvtk's runtime DLLs."""
+    """Every build-tree directory that may hold cvista's runtime DLLs."""
     patterns = [
         os.path.join(project, "build-cibw*", "bin"),
-        # FVTK_BUILD_DIR override (if ever set) lands elsewhere; also honour it.
-        os.path.join(os.environ.get("FVTK_BUILD_DIR", ""), "*", "bin")
-        if os.environ.get("FVTK_BUILD_DIR")
+        # CVISTA_BUILD_DIR override (if ever set) lands elsewhere; also honour it.
+        os.path.join(os.environ.get("CVISTA_BUILD_DIR", ""), "*", "bin")
+        if os.environ.get("CVISTA_BUILD_DIR")
         else "",
     ]
     found: list[str] = []

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# ci/run-cibuildwheel-linux.sh — drive cibuildwheel locally via docker for fvtk.
+# ci/run-cibuildwheel-linux.sh — drive cibuildwheel locally via docker for cvista.
 #
 # Mirrors what the pypa/cibuildwheel GHA action does on CI, but on THIS box:
 # cibuildwheel orchestrates the manylinux_2_28 container itself (AlmaLinux 8 mesa
-# via CIBW_BEFORE_ALL, cmake build via the fvtk_backend, auditwheel repair to
+# via CIBW_BEFORE_ALL, cmake build via the cvista_backend, auditwheel repair to
 # manylinux_2_28, smoke test under xvfb).
 #
 # Usage:
@@ -14,7 +14,7 @@
 # Python 3.11 has been dropped: the backend builds ONE cp312-abi3 wheel; cp312+
 # all dedup to it (cibuildwheel's abi3 dedup reuses it for cp313/cp314). The
 # default selector is the cp312..cp314 matrix, which yields a SINGLE abi3 wheel.
-# Set FVTK_ABI3=0 to force a legacy static per-version wheel (escape hatch).
+# Set CVISTA_ABI3=0 to force a legacy static per-version wheel (escape hatch).
 #
 # Requires a cibuildwheel on PATH (or in a venv): pip install cibuildwheel.
 set -euo pipefail

@@ -1,15 +1,15 @@
-"""Across-thread-count determinism for the fvtk multicore-by-default filters.
+"""Across-thread-count determinism for the cvista multicore-by-default filters.
 
-fvtk threads a small audited set of bit-exact-safe filters by default (capped at
-4 threads); see Common/Core/vtkFVTKSMPDefaults.{h,cxx} and README lever 15. This
+cvista threads a small audited set of bit-exact-safe filters by default (capped at
+4 threads); see Common/Core/vtkCVISTASMPDefaults.{h,cxx} and README lever 15. This
 test proves the threading is deterministic: it runs the same operations under the
-fvtk python at VTK_SMP_MAX_THREADS in {1, 4, 8} and asserts the dumped output is
+cvista python at VTK_SMP_MAX_THREADS in {1, 4, 8} and asserts the dumped output is
 byte-for-byte identical across all thread counts. Combined with the main
-bit-exactness suite (which compares the default 4-thread fvtk against serial stock
+bit-exactness suite (which compares the default 4-thread cvista against serial stock
 VTK 9.6.2), this shows the enabled filters are bit-identical at 1/4/8 threads AND
 identical to stock.
 
-Only needs the fvtk python (BITEXACT_FVTK_PY); skips cleanly if unset.
+Only needs the cvista python (BITEXACT_CVISTA_PY); skips cleanly if unset.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ RUN_OPS = os.path.join(HERE, "run_ops.py")
 sys.path.insert(0, HERE)
 import compare as _compare  # noqa: E402
 
-# Ops whose filters opt into fvtk default-on threading. Exercising any of these
+# Ops whose filters opt into cvista default-on threading. Exercising any of these
 # at >1 thread must produce byte-identical output to the 1-thread run.
 # cutter_linear is ORDER-RELAXED (threaded vtk3DLinearGridPlaneCutter): its cell
 # emission order varies with thread count, so compare_all compares it order-relaxed
@@ -49,24 +49,24 @@ def _env(ldlp, nthreads):
 
 @pytest.fixture(scope="module")
 def thread_runs(tmp_path_factory):
-    fvtk_py = os.environ.get("BITEXACT_FVTK_PY")
-    if not fvtk_py:
-        pytest.skip("BITEXACT_FVTK_PY not set; cannot run SMP determinism test.")
-    fvtk_ldlp = os.environ.get("BITEXACT_FVTK_LDLP", "")
+    cvista_py = os.environ.get("BITEXACT_CVISTA_PY")
+    if not cvista_py:
+        pytest.skip("BITEXACT_CVISTA_PY not set; cannot run SMP determinism test.")
+    cvista_ldlp = os.environ.get("BITEXACT_CVISTA_LDLP", "")
     base = str(tmp_path_factory.mktemp("smp_determinism"))
     dirs = {}
     for n in THREAD_COUNTS:
         outdir = os.path.join(base, f"t{n}")
         os.makedirs(outdir, exist_ok=True)
         proc = subprocess.run(
-            [fvtk_py, RUN_OPS, outdir],
-            env=_env(fvtk_ldlp, n),
+            [cvista_py, RUN_OPS, outdir],
+            env=_env(cvista_ldlp, n),
             capture_output=True,
             text=True,
         )
         if proc.returncode != 0:
             raise RuntimeError(
-                f"fvtk run at {n} threads failed (rc={proc.returncode}):\n"
+                f"cvista run at {n} threads failed (rc={proc.returncode}):\n"
                 f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
             )
         dirs[n] = outdir
@@ -125,16 +125,16 @@ print(h.hexdigest())
 
 @pytest.fixture(scope="module")
 def large_warp_digests(tmp_path_factory):
-    fvtk_py = os.environ.get("BITEXACT_FVTK_PY")
-    if not fvtk_py:
-        pytest.skip("BITEXACT_FVTK_PY not set.")
+    cvista_py = os.environ.get("BITEXACT_CVISTA_PY")
+    if not cvista_py:
+        pytest.skip("BITEXACT_CVISTA_PY not set.")
     script = tmp_path_factory.mktemp("large_warp") / "large_warp.py"
     script.write_text(_LARGE_WARP_SCRIPT)
     digests = {}
     for n in THREAD_COUNTS:
         proc = subprocess.run(
-            [fvtk_py, str(script)],
-            env=_env(os.environ.get("BITEXACT_FVTK_LDLP", ""), n),
+            [cvista_py, str(script)],
+            env=_env(os.environ.get("BITEXACT_CVISTA_LDLP", ""), n),
             capture_output=True,
             text=True,
         )
@@ -225,9 +225,9 @@ TRANSFORM_KINDS = ["linear", "perspective", "tps"]
 
 @pytest.fixture(scope="module")
 def large_transform_digests(tmp_path_factory):
-    fvtk_py = os.environ.get("BITEXACT_FVTK_PY")
-    if not fvtk_py:
-        pytest.skip("BITEXACT_FVTK_PY not set.")
+    cvista_py = os.environ.get("BITEXACT_CVISTA_PY")
+    if not cvista_py:
+        pytest.skip("BITEXACT_CVISTA_PY not set.")
     script = tmp_path_factory.mktemp("large_transform") / "large_transform.py"
     script.write_text(_LARGE_TRANSFORM_SCRIPT)
     # digests[kind][nthreads] = hexdigest
@@ -235,8 +235,8 @@ def large_transform_digests(tmp_path_factory):
     for kind in TRANSFORM_KINDS:
         for n in THREAD_COUNTS:
             proc = subprocess.run(
-                [fvtk_py, str(script), kind],
-                env=_env(os.environ.get("BITEXACT_FVTK_LDLP", ""), n),
+                [cvista_py, str(script), kind],
+                env=_env(os.environ.get("BITEXACT_CVISTA_LDLP", ""), n),
                 capture_output=True,
                 text=True,
             )
@@ -308,17 +308,17 @@ INTERP_KINDS = ["cd2pd", "pd2cd"]
 
 @pytest.fixture(scope="module")
 def large_interp_digests(tmp_path_factory):
-    fvtk_py = os.environ.get("BITEXACT_FVTK_PY")
-    if not fvtk_py:
-        pytest.skip("BITEXACT_FVTK_PY not set.")
+    cvista_py = os.environ.get("BITEXACT_CVISTA_PY")
+    if not cvista_py:
+        pytest.skip("BITEXACT_CVISTA_PY not set.")
     script = tmp_path_factory.mktemp("large_interp") / "large_interp.py"
     script.write_text(_LARGE_INTERP_SCRIPT)
     digests = {k: {} for k in INTERP_KINDS}
     for kind in INTERP_KINDS:
         for n in THREAD_COUNTS:
             proc = subprocess.run(
-                [fvtk_py, str(script), kind],
-                env=_env(os.environ.get("BITEXACT_FVTK_LDLP", ""), n),
+                [cvista_py, str(script), kind],
+                env=_env(os.environ.get("BITEXACT_CVISTA_LDLP", ""), n),
                 capture_output=True,
                 text=True,
             )
@@ -343,7 +343,7 @@ def test_large_interp_threaded_path_is_deterministic(
 
 
 # A large-mesh script that forces the threaded vtkThreshold path: the per-cell
-# EvaluateCellsFunctor runs under vtkSMPTools::For (wrapped in fvtk's
+# EvaluateCellsFunctor runs under vtkSMPTools::For (wrapped in cvista's
 # RunSafeFilterParallel), so a >100k-cell input genuinely splits across threads.
 # The first threshold turns a large vtkImageData into an unstructured grid; the
 # second thresholds THAT UG, which drives the devirtualized cached-cell-type/
@@ -388,16 +388,16 @@ print(h.hexdigest())
 
 @pytest.fixture(scope="module")
 def large_threshold_digests(tmp_path_factory):
-    fvtk_py = os.environ.get("BITEXACT_FVTK_PY")
-    if not fvtk_py:
-        pytest.skip("BITEXACT_FVTK_PY not set.")
+    cvista_py = os.environ.get("BITEXACT_CVISTA_PY")
+    if not cvista_py:
+        pytest.skip("BITEXACT_CVISTA_PY not set.")
     script = tmp_path_factory.mktemp("large_threshold") / "large_threshold.py"
     script.write_text(_LARGE_THRESHOLD_SCRIPT)
     digests = {}
     for n in THREAD_COUNTS:
         proc = subprocess.run(
-            [fvtk_py, str(script)],
-            env=_env(os.environ.get("BITEXACT_FVTK_LDLP", ""), n),
+            [cvista_py, str(script)],
+            env=_env(os.environ.get("BITEXACT_CVISTA_LDLP", ""), n),
             capture_output=True,
             text=True,
         )

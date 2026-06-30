@@ -141,7 +141,7 @@ int vtkPLYReader::RequestData(vtkInformation* vtkNotUsed(request),
   // get the output
   vtkPolyData* output = vtkPolyData::SafeDownCast(outInfo->Get(vtkDataObject::DATA_OBJECT()));
 
-  // fvtk fast path: bulk-column binary-LE read via the vendored miniply parser.
+  // cvista fast path: bulk-column binary-LE read via the vendored miniply parser.
   // Only when reading from a real file (not a stream/string). Declines (-1) for
   // anything outside its narrow byte-exact envelope, falling through to legacy.
   if (!this->ReadFromInputStream && !this->ReadFromInputString && this->FileName &&
@@ -673,7 +673,7 @@ int vtkPLYReader::RequestData(vtkInformation* vtkNotUsed(request),
 }
 
 //------------------------------------------------------------------------------
-// fvtk fast binary-PLY bulk reader.
+// cvista fast binary-PLY bulk reader.
 //
 // Reads a binary little-endian PLY with the vendored miniply parser (MIT,
 // Copyright (c) 2019 Vilya Harvey -- see miniply.h) doing columnar bulk
@@ -1004,12 +1004,12 @@ int vtkPLYReader::ReadPLYFast(vtkPolyData* output)
       {
         return -1;
       }
-      // fvtk-wide rule (width-relaxed): default the cell array to 32-bit
+      // cvista-wide rule (width-relaxed): default the cell array to 32-bit
       // offsets/connectivity, widening to 64-bit only when a value cannot fit in
       // int32 (numPolys/total or an index >= 2^31). Integer VALUES are identical
       // to stock VTK; only the storage container narrows (stock defaults to
       // 64-bit). This halves the cell-array footprint for the overwhelmingly
-      // common case. See [[fvtk-int32-default-width-relaxed]].
+      // common case. See [[cvista-int32-default-width-relaxed]].
       // Cheap, robust width check: 32-bit storage is safe iff every value that
       // will be stored fits in int32. Offset values range over [0, total];
       // connectivity values are point indices in [0, numPts). Bounding those two
@@ -1157,13 +1157,13 @@ int vtkPLYReader::ReadPLYFast(vtkPolyData* output)
   }
 
   vtkDebugMacro(<< "Read (fast): " << numPts << " points, " << numPolys << " polygons");
-  // Optional diagnostic breadcrumb: when FVTK_PLY_FASTPATH_TRACE is set, report
+  // Optional diagnostic breadcrumb: when CVISTA_PLY_FASTPATH_TRACE is set, report
   // (to stderr) that the fast path handled this file. Off by default -> no cost
   // and no behavior change; used by the byte-exact validation to confirm which
   // files engage the fast path vs fall back to the legacy reader.
-  if (std::getenv("FVTK_PLY_FASTPATH_TRACE"))
+  if (std::getenv("CVISTA_PLY_FASTPATH_TRACE"))
   {
-    std::fprintf(stderr, "FVTK_PLY_FAST %s\n", this->FileName ? this->FileName : "");
+    std::fprintf(stderr, "CVISTA_PLY_FAST %s\n", this->FileName ? this->FileName : "");
   }
   return 1;
 }

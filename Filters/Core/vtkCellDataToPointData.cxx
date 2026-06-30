@@ -11,7 +11,7 @@
 #include "vtkCellTypeUtilities.h"
 #include "vtkDataArrayRange.h"
 #include "vtkDataSet.h"
-#include "vtkFVTKSMPDefaults.h" // fvtk: opt into default multithreading (bit-exact)
+#include "vtkCVISTASMPDefaults.h" // cvista: opt into default multithreading (bit-exact)
 #include "vtkIdList.h"
 #include "vtkInformation.h"
 #include "vtkInformationVector.h"
@@ -83,13 +83,13 @@ void FastUnstructuredDataACL(
   if (auto staticCellLinks = vtkStaticCellLinks::SafeDownCast(links))
   {
     UnstructuredDataCD2PD<vtkStaticCellLinks> cd2pd(numPts, cfl, pd, staticCellLinks);
-    fvtk::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numPts, cd2pd); });
+    cvista::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numPts, cd2pd); });
   }
   else // vtkCellLinks
   {
     auto cellLinks = vtkCellLinks::SafeDownCast(links);
     UnstructuredDataCD2PD<vtkCellLinks> cd2pd(numPts, cfl, pd, cellLinks);
-    fvtk::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numPts, cd2pd); });
+    cvista::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numPts, cd2pd); });
   }
 }
 
@@ -110,7 +110,7 @@ void FastUnstructuredDataSCLT(
     TCellLinks cellLinks;
     cellLinks.BuildLinks(input);
     UnstructuredDataCD2PD<TCellLinks> cd2pd(numberOfPoints, cfl, pd, &cellLinks);
-    fvtk::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, cd2pd); });
+    cvista::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, cd2pd); });
   }
 #ifdef VTK_USE_64BIT_IDS
   else if (linksType == vtkAbstractCellLinks::STATIC_CELL_LINKS_UINT)
@@ -119,7 +119,7 @@ void FastUnstructuredDataSCLT(
     TCellLinks cellLinks;
     cellLinks.BuildLinks(input);
     UnstructuredDataCD2PD<TCellLinks> cd2pd(numberOfPoints, cfl, pd, &cellLinks);
-    fvtk::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, cd2pd); });
+    cvista::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, cd2pd); });
   }
 #endif
   else
@@ -128,7 +128,7 @@ void FastUnstructuredDataSCLT(
     TCellLinks cellLinks;
     cellLinks.BuildLinks(input);
     UnstructuredDataCD2PD<TCellLinks> cd2pd(numberOfPoints, cfl, pd, &cellLinks);
-    fvtk::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, cd2pd); });
+    cvista::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, cd2pd); });
   }
 }
 
@@ -816,7 +816,7 @@ int vtkCellDataToPointData::InterpolatePointData(vtkDataSet* input, vtkDataSet* 
 
   outPD->InterpolateAllocate(processedCellData, numberOfPoints);
 
-  // fvtk: pre-size EVERY output point-data array to numberOfPoints tuples so the
+  // cvista: pre-size EVERY output point-data array to numberOfPoints tuples so the
   // threaded loop below is a pure index-addressed store. InterpolateAllocate()
   // only reserves capacity (MaxId == -1); without this presize the first
   // InterpolateTuple(ptId,...)/InsertTuple(ptId,...) on each array would bump
@@ -857,7 +857,7 @@ int vtkCellDataToPointData::InterpolatePointData(vtkDataSet* input, vtkDataSet* 
     useStructuredFastPath = true;
   }
 
-  // fvtk: thread the per-output-point interpolation loop (byte-exact under any
+  // cvista: thread the per-output-point interpolation loop (byte-exact under any
   // thread count). The output is index-addressed by ptId, so disjoint sub-ranges
   // assigned to different threads write to disjoint, pre-sized tuples -- zero
   // write conflict and the emission order is preserved exactly. The per-point
@@ -947,7 +947,7 @@ int vtkCellDataToPointData::InterpolatePointData(vtkDataSet* input, vtkDataSet* 
   interp.UseStructuredFastPath = useStructuredFastPath;
   interp.StructuredDims = structuredDims;
 
-  fvtk::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, interp); });
+  cvista::RunSafeFilterParallel([&]() { vtkSMPTools::For(0, numberOfPoints, interp); });
 
   return 1;
 }

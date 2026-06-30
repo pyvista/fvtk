@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.15...4.0)
 project(${SKBUILD_PROJECT_NAME} VERSION ${SKBUILD_PROJECT_VERSION})
 
 # Python and VTK are both found through scikit-build-core's CMake prefix-path
-# injections: VTK comes from the build-time `fvtk-sdk` dependency (its
+# injections: VTK comes from the build-time `cvista-sdk` dependency (its
 # `cmake.prefix` entry point), Python from the active interpreter.
 #
 # WrappingPythonCore is the hand-written Python<->C++ runtime that wrapped

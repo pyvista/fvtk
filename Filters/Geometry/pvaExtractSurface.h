@@ -6,9 +6,9 @@
 // Fast parallel boundary-surface extraction for vtkUnstructuredGrid: a
 // re-implementation of vtkDataSetSurfaceFilter's chained-hash face dedup with
 // per-cell-type inner loops, 32-bit ids, a bump arena, and an OpenMP parallel
-// path. fvtk calls fse::extract_surface() directly (no nanobind) from the
+// path. cvista calls fse::extract_surface() directly (no nanobind) from the
 // vtkDataSetSurfaceFilter fast path when the opt-in fast mode is enabled
-// (fvtk.EnableFast() / FVTK_FAST). Output is order-relaxed (cells and surface
+// (cvista.EnableFast() / CVISTA_FAST). Output is order-relaxed (cells and surface
 // points are emitted in a thread-/hash-dependent order). Unmodified upstream
 // source below this banner.
 //

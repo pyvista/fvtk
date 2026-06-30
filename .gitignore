@@ -13,10 +13,10 @@ __pycache__/
 # Exclude macOS .DS_Store files.
 .DS_Store
 
-# --- fvtk local build artifacts (not part of the source) ---
-/build-fvtk/
-/build-fvtk-trim/
-/build-fvtk-*/
+# --- cvista local build artifacts (not part of the source) ---
+/build-cvista/
+/build-cvista-trim/
+/build-cvista-*/
 /.pyshim313/
 /.ExternalData/
 *.whl

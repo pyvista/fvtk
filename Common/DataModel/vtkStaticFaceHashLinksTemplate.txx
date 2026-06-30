@@ -518,7 +518,7 @@ struct vtkStaticFaceHashLinksTemplate<TInputIdType, TFaceIdType>::BuildFaceHashL
     // is decremented. In the end, the offset array is also constructed as it
     // points to the beginning of each cell run.
     //
-    // fvtk: this loop is invoked serially over all cells (see
+    // cvista: this loop is invoked serially over all cells (see
     // BuildHashLinksInternal). Running it single-threaded makes the within-hash
     // ordering a pure function of the global face index (the faces of a hash end
     // up in descending global-face-index order, exactly as stock VTK's Sequential
@@ -596,7 +596,7 @@ void vtkStaticFaceHashLinksTemplate<TInputIdType, TFaceIdType>::BuildHashLinksIn
     new TFaceIdType[this->NumberOfFaces], std::default_delete<TFaceIdType[]>());
   BuildFaceHashLinks<TCellOffSetIdType> buildFaceHashLinks(cellOffsets, faceHashValues, counts,
     this->FaceOffsets, this->CellIdOfFaceLinks, this->FaceIdOfFaceLinks);
-  // fvtk: run serially so the within-hash face ordering is deterministic and
+  // cvista: run serially so the within-hash face ordering is deterministic and
   // identical across SMP backends (matching stock VTK's Sequential backend).
   // See BuildFaceHashLinks::operator(). Counts still holds the per-hash bin
   // sizes here (left by CountHashes), which the serial fetch_sub consumes.

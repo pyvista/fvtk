@@ -1,0 +1,31 @@
+NAME
+  VTK::FiltersHybridRendering
+LIBRARY_NAME
+  vtkFiltersHybridRendering
+DESCRIPTION
+  The view/camera-dependent filters split out of FiltersHybrid: they require
+  RenderingCore (vtkCamera/vtkRenderer/vtkRenderWindow). Kept in their own module
+  so VTK::FiltersHybrid stays rendering-free.
+SPDX_LICENSE_IDENTIFIER
+  LicenseRef-BSD-3-Clause-Sandia-USGov
+SPDX_COPYRIGHT_TEXT
+  Copyright (c) Ken Martin, Will Schroeder, Bill Lorensen
+  Copyright Sandia Corporation
+LICENSE_FILES
+  LICENSE
+DEPENDS
+  VTK::CommonCore
+  VTK::CommonDataModel
+  VTK::CommonExecutionModel
+  VTK::FiltersGeometry
+  VTK::RenderingCore
+PRIVATE_DEPENDS
+  VTK::CommonMath
+  VTK::CommonTransforms
+  VTK::FiltersHybrid
+TEST_DEPENDS
+  VTK::FiltersSources
+  VTK::IOXML
+  VTK::InteractionStyle
+  VTK::RenderingOpenGL2
+  VTK::TestingRendering

@@ -1,12 +1,12 @@
 """Pytest gate for wrapper-behavior parity (abi3 migration safety net).
 
-Runs wrapper_parity.py under the stock-VTK and fvtk pythons (the same two
+Runs wrapper_parity.py under the stock-VTK and cvista pythons (the same two
 backends the numeric suite uses) and asserts the captured wrapper-behavior
 facts — type identity/flags, isinstance/mro, repr format, numpy zero-copy
 buffer protocol, weakref, instance __dict__ — are identical.
 
 Skips cleanly (like the numeric suite) when the two backend pythons are not
-configured via BITEXACT_STOCK_PY / BITEXACT_FVTK_PY.
+configured via BITEXACT_STOCK_PY / BITEXACT_CVISTA_PY.
 """
 from __future__ import annotations
 
@@ -55,12 +55,12 @@ def parity_dirs(tmp_path_factory):
         tmp_path_factory.mktemp("parity")
     )
     stock_dir = os.path.join(base, "parity_stock")
-    fvtk_dir = os.path.join(base, "parity_fvtk")
+    cvista_dir = os.path.join(base, "parity_cvista")
     _run_probe(os.environ.get("BITEXACT_STOCK_PY"),
                os.environ.get("BITEXACT_STOCK_LDLP", ""), stock_dir, "STOCK")
-    _run_probe(os.environ.get("BITEXACT_FVTK_PY"),
-               os.environ.get("BITEXACT_FVTK_LDLP", ""), fvtk_dir, "FVTK")
-    return stock_dir, fvtk_dir
+    _run_probe(os.environ.get("BITEXACT_CVISTA_PY"),
+               os.environ.get("BITEXACT_CVISTA_LDLP", ""), cvista_dir, "CVISTA")
+    return stock_dir, cvista_dir
 
 
 @pytest.fixture(scope="session")
@@ -71,7 +71,7 @@ def parity_mismatches(parity_dirs):
 def test_wrapper_behavior_parity(parity_mismatches):
     assert parity_mismatches == [], (
         "wrapper-behavior parity broken vs stock VTK:\n"
-        + "\n".join(f"  {k}: stock={s!r} fvtk={f!r}" for k, s, f in parity_mismatches)
+        + "\n".join(f"  {k}: stock={s!r} cvista={f!r}" for k, s, f in parity_mismatches)
     )
 
 
@@ -79,7 +79,7 @@ def test_wrapper_behavior_parity(parity_mismatches):
 def test_abi3_heaptypes_in_effect(parity_dirs):
     """Under abi3 the port must ACTUALLY be in effect: every probed wrapped type
     and the reference helper type must report Py_TPFLAGS_HEAPTYPE set (and
-    IMMUTABLETYPE cleared) on the fvtk side. If any stays a static type the heap
+    IMMUTABLETYPE cleared) on the cvista side. If any stays a static type the heap
     conversion silently didn't happen for it — fail loudly. This is the positive
     counterpart to compare_parity's tolerance of the flag flip."""
     import json

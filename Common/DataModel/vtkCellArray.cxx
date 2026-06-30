@@ -568,7 +568,7 @@ vtkCellArray::vtkCellArray()
 vtkCellArray::~vtkCellArray() = default;
 vtkStandardNewMacro(vtkCellArray);
 
-// fvtk width-relaxed rule ([[fvtk-int32-default-width-relaxed]]): default cell
+// cvista width-relaxed rule ([[cvista-int32-default-width-relaxed]]): default cell
 // arrays to 32-bit offset/connectivity storage regardless of vtkIdType width.
 // This halves the cell-array footprint (and memory bandwidth, the bottleneck on
 // large meshes) vs stock VTK's 64-bit default. Every value-writing path

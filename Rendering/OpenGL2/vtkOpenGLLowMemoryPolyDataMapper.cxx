@@ -3268,7 +3268,7 @@ void vtkOpenGLLowMemoryPolyDataMapper::ProcessSelectorPixelBuffers(
 
   if (currPass == vtkHardwareSelector::POINT_ID_LOW24)
   {
-    // fvtk: width-agnostic id read (int32-or-int64 passthrough array); see
+    // cvista: width-agnostic id read (int32-or-int64 passthrough array); see
     // vtkOpenGLPolyDataMapper for the bit-exactness argument.
     vtkDataArray* pointArrayId = this->PointIdArrayName
       ? vtkDataArray::SafeDownCast(pd->GetArray(this->PointIdArrayName))
@@ -3302,7 +3302,7 @@ void vtkOpenGLLowMemoryPolyDataMapper::ProcessSelectorPixelBuffers(
 
   if (currPass == vtkHardwareSelector::POINT_ID_HIGH24)
   {
-    // fvtk: width-agnostic id read (int32-or-int64 passthrough array); see
+    // cvista: width-agnostic id read (int32-or-int64 passthrough array); see
     // vtkOpenGLPolyDataMapper for the bit-exactness argument.
     vtkDataArray* pointArrayId = this->PointIdArrayName
       ? vtkDataArray::SafeDownCast(pd->GetArray(this->PointIdArrayName))
@@ -3360,7 +3360,7 @@ void vtkOpenGLLowMemoryPolyDataMapper::ProcessSelectorPixelBuffers(
   // process the cellid array?
   if (currPass == vtkHardwareSelector::CELL_ID_LOW24)
   {
-    // fvtk: width-agnostic id read (see point-id note above).
+    // cvista: width-agnostic id read (see point-id note above).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;
@@ -3395,7 +3395,7 @@ void vtkOpenGLLowMemoryPolyDataMapper::ProcessSelectorPixelBuffers(
 
   if (currPass == vtkHardwareSelector::CELL_ID_HIGH24)
   {
-    // fvtk: width-agnostic id read (see point-id note above).
+    // cvista: width-agnostic id read (see point-id note above).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(cd->GetArray(this->CellIdArrayName))
       : nullptr;
@@ -3440,7 +3440,7 @@ void vtkOpenGLLowMemoryPolyDataMapper::UpdateMaximumPointCellIds(vtkRenderer* re
   vtkIdType maxPointId = mesh->GetPoints()->GetNumberOfPoints() - 1;
   if (mesh && mesh->GetPointData())
   {
-    // fvtk: width-agnostic id read (GetRange works on any vtkDataArray).
+    // cvista: width-agnostic id read (GetRange works on any vtkDataArray).
     vtkDataArray* pointArrayId = this->PointIdArrayName
       ? vtkDataArray::SafeDownCast(mesh->GetPointData()->GetArray(this->PointIdArrayName))
       : nullptr;
@@ -3458,7 +3458,7 @@ void vtkOpenGLLowMemoryPolyDataMapper::UpdateMaximumPointCellIds(vtkRenderer* re
   vtkIdType maxCellId = mesh->GetNumberOfCells() - 1;
   if (mesh && mesh->GetCellData())
   {
-    // fvtk: width-agnostic id read (GetRange works on any vtkDataArray).
+    // cvista: width-agnostic id read (GetRange works on any vtkDataArray).
     vtkDataArray* cellArrayId = this->CellIdArrayName
       ? vtkDataArray::SafeDownCast(mesh->GetCellData()->GetArray(this->CellIdArrayName))
       : nullptr;

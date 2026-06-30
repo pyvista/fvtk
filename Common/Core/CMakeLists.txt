@@ -149,7 +149,7 @@ option(VTK_DISPATCH_STRUCTURED_POINT_ARRAYS "Include implicit vtkDataArray subcl
 
 option(VTK_WARN_ON_DISPATCH_FAILURE "If enabled, vtkArrayDispatch will print a warning when a dispatch fails." OFF)
 
-# fvtk BUILD-TIME / SIZE lever: drop the two dead implicit-array families
+# cvista BUILD-TIME / SIZE lever: drop the two dead implicit-array families
 # vtkStridedArray and vtkStdFunctionArray. PyVista never constructs either (no
 # path in pyvista/_vtk.py, the reader factory, or numpy_to_vtk creates them), and
 # their dispatch options (VTK_DISPATCH_STRIDED_ARRAYS / _STD_FUNCTION_ARRAYS) are
@@ -165,9 +165,9 @@ option(VTK_WARN_ON_DISPATCH_FAILURE "If enabled, vtkArrayDispatch will print a w
 # are NOT referenced as complete types by vtkDataArrayPrivate.txx or any kept
 # CommonCore machinery (verified: no non-self include/reference in the tree), so
 # dropping the instantiations is link-safe, not a compile error. Default ON;
-# FVTK_DROP_DEAD_ARRAYS=OFF restores the stock instantiations.
-option(FVTK_DROP_DEAD_ARRAYS
-  "fvtk: drop instantiations of the PyVista-unused vtkStridedArray + vtkStdFunctionArray families"
+# CVISTA_DROP_DEAD_ARRAYS=OFF restores the stock instantiations.
+option(CVISTA_DROP_DEAD_ARRAYS
+  "cvista: drop instantiations of the PyVista-unused vtkStridedArray + vtkStdFunctionArray families"
   ON)
 
 mark_as_advanced(
@@ -202,11 +202,11 @@ set(instantiation_sources)
 
 include(vtkTypeLists)
 
-# fvtk BUILD-TIME lever: split the per-type "bulk" array instantiation TUs.
+# cvista BUILD-TIME lever: split the per-type "bulk" array instantiation TUs.
 #
 # Stock VTK concatenates ~17 template-instantiation sources (AOS/SOA/implicit
 # backends, etc.) per numeric type into ONE vtkArrayBulkInstantiate_<type>.cxx
-# via #include (14 such bulk TUs). FVTK_SPLIT_BULK_INSTANTIATE=ON instead compiles
+# via #include (14 such bulk TUs). CVISTA_SPLIT_BULK_INSTANTIATE=ON instead compiles
 # the ~312 component .cxx DIRECTLY, turning 14 large TUs into many small ones. It
 # is byte-for-byte identical OBJECT CODE (same explicit instantiations + flags,
 # just emitted into separate .o) -> ABI- and bit-exact-neutral; it only changes
@@ -223,13 +223,13 @@ include(vtkTypeLists)
 # Both the 4-core CI target and a 16-core box favor BULK. (An earlier claim of
 # "361->161 s, -55%" did not reproduce.) Kept as an opt-in for the unusual case
 # of a very-high-core machine where the bulk path's 14-TU width is the ceiling;
-# FVTK_SPLIT_BULK_INSTANTIATE=ON re-enables it (and builds clean on GCC < 11 via
+# CVISTA_SPLIT_BULK_INSTANTIATE=ON re-enables it (and builds clean on GCC < 11 via
 # the VTK_DEPRECATION_LEVEL=0 fix on the split TUs below).
-option(FVTK_SPLIT_BULK_INSTANTIATE
-  "fvtk: compile per-type array instantiations as many small TUs instead of one bulk TU (measured slower at <=16 cores; default OFF)"
+option(CVISTA_SPLIT_BULK_INSTANTIATE
+  "cvista: compile per-type array instantiations as many small TUs instead of one bulk TU (measured slower at <=16 cores; default OFF)"
   OFF)
 
-if (NOT FVTK_SPLIT_BULK_INSTANTIATE)
+if (NOT CVISTA_SPLIT_BULK_INSTANTIATE)
   foreach (type IN LISTS vtk_numeric_types)
     string(REPLACE " " "_" _suffix "${type}")
     list(APPEND instantiation_sources
@@ -278,8 +278,8 @@ foreach (INSTANTIATION_VALUE_TYPE IN LISTS vtk_numeric_types)
 
   # The dead vtkStridedArray + vtkStdFunctionArray families: their
   # instantiation TUs are only added back when the cut is disabled
-  # (FVTK_DROP_DEAD_ARRAYS=OFF). See the option above.
-  if (NOT FVTK_DROP_DEAD_ARRAYS)
+  # (CVISTA_DROP_DEAD_ARRAYS=OFF). See the option above.
+  if (NOT CVISTA_DROP_DEAD_ARRAYS)
     list(APPEND _list
       vtkStridedImplicitBackendInstantiate
       vtkStridedArrayInstantiate
@@ -307,7 +307,7 @@ foreach (INSTANTIATION_VALUE_TYPE IN LISTS vtk_numeric_types)
       "${CMAKE_CURRENT_BINARY_DIR}/${_prefix}_${_suffix}.cxx"
       @ONLY)
 
-    if (FVTK_SPLIT_BULK_INSTANTIATE)
+    if (CVISTA_SPLIT_BULK_INSTANTIATE)
       # Compile each component instantiation as its own small TU (build-time
       # parallelism) instead of #include-ing it into the per-type bulk TU.
       list(APPEND instantiation_sources
@@ -502,7 +502,7 @@ endif ()
 
 set(sources
   vtkArrayIteratorTemplateInstantiate.cxx
-  vtkFVTKSMPDefaults.cxx
+  vtkCVISTASMPDefaults.cxx
   vtkGenericDataArray.cxx
   vtkStringFormatter.cxx
   vtkValueFromString.cxx
@@ -700,7 +700,7 @@ endif ()
 set(nowrap_headers
   vtkAffineArray.h
   vtkAffineImplicitBackend.h
-  vtkFVTKSMPDefaults.h
+  vtkCVISTASMPDefaults.h
   vtkCollectionRange.h
   vtkCompositeArray.h
   vtkConstantArray.h
@@ -752,8 +752,8 @@ endforeach ()
 include("${CMAKE_CURRENT_SOURCE_DIR}/vtkTypeArrays.cmake")
 
 # Only assemble the per-type bulk wrapper TUs when NOT splitting (split mode
-# compiles the component .cxx directly; see FVTK_SPLIT_BULK_INSTANTIATE above).
-if (NOT FVTK_SPLIT_BULK_INSTANTIATE)
+# compiles the component .cxx directly; see CVISTA_SPLIT_BULK_INSTANTIATE above).
+if (NOT CVISTA_SPLIT_BULK_INSTANTIATE)
   foreach (type IN LISTS vtk_numeric_types)
     # Referenced in vtkArrayBulkInstantiate.cxx.in
     string(REPLACE " " "_" _suffix "${type}")

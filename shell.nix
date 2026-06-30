@@ -5,7 +5,7 @@ pkgs.mkShell {
     cmake
     ninja
     pkg-config
-    # binutils provides ld.gold, required by the FVTK_ICF lever
+    # binutils provides ld.gold, required by the CVISTA_ICF lever
     # (-fuse-ld=gold -Wl,--icf=all). The gcc-wrapper already exposes a gold on
     # PATH, but declaring binutils makes the ICF toolchain an explicit part of
     # the dev/CI environment rather than an incidental gcc-wrapper detail.

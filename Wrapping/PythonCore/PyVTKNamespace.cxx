@@ -50,7 +50,7 @@ static void PyVTKNamespace_Delete(PyObject* op)
 // clang-format off
 PyTypeObject PyVTKNamespace_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  "fvtk.vtkCommonCore.namespace", // tp_name
+  "cvista.vtkCommonCore.namespace", // tp_name
   0,                  // tp_basicsize
   0,                  // tp_itemsize
   PyVTKNamespace_Delete, // tp_dealloc
@@ -109,7 +109,7 @@ static PyType_Slot PyVTKNamespace_Slots[] = {
   { 0, nullptr }
 };
 static PyType_Spec PyVTKNamespace_Spec = {
-  "fvtk.vtkCommonCore.namespace", 0, 0, Py_TPFLAGS_DEFAULT, PyVTKNamespace_Slots
+  "cvista.vtkCommonCore.namespace", 0, 0, Py_TPFLAGS_DEFAULT, PyVTKNamespace_Slots
 };
 
 // Backing pointer for the `#define PyVTKNamespace_Type (*ptr)` shim.

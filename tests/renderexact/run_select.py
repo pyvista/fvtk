@@ -1,16 +1,16 @@
-"""Standalone driver: hardware-selection (picking) parity for fvtk vs stock VTK.
+"""Standalone driver: hardware-selection (picking) parity for cvista vs stock VTK.
 
 Sister to ``run_render.py``. Where that gate proves pixels match, this one proves
 the GPU **hardware-selection** path maps picked pixels back to the SAME original
 point ids on both backends -- the path that ``run_render.py`` never exercises.
 
-Why this gate exists: fvtk stores the ``vtkOriginalPointIds`` passthrough array of
+Why this gate exists: cvista stores the ``vtkOriginalPointIds`` passthrough array of
 ``vtkGeometryFilter`` in an int32 container (width-relaxed) when the ids fit,
 where stock VTK uses int64. The render hardware-selector remaps a picked pixel's
 raw VTK point id to the value in that array. If a mapper fetched the array with a
 width-specific ``vtkArrayDownCast<vtkIdTypeArray>`` (null on int32), the remap
 would be silently skipped and picking would return the WRONG ids -- a break that
-neither the bit-exact nor the pixel-exact gate can see. The fvtk mappers were
+neither the bit-exact nor the pixel-exact gate can see. The cvista mappers were
 reworked to read the array width-agnostically; this driver is the gate for that.
 
 Scene design mirrors run_render.py's determinism rules (fixed offscreen EGL

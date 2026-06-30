@@ -1,6 +1,6 @@
-# fvtk bit-exactness regression suite
+# cvista bit-exactness regression suite
 
-Asserts that **fvtk** (this VTK 9.6.2 hard-fork) produces **byte-for-byte
+Asserts that **cvista** (this VTK 9.6.2 hard-fork) produces **byte-for-byte
 identical** compute output to **stock VTK 9.6.2** across a broad set of filters
 and `vtkCommon` operations. Tolerance is exact: `np.array_equal` on raw bytes of
 *every* output array, `maxULP == 0`.
@@ -14,10 +14,10 @@ registry and dumps one `.npz` per case plus a `manifest.json`. It is run twice:
 | backend | how `vtkmodules` resolves |
 |---------|---------------------------|
 | stock   | `pip install vtk==9.6.2` -> upstream `vtkmodules` |
-| fvtk    | the `tools/fvtk_shim.py` redirect: `vtkmodules.* -> fvtk.*` |
+| cvista    | the `tools/cvista_shim.py` redirect: `vtkmodules.* -> cvista.*` |
 
 The only thing that differs between the two runs is the compiled C++ backend, so
-any byte difference is attributable to fvtk's build.
+any byte difference is attributable to cvista's build.
 
 `compare.py` then asserts byte-equality on every array; `test_bitexact.py`
 parametrizes one pytest case per `(op, dtype, size)`.
@@ -27,7 +27,7 @@ parametrizes one pytest case per `(op, dtype, size)`.
 numpy is pinned to the **same** version (`2.4.6`) on both venvs so inputs are
 bit-identical. Inputs use only deterministic ops (`arange`, `linspace`, integer
 index algebra, `sqrt`) — never `sin`/`cos`, whose last-ULP results can drift
-across libm builds and masquerade as an fvtk divergence. `run_ops.py` records an
+across libm builds and masquerade as an cvista divergence. `run_ops.py` records an
 **inputs digest**; `test_provenance_inputs_identical` fails if the two sides did
 not start from identical bytes.
 
@@ -52,14 +52,14 @@ and 2 mesh sizes each.
 
 ## Run locally
 
-Set two pythons — one with stock VTK, one with the fvtk wheel + shim — and a
+Set two pythons — one with stock VTK, one with the cvista wheel + shim — and a
 runner python with `pytest`+`numpy`:
 
 ```bash
 export BITEXACT_STOCK_PY=/path/to/stock-venv/bin/python
-export BITEXACT_FVTK_PY=/path/to/fvtk-venv/bin/python
-# fvtk wheel built under nix needs the nix runtime libs on its loader path:
-export BITEXACT_FVTK_LDLP=/nix/store/<gcc-lib>/lib:/nix/store/<zlib>/lib
+export BITEXACT_CVISTA_PY=/path/to/cvista-venv/bin/python
+# cvista wheel built under nix needs the nix runtime libs on its loader path:
+export BITEXACT_CVISTA_LDLP=/nix/store/<gcc-lib>/lib:/nix/store/<zlib>/lib
 export BITEXACT_STOCK_LDLP=...   # only if stock vtk isn't self-contained
 cd tests/bitexact && python -m pytest -v
 # hard gate only:

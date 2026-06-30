@@ -1,8 +1,8 @@
-# Root build adapter so `pip wheel .` / cibuildwheel can build the fvtk wheel.
+# Root build adapter so `pip wheel .` / cibuildwheel can build the cvista wheel.
 #
-# fvtk is a hard-fork of VTK 9.6.2 and is NOT a normal PEP-517 project: VTK only
+# cvista is a hard-fork of VTK 9.6.2 and is NOT a normal PEP-517 project: VTK only
 # emits a setup.py INSIDE the cmake build tree (VTK_WHEEL_BUILD), after a full C++
-# configure+build. The in-tree backend ci/cibw/fvtk_backend.py bridges that:
+# configure+build. The in-tree backend ci/cibw/cvista_backend.py bridges that:
 # build_wheel() runs cmake configure (-C ci/cmake/linux.cmake) -> cmake --build ->
 # the generated build-tree `setup.py bdist_wheel`, then hands the wheel to pip.
 #
@@ -11,21 +11,21 @@
 
 [build-system]
 # setuptools_scm derives the tag-driven version (see [tool.setuptools_scm] and
-# fvtk_backend._version_suffix). cmake + ninja must already be on PATH (CIBW_BEFORE_ALL
+# cvista_backend._version_suffix). cmake + ninja must already be on PATH (CIBW_BEFORE_ALL
 # installs them); they are NOT listed here because pip would then try to build them
 # into the isolated build env, and we want the system/CIBW-provided ones that match
 # the toolchain.
 requires = ["setuptools<81", "wheel", "setuptools_scm>=8"]
-build-backend = "fvtk_backend"
+build-backend = "cvista_backend"
 backend-path = ["ci/cibw"]
 
 # Tag-driven PyPI versioning (start at 9.6.2.0). The base is pinned to the VTK
 # version this fork is a drop-in for (9.6.2); git tags add a 4th release segment
-# (the fvtk iteration), so a release tagged `9.6.2.0` publishes `fvtk 9.6.2.0`,
+# (the cvista iteration), so a release tagged `9.6.2.0` publishes `cvista 9.6.2.0`,
 # `9.6.2.1`, etc. The 4th segment is a normal PEP 440 release component (NOT a
-# .post — fvtk ships code changes, and a real release segment also unlocks
+# .post — cvista ships code changes, and a real release segment also unlocks
 # publishable RCs like `9.6.2.1rc1`). See docs/versioning.md for the full scheme.
-# fvtk_backend reads this via setuptools_scm.get_version() and feeds the suffix
+# cvista_backend reads this via setuptools_scm.get_version() and feeds the suffix
 # (everything past `9.6.2.`) to VTK's setup.py.in as VTK_VERSION_SUFFIX. Commits
 # between tags get `9.6.2.N.devM` (never published — publish runs only on a
 # release tag). local_scheme = no-local-version keeps dev versions PyPI-clean.
@@ -35,12 +35,12 @@ local_scheme = "no-local-version"
 fallback_version = "9.6.2.0.dev0"
 
 [project]
-name = "fvtk"
+name = "cvista"
 # VTK's generated setup.py computes the real version (9.6.2[.devN]) from the
 # build tree; this static value only satisfies pip's pre-build metadata peek and
 # is overwritten by the wheel the backend actually produces.
 version = "9.6.2"
-description = "fvtk — trimmed PyVista-parity hard-fork of VTK 9.6.2 (vtkmodules renamed to top-level fvtk)"
+description = "cvista — trimmed PyVista-parity hard-fork of VTK 9.6.2 (vtkmodules renamed to top-level cvista)"
 # Floor is 3.10 (NOT 3.12) so cibuildwheel will SELECT cp310/cp311 for the
 # additive legacy versioned-wheel line (.github/workflows/wheels-legacy.yml).
 # cibuildwheel intersects its `build`/CIBW_BUILD selector with this metadata
@@ -56,7 +56,7 @@ requires-python = ">=3.10"
 # ===========================================================================
 # cibuildwheel — Linux manylinux_2_28 (glibc 2.28, AlmaLinux 8, GCC 14.2.1). The
 # 2_28 image is the single biggest cold-CI lever: its GCC>=12 toolchain ACTIVATES
-# the GCC<12-gated unity levers (FVTK_SOURCE_UNITY + FVTK_WRAP_UNITY) and the
+# the GCC<12-gated unity levers (CVISTA_SOURCE_UNITY + CVISTA_WRAP_UNITY) and the
 # array-TU split, which are inert on the old manylinux2014/GCC-10.2.1 image. One
 # C++ build is shared across the cp matrix via ccache. NOTE: 2_28 raises the glibc
 # floor from 2.17 to 2.28 — wheels no longer install on glibc<2.28 (CentOS7/RHEL7,
@@ -66,18 +66,18 @@ requires-python = ">=3.10"
 [tool.cibuildwheel]
 build-frontend = "pip"
 # SINGLE-WHEEL matrix (Python 3.11 dropped, maintainer directive). The backend
-# (ci/cibw/fvtk_backend.py) builds ONE abi3 wheel tagged cp312-abi3
+# (ci/cibw/cvista_backend.py) builds ONE abi3 wheel tagged cp312-abi3
 # (Py_LIMITED_API 0x030c0000) that installs + imports on CPython 3.12+ including
 # future minors. 3.12 is the abi3 floor: PyMemberDef + the Py_T_*/Py_READONLY
 # member constants the heap-type wrappers emit only entered the stable ABI in 3.12
 # (gh-93274), so 3.12 is the lowest possible stable-ABI target — and now the
 # minimum supported Python. We list cp312-* cp313-* cp314-*; cibuildwheel's abi3
 # dedup means cp313/cp314 do NOT rebuild — they reuse and TEST the cp312-abi3
-# wheel — so the matrix yields exactly ONE build and ONE wheel. Set FVTK_ABI3=0
+# wheel — so the matrix yields exactly ONE build and ONE wheel. Set CVISTA_ABI3=0
 # to force a legacy per-version static wheel (escape hatch, reversible).
 build = "cp312-* cp313-* cp314-*"
 skip = "*-musllinux_*"
-test-command = "FVTK_IMPORT_NAME=fvtk xvfb-run -a -s '-screen 0 1280x1024x24' python {project}/ci/smoke_test.py"
+test-command = "CVISTA_IMPORT_NAME=cvista xvfb-run -a -s '-screen 0 1280x1024x24' python {project}/ci/smoke_test.py"
 # auditwheel repair runs by default; stamp the 2_28 tag explicitly to match the
 # manylinux_2_28 build image (AlmaLinux 8 / glibc 2.28). --strip removes the
 # ELF .symtab (local/debug symbols) from the bundled .so's — the shipped build
@@ -87,9 +87,9 @@ test-command = "FVTK_IMPORT_NAME=fvtk xvfb-run -a -s '-screen 0 1280x1024x24' py
 # computes byte-identically (the bit-exact + pixel-exact gates run on this wheel).
 repair-wheel-command = "python ci/cibw/repair_linux.py {dest_dir} {wheel}"
 # NOTE on abi3audit: cibuildwheel >=4.0 auto-runs `abi3audit --strict` on
-# abi3-tagged wheels and FAILS the build on any non-abi3 symbol. fvtk's cp312-abi3
+# abi3-tagged wheels and FAILS the build on any non-abi3 symbol. cvista's cp312-abi3
 # modules export the wrapper runtime's OWN cross-module symbols (PyVTKObject_New,
-# PyVTKEnum_Add, ...) shared between fvtk's own .so files — abi3audit reports these
+# PyVTKEnum_Add, ...) shared between cvista's own .so files — abi3audit reports these
 # as "violations" even though it also confirms the wheel is baseline-3.12-compatible
 # (is_abi3_baseline_compatible=true, computed=3.12). They are NOT CPython limited-API
 # violations (the wheel genuinely loads on 3.12+, verified by the bitexact/render
@@ -114,7 +114,7 @@ archs = ["x86_64"]
 # from the stock 2_28 repos, no EPEL/CRB enable needed); only the package manager
 # is dnf (yum is a dnf alias on AlmaLinux 8, but call dnf explicitly).
 before-all = [
-  # mold = the fast ELF linker the build defaults to (FVTK_FAST_LINKER=mold);
+  # mold = the fast ELF linker the build defaults to (CVISTA_FAST_LINKER=mold);
   # lld is the validated fallback. Both install from the stock 2_28 repos (no
   # EPEL): mold 2.40, lld 21.1 verified on quay.io/pypa/manylinux_2_28_x86_64.
   "dnf install -y mesa-libGL-devel mesa-libEGL-devel mesa-libOSMesa-devel mesa-libGLU-devel libglvnd-devel libX11-devel libXcursor-devel libXt-devel libXext-devel mesa-dri-drivers xorg-x11-server-Xvfb ccache git mold lld",
@@ -133,7 +133,7 @@ before-build = "{project}/ci/cibw/before-build.sh"
 # automatically. This is the crux — VTK's C++ is python-independent, so the
 # cp313/cp314 dedup legs (and re-runs) hit the cache and only recompile the abi3
 # wrappers. For that to actually happen the C++ compile commands must be
-# byte-identical across legs, which is why fvtk_backend uses ONE constant build dir
+# byte-identical across legs, which is why cvista_backend uses ONE constant build dir
 # (build-cibw-abi3 shared by cp312/313/314) rather than a per-SOABI one: the build
 # path is embedded in every TU's -I generated-header flags, so a name that varied
 # would change the cache key and miss on the C++.
@@ -145,7 +145,7 @@ CCACHE_MAXSIZE = "30G"
 CMAKE_C_COMPILER_LAUNCHER = "ccache"
 CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
 # Cross-leg cache robustness. The backend now uses ONE constant build tree
-# (fvtk_backend._build_dir), so the C++ object compile commands are byte-identical
+# (cvista_backend._build_dir), so the C++ object compile commands are byte-identical
 # across legs and ccache hits. These three harden that against the remaining ways a
 # path/time can leak into a TU and bust an otherwise-identical object:
 #   CCACHE_BASEDIR   — rewrite absolute paths under the repo to relative in the
@@ -158,29 +158,29 @@ CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
 # for no extra hit.
 # NOTE: cibuildwheel does NOT expand the {project} token inside environment values
 # (only in before-build/test-command), so this literal "{project}" reaches the
-# build env unexpanded. fvtk_backend._fix_ccache_basedir() resolves it to the real
+# build env unexpanded. cvista_backend._fix_ccache_basedir() resolves it to the real
 # checkout root (REPO) before invoking cmake, so ccache sees a valid absolute path.
 CCACHE_BASEDIR = "{project}"
 CCACHE_SLOPPINESS = "time_macros,locale,pch_defines"
-# FVTK_BUILD_JOBS is intentionally NOT pinned here: the backend defaults the
-# `cmake --build --parallel` width to os.cpu_count() (ci/cibw/fvtk_backend.py
+# CVISTA_BUILD_JOBS is intentionally NOT pinned here: the backend defaults the
+# `cmake --build --parallel` width to os.cpu_count() (ci/cibw/cvista_backend.py
 # _jobs()), so the compile auto-scales to whatever runner it lands on — a
 # blacksmith-16vcpu runner runs 16 jobs, a 32vcpu runs 32, github's 4-core
 # ubuntu-latest runs 4 — with no per-runner core count baked into the repo. To
-# force a specific width (e.g. oversubscription) set FVTK_BUILD_JOBS in the
+# force a specific width (e.g. oversubscription) set CVISTA_BUILD_JOBS in the
 # workflow env or as an org/repo variable; leave it unset to track the runner.
 
 # OPTIONAL cross-RUN persistence: mount a host dir at /ccache. NOT enabled by
 # default because cibuildwheel runs the build as a non-root user whose uid differs
 # from the host dir owner, so a host-owned dir trips "Permission denied" on
 # ccache's mkdir. To persist across runs on CI, create a world-writable dir and add:
-#   container-engine = { name = "docker", create-args = ["-v", "/tmp/fvtk-cibw-ccache:/ccache"] }
+#   container-engine = { name = "docker", create-args = ["-v", "/tmp/cvista-cibw-ccache:/ccache"] }
 # (chmod 0777 it first). Within a SINGLE run the in-container /ccache already gives
 # the cross-cp matrix sharing that matters; cross-run is a CI cache-action nicety.
 
 # ===========================================================================
 # macOS arm64 — AppleClang + ThinLTO + Cocoa GL (ci/cmake/macos.cmake). The SAME
-# fvtk_backend + minimal.cmake 3-way toolchain gate; only the init-cache + repair
+# cvista_backend + minimal.cmake 3-way toolchain gate; only the init-cache + repair
 # tool + env differ. delocate is cibuildwheel's default macOS repair tool.
 # ===========================================================================
 [tool.cibuildwheel.macos]
@@ -190,7 +190,7 @@ archs = ["arm64"]
 before-build = "brew install ccache && python -m pip install 'cmake>=3.22,<4.2' 'ninja>=1.11' 'setuptools<81' wheel"
 # delocate-wheel bundles the dylibs but does NOT strip symbols; repair_macos.py
 # runs delocate then strips local symbol tables (strip -x) + re-signs ad-hoc,
-# mirroring the Linux `auditwheel repair --strip` size win. Set FVTK_STRIP=0 to
+# mirroring the Linux `auditwheel repair --strip` size win. Set CVISTA_STRIP=0 to
 # fall back to a plain delocate repair.
 repair-wheel-command = "python ci/cibw/repair_macos.py {delocate_archs} {dest_dir} {wheel}"
 # macOS ships a native Cocoa GL backend with no headless display on CI, so the
@@ -201,9 +201,9 @@ test-command = "python {project}/ci/smoke_min.py"
 [tool.cibuildwheel.macos.environment]
 # REPO-relative (NOT "{project}/..."): cibuildwheel does not expand {project}
 # inside environment values, only in before-build/test-command. The backend
-# (ci/cibw/fvtk_backend.py _init_cache) resolves this against the repo root.
-FVTK_CMAKE_INIT = "ci/cmake/macos.cmake"
-FVTK_TARGET_OS = "macos"
+# (ci/cibw/cvista_backend.py _init_cache) resolves this against the repo root.
+CVISTA_CMAKE_INIT = "ci/cmake/macos.cmake"
+CVISTA_TARGET_OS = "macos"
 MACOSX_DEPLOYMENT_TARGET = "11.0"
 _PYTHON_HOST_PLATFORM = "macosx-11.0-arm64"
 CMAKE_C_COMPILER_LAUNCHER = "ccache"
@@ -220,7 +220,7 @@ CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
 before-build = "pip install delvewheel \"cmake>=3.22,<4.2\" \"ninja>=1.11\" \"setuptools<81\" wheel"
-# fvtk builds with VTK_ENABLE_KITS=ON: every DLL a .pyd imports (kit DLLs like
+# cvista builds with VTK_ENABLE_KITS=ON: every DLL a .pyd imports (kit DLLs like
 # vtkRendering / vtkFilters, standalone module DLLs like vtkChartsCore, and the
 # vendored third-party DLLs) is a real file in the build tree's bin/ dir, but
 # VTK's Windows wheel layout does NOT copy them beside the .pyds (it leaves that
@@ -256,5 +256,5 @@ test-skip = "cp313-* cp314-*"
 [tool.cibuildwheel.windows.environment]
 # REPO-relative (see the macos table note): {project} is not expanded in env
 # values. The backend resolves this against the repo root.
-FVTK_CMAKE_INIT = "ci/cmake/windows.cmake"
-FVTK_FORCE_MSVC = "ON"
+CVISTA_CMAKE_INIT = "ci/cmake/windows.cmake"
+CVISTA_FORCE_MSVC = "ON"

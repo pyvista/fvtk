@@ -76,7 +76,7 @@ features.update(vtk_features.FEATURES)
 
 extra_packages = []
 if 'web' in vtk_features.FEATURES:
-    extra_packages.append('fvtk.web')
+    extra_packages.append('cvista.web')
     # Read from requirements_web.txt
     features['web'] = read_requirements(os.path.join(BUILD_DIR, 'requirements_web.txt'))
 
@@ -151,8 +151,8 @@ if 'GITLAB_CI' in os.environ:
         version = f'{version_base}.{version_suffix}+mr{os.environ["CI_MERGE_REQUEST_ID"]}'
 
 
-# Allow modifications to distribution name (e.g., `fvtk_osmesa`)
-dist_name = 'fvtk'
+# Allow modifications to distribution name (e.g., `cvista_osmesa`)
+dist_name = 'cvista'
 dist_suffix = '@VTK_DIST_NAME_SUFFIX@'.strip(' -_')
 if dist_suffix:
     dist_name = f"{dist_name}_{dist_suffix}"
@@ -162,26 +162,26 @@ setup(
     version=version,
     author='VTK developers',
     packages=[
-        'fvtk',
-        'fvtk.gtk',
-        'fvtk.numpy_interface',
-        'fvtk.qt',
-        'fvtk.test',
-        'fvtk.tk',
-        'fvtk.util',
-        'fvtk.wx',
+        'cvista',
+        'cvista.gtk',
+        'cvista.numpy_interface',
+        'cvista.qt',
+        'cvista.test',
+        'cvista.tk',
+        'cvista.util',
+        'cvista.wx',
     ] + extra_packages,
-    ext_package='fvtk',
+    ext_package='cvista',
     ext_modules=[
         # https://gitlab.kitware.com/cmake/cmake/-/issues/19145
-        #ConfiguredCMakeExtension('fvtk', target='vtkpythonmodules'),
+        #ConfiguredCMakeExtension('cvista', target='vtkpythonmodules'),
         ConfiguredCMakeExtension('vtkCommonCorePython', target='vtkCommonCorePython'),
     ],
     package_data={
-        'fvtk': [
+        'cvista': [
             # Linux modules.
             '*-linux-gnu.so',
-            # Stable-ABI (abi3) modules — FVTK_ABI3 names wrappers vtkXxx.abi3.so
+            # Stable-ABI (abi3) modules — CVISTA_ABI3 names wrappers vtkXxx.abi3.so
             # (no per-version SOABI postfix) so one wheel loads on all CPython >=
             # the Py_LIMITED_API floor. The version-tagged glob above does not
             # match these, so include them explicitly.

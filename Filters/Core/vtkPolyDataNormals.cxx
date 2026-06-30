@@ -14,7 +14,7 @@
 #include "vtkInformationVector.h"
 #include "vtkMath.h"
 #include "vtkNew.h"
-#include "vtkFVTKSMPDefaults.h"
+#include "vtkCVISTASMPDefaults.h"
 #include "vtkObjectFactory.h"
 #include "vtkOrientPolyData.h"
 #include "vtkPointData.h"
@@ -33,7 +33,7 @@ vtkStandardNewMacro(vtkPolyDataNormals);
 
 namespace
 {
-// fvtk bit-exact devirtualization: a raw-pointer cell-normal kernel that hoists
+// cvista bit-exact devirtualization: a raw-pointer cell-normal kernel that hoists
 // the per-triangle vtkArrayDispatch out of the loop. The stock path runs a full
 // vtkArrayDispatch type-resolution inside vtkPolygon::ComputeNormal for EVERY
 // triangle (callgrind: the dispatch ~= the actual normal math). This resolves
@@ -165,13 +165,13 @@ vtkSmartPointer<vtkFloatArray> vtkPolyDataNormals::GetCellNormals(vtkPolyData* d
   cellNormals->SetNumberOfComponents(3);
   cellNormals->SetNumberOfTuples(numVertices + numLines + numPolys + numStrips);
 
-  // fvtk: every For below writes cellNormals[cellId] = f(cellId) into pre-sized
+  // cvista: every For below writes cellNormals[cellId] = f(cellId) into pre-sized
   // slots (no append / no reduction), so it is bit-exact under any thread count.
-  // Opt the whole cell-normals computation into the fvtk default-on threading
+  // Opt the whole cell-normals computation into the cvista default-on threading
   // (capped at 4, overridable via the VTK SMP APIs). One scope -> the global SMP
   // singleton is mutated once and all three For's inherit it.
   vtkSMPThreadLocalObject<vtkIdList> tlTempCellPointIds;
-  fvtk::RunSafeFilterParallel(
+  cvista::RunSafeFilterParallel(
     [&]()
     {
       // Set default value for vertices and lines cell normals
@@ -265,11 +265,11 @@ vtkSmartPointer<vtkFloatArray> vtkPolyDataNormals::GetPointNormals(
   float* pointNormalsPtr = pointNormals->GetPointer(0);
   float* cellNormalsPtr = cellNormals->GetPointer(0);
 
-  // fvtk: this For writes pointNormals[pointId] = f(pointId) into a pre-sized
+  // cvista: this For writes pointNormals[pointId] = f(pointId) into a pre-sized
   // slot; each point's sum is over its own fixed cell list in a fixed order, so
-  // the result is bit-exact under any thread count -> opt into the fvtk
+  // the result is bit-exact under any thread count -> opt into the cvista
   // default-on multithreading (capped at 4, overridable via VTK SMP APIs).
-  fvtk::RunSafeFilterParallel(
+  cvista::RunSafeFilterParallel(
     [&]()
     {
       vtkSMPTools::For(0, numPoints,

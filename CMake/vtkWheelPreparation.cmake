@@ -67,18 +67,18 @@ if (WIN32)
 elseif (APPLE)
   set(CMAKE_INSTALL_LIBDIR
     # Store libraries in a subdirectory here.
-    "${setup_py_build_dir}/fvtk/.dylibs")
+    "${setup_py_build_dir}/cvista/.dylibs")
 else ()
   set(CMAKE_INSTALL_LIBDIR
     # Linux bundles what libraries we have when they're put beside the modules.
-    "${setup_py_build_dir}/fvtk")
+    "${setup_py_build_dir}/cvista")
 endif ()
 set(VTK_PYTHON_SITE_PACKAGES_SUFFIX ".")
-# fvtk: give shipped libraries an fvtk-distinct suffix so the wheel's native
+# cvista: give shipped libraries an cvista-distinct suffix so the wheel's native
 # libs do NOT collide (same SONAME) with a stock VTK loaded in the same process.
-# Allow an external -DVTK_CUSTOM_LIBRARY_SUFFIX=... to win; default to "fvtk".
+# Allow an external -DVTK_CUSTOM_LIBRARY_SUFFIX=... to win; default to "cvista".
 if (NOT DEFINED VTK_CUSTOM_LIBRARY_SUFFIX OR VTK_CUSTOM_LIBRARY_SUFFIX STREQUAL "" OR VTK_CUSTOM_LIBRARY_SUFFIX STREQUAL "<DEFAULT>")
-  set(VTK_CUSTOM_LIBRARY_SUFFIX "fvtk")
+  set(VTK_CUSTOM_LIBRARY_SUFFIX "cvista")
 endif()
 if(NOT DEFINED VTK_INSTALL_SDK)
   set(VTK_INSTALL_SDK OFF)
@@ -131,10 +131,10 @@ set(wheel_sdks_files
   wheel_sdks/CMakeLists.txt
   wheel_sdks/cmake/vtk-config-version.cmake.in
   wheel_sdks/cmake/vtk-config.cmake.in
-  wheel_sdks/src/fvtk_sdk/_version.pyi
-  wheel_sdks/src/fvtk_sdk/__init__.py
-  wheel_sdks/src/fvtk_sdk/py.typed
-  wheel_sdks/src/fvtk_sdk/cmake/__init__.py
+  wheel_sdks/src/cvista_sdk/_version.pyi
+  wheel_sdks/src/cvista_sdk/__init__.py
+  wheel_sdks/src/cvista_sdk/py.typed
+  wheel_sdks/src/cvista_sdk/cmake/__init__.py
   wheel_sdks/tests/test_package.py
   wheel_sdks/tests/test_find_package.py
   wheel_sdks/tests/test_wrap_module.py
@@ -189,15 +189,15 @@ set(VTK_WHEEL_SDK_VTK_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}") # location to copy 
 # ABI configuration this build used, so its wrappers inherit abi3 too. Mirror
 # the VTK_WHEEL_SDK_* pattern above and default defensively in case the cache
 # option is not yet defined in this scope.
-if (NOT DEFINED FVTK_ABI3)
+if (NOT DEFINED CVISTA_ABI3)
   set(VTK_WHEEL_SDK_ABI3 ON)
 else ()
-  set(VTK_WHEEL_SDK_ABI3 "${FVTK_ABI3}")
+  set(VTK_WHEEL_SDK_ABI3 "${CVISTA_ABI3}")
 endif ()
-if (NOT DEFINED FVTK_ABI3_VERSION)
+if (NOT DEFINED CVISTA_ABI3_VERSION)
   set(VTK_WHEEL_SDK_ABI3_VERSION "0x030c0000")
 else ()
-  set(VTK_WHEEL_SDK_ABI3_VERSION "${FVTK_ABI3_VERSION}")
+  set(VTK_WHEEL_SDK_ABI3_VERSION "${CVISTA_ABI3_VERSION}")
 endif ()
 
 configure_file(

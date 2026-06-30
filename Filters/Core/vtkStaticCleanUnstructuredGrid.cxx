@@ -18,7 +18,7 @@
 #include "vtkStreamingDemandDrivenPipeline.h"
 #include "vtkUnstructuredGrid.h"
 
-#include "fvtkFastClean.h" // fvtk opt-in fast coincident-point merge
+#include "cvistaFastClean.h" // cvista opt-in fast coincident-point merge
 
 #include <vector>
 
@@ -394,8 +394,8 @@ int vtkStaticCleanUnstructuredGrid::RequestData(vtkInformation* vtkNotUsed(reque
   vtkPointData* inPD = input->GetPointData();
   vtkCellData* inCD = input->GetCellData();
 
-  // fvtk opt-in fast path: vendored OpenMP coincident-point merge. Engages only
-  // under fvtk.EnableFast()/FVTK_FAST for the exact-merge default regime (tol 0,
+  // cvista opt-in fast path: vendored OpenMP coincident-point merge. Engages only
+  // under cvista.EnableFast()/CVISTA_FAST for the exact-merge default regime (tol 0,
   // no point-data averaging, no merge-by-data-array, no polyhedra); returns false
   // and we fall through to the standard path otherwise.
   {
@@ -403,7 +403,7 @@ int vtkStaticCleanUnstructuredGrid::RequestData(vtkInformation* vtkNotUsed(reque
       (this->ToleranceIsAbsolute ? this->AbsoluteTolerance : this->Tolerance * input->GetLength());
     const bool hasMergingArray = (this->MergingArray && this->MergingArray[0] != '\0' &&
       inPD->GetArray(this->MergingArray) != nullptr);
-    if (fvtk::FastStaticCleanUnstructuredGrid(input, output, effTol, this->RemoveUnusedPoints,
+    if (cvista::FastStaticCleanUnstructuredGrid(input, output, effTol, this->RemoveUnusedPoints,
           this->AveragePointData, hasMergingArray, this->OutputPointsPrecision))
     {
       return 1;

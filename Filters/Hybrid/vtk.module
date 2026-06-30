@@ -30,7 +30,6 @@ PRIVATE_DEPENDS
   VTK::FiltersGeneral
   VTK::ImagingCore
   VTK::ImagingSources
-  VTK::RenderingCore
   VTK::vtksys
 TEST_DEPENDS
   VTK::FiltersGeneral

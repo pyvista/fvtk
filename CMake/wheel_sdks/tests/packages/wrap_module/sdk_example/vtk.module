@@ -3,7 +3,7 @@ NAME
 LIBRARY_NAME
   SDKExample
 DESCRIPTION
-  Trivial out-of-tree module used to prove the fvtk-sdk can both compile and
+  Trivial out-of-tree module used to prove the cvista-sdk can both compile and
   Python-wrap a VTK module that lives in a separate repository.
 DEPENDS
   VTK::CommonCore

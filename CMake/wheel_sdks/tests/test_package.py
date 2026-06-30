@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import importlib.metadata
 
-import fvtk_sdk as m
+import cvista_sdk as m
 
 
 def test_version():
-    assert importlib.metadata.version("fvtk_sdk") == m.__version__
+    assert importlib.metadata.version("cvista_sdk") == m.__version__

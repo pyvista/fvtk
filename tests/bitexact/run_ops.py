@@ -1,7 +1,7 @@
 """Standalone driver: run every bit-exactness case via the vtkmodules API and
 dump results to an output dir, one .npz per case plus a manifest.json.
 
-Invoked once under the stock-VTK venv and once under the fvtk venv (the
+Invoked once under the stock-VTK venv and once under the cvista venv (the
 ``vtkmodules`` import resolves to whichever backend that venv provides). The
 pytest harness and the CI job then compare the two output dirs byte-for-byte.
 

@@ -1,22 +1,22 @@
-"""Bit-exactness operation registry for the fvtk vs stock-VTK regression suite.
+"""Bit-exactness operation registry for the cvista vs stock-VTK regression suite.
 
 Every operation here is written against the *vtkmodules* API only (no pyvista, no
 ``import vtk``). That is the load-bearing property of this suite: the exact same
 source drives two backends —
 
   * stock VTK 9.6.2   — ``vtkmodules`` resolves to the upstream wheel
-  * fvtk (this fork)  — the ``_fvtk_shim`` redirects ``vtkmodules.*`` -> ``fvtk.*``
+  * cvista (this fork)  — the ``_cvista_shim`` redirects ``vtkmodules.*`` -> ``cvista.*``
 
 so the *only* thing that differs between the two runs is the compiled C++
 backend. Any byte difference in an output array is therefore attributable to
-fvtk's build, not to Python-level nondeterminism.
+cvista's build, not to Python-level nondeterminism.
 
 Determinism rules (so inputs are bit-identical on both sides):
   * numpy is pinned to the SAME version on both venvs (numpy==2.4.6).
   * Inputs are built ONLY from deterministic integer/linspace/arange ops and
     pure-algebra. We deliberately avoid ``np.sin``/``np.cos`` on the inputs,
     whose last-ULP results can drift across numpy/libm builds, which would
-    masquerade as an fvtk divergence. ``build_inputs_digest()`` hashes every
+    masquerade as an cvista divergence. ``build_inputs_digest()`` hashes every
     constructed input array so the harness can *prove* the two sides started
     from identical bytes before blaming the filter.
 
@@ -40,23 +40,23 @@ import numpy as np
 
 @contextlib.contextmanager
 def fast_mode():
-    """Opt into fvtk's non-exact fast path (env FVTK_FAST) for the duration, then
+    """Opt into cvista's non-exact fast path (env CVISTA_FAST) for the duration, then
     RESTORE the prior value. run_ops.py runs every op in one process, so a bare
-    ``os.environ["FVTK_FAST"]="1"`` would leak into later byte-exact ops sharing
+    ``os.environ["CVISTA_FAST"]="1"`` would leak into later byte-exact ops sharing
     that process (e.g. the standard datasetsurface_ugrid op would silently take the
     reordering fast path and break its byte comparison vs stock). Always wrap the
     filter Update() that needs fast mode in this manager."""
-    prev = os.environ.get("FVTK_FAST")
-    os.environ["FVTK_FAST"] = "1"
+    prev = os.environ.get("CVISTA_FAST")
+    os.environ["CVISTA_FAST"] = "1"
     try:
         yield
     finally:
         if prev is None:
-            os.environ.pop("FVTK_FAST", None)
+            os.environ.pop("CVISTA_FAST", None)
         else:
-            os.environ["FVTK_FAST"] = prev
+            os.environ["CVISTA_FAST"] = prev
 
-# --- vtkmodules imports (resolve to stock vtk OR fvtk depending on the venv) ---
+# --- vtkmodules imports (resolve to stock vtk OR cvista depending on the venv) ---
 # Guarded so this module imports cleanly on a runner python that has numpy but no
 # VTK (the pytest *driver* only needs the registry metadata — iter_cases,
 # MODIFIED_OPS — to parametrize; the actual op bodies run in the two backend
@@ -159,7 +159,7 @@ except Exception as _e:  # noqa: BLE001
 def _require_vtk():
     if not _HAVE_VTK:
         raise RuntimeError(
-            "vtkmodules (stock VTK or fvtk) is not importable in this "
+            "vtkmodules (stock VTK or cvista) is not importable in this "
             f"interpreter: {_VTK_IMPORT_ERROR!r}. Op bodies must run under a "
             "backend venv via run_ops.py."
         )
@@ -349,13 +349,13 @@ def make_tet_ugrid(n=8, dtype=np.float64):
     so clip/contour exercise vtkTetra::Clip / vtkTetra::Contour. The tessellation
     runs in the C++ backend identically on both sides, so it is a fair input.
 
-    PRECISION PIN: this is an INPUT builder, not the thing under test. fvtk's
+    PRECISION PIN: this is an INPUT builder, not the thing under test. cvista's
     OutputPointsPrecision fix makes vtkDataSetTriangleFilter preserve float64
     input points where stock VTK 9.6.2 silently downcasts to float32 -- so the
-    raw tessellator output is no longer identical across backends (fvtk f64 vs
+    raw tessellator output is no longer identical across backends (cvista f64 vs
     stock f32), which would perturb every DOWNSTREAM clip/contour gate. Since the
     tet grid is only a deterministic input, pin its point coordinates to float32
-    on BOTH backends (no-op on stock's already-f32 output; on fvtk the f64 values
+    on BOTH backends (no-op on stock's already-f32 output; on cvista the f64 values
     downcast to the same f32 bytes stock produced). This keeps the downstream
     byte-exact gates honest; the datasettriangle precision fix itself is exercised
     by the dedicated `datasettriangle` corrects-stock op below."""
@@ -700,10 +700,10 @@ def op_contour(dtype, size):
 
 
 def op_contour_fast(dtype, size):
-    # vtkContourFilter on a vtkImageData volume with fvtk.EnableFast()/FVTK_FAST
+    # vtkContourFilter on a vtkImageData volume with cvista.EnableFast()/CVISTA_FAST
     # set: the image-data 3D path is routed to vtkFlyingEdges3D (the threaded
-    # marching-cubes), reached when fvtk.EnableFast() is on. FlyingEdges computes
-    # the SAME isosurface as the default vtkSynchronizedTemplates3D; fvtk
+    # marching-cubes), reached when cvista.EnableFast() is on. FlyingEdges computes
+    # the SAME isosurface as the default vtkSynchronizedTemplates3D; cvista
     # interpolates FlyingEdges' coordinates in DOUBLE and downcasts once (matching
     # SynchronizedTemplates' single rounding), so the iso-crossing point SET is
     # BYTE-EXACT with stock -- but emitted in a different (thread-block) order, and
@@ -711,7 +711,7 @@ def op_contour_fast(dtype, size):
     # the OPPOSITE diagonal. Compared POINTS-only: same point set (coords +
     # scalars, order negotiable) and same cell COUNT; the cell multiset is NOT
     # compared (the quad diagonal is an equally-valid, negotiable choice). Stock
-    # VTK ignores FVTK_FAST and runs the reference SynchronizedTemplates path.
+    # VTK ignores CVISTA_FAST and runs the reference SynchronizedTemplates path.
     c = vtkContourFilter()
     c.SetInputData(make_volume(size, dtype))
     c.GenerateValues(8, 0.2 * size, 0.45 * size)
@@ -1062,7 +1062,7 @@ def op_warpscalar_normals(dtype, size):
 
 def op_transform(dtype, size):
     """vtkTransformFilter with a non-trivial 4x4 (rotate+translate+scale) so the
-    full matrix*point math (vtkLinearTransform::TransformPoints, the fvtk AVX2
+    full matrix*point math (vtkLinearTransform::TransformPoints, the cvista AVX2
     FMV kernel) is exercised. Covers the FMV'd compute-bound transform kernel."""
     t = vtkTransform()
     t.Translate(0.123, -0.456, 0.789)
@@ -1300,11 +1300,11 @@ def make_coincident_poly_cd(n, dtype):
 def op_cleanpoly_fast(dtype, size):
     # Coincident-point merge of a polys-only triangle mesh via the OPT-IN vendored
     # parallel OpenMP kernel (pyvista-algorithms clean), reached when
-    # fvtk.EnableFast()/FVTK_FAST is set. vtkCleanPolyData keeps polys 1:1 and
+    # cvista.EnableFast()/CVISTA_FAST is set. vtkCleanPolyData keeps polys 1:1 and
     # copies the canonical point's data; the kernel renumbers merged points +
     # connectivity in its own hash/thread-dependent order, so the case is compared
     # POINTS-relaxed: same merged point set (coords + point-data) and same triangle
-    # multiset, point order negotiable. Stock VTK ignores FVTK_FAST and runs the
+    # multiset, point order negotiable. Stock VTK ignores CVISTA_FAST and runs the
     # reference vtkMergePoints clean.
     c = vtkCleanPolyData()
     c.SetInputData(make_coincident_poly_cd(size, dtype))
@@ -1355,7 +1355,7 @@ def op_triangle(dtype, size):
 def op_geometry(dtype, size):
     g = vtkGeometryFilter()
     g.SetInputData(make_volume(size, dtype))
-    # fvtk: emit vtkOriginalPointIds/CellIds so the width-relaxed int32 id-array
+    # cvista: emit vtkOriginalPointIds/CellIds so the width-relaxed int32 id-array
     # storage (vtkGeometryFilter::PassPointIds / PassCellIds) is validated against
     # stock (values match, int32 vs int64 container normalized by the compare gate).
     g.PassThroughPointIdsOn()
@@ -1379,7 +1379,7 @@ def op_shrink_ugrid(dtype, size):
     # Divergence-ledger op: shrink a float64 hex UNSTRUCTURED GRID (explicit
     # vtkPoints). DEFAULT_PRECISION must preserve the input float64; stock VTK
     # 9.6.2 downcasts to float32. corrects_stock gate asserts the correction +
-    # value-preservation (fvtk f64 downcast to f32 == stock's f32 bytes).
+    # value-preservation (cvista f64 downcast to f32 == stock's f32 bytes).
     f = vtkShrinkFilter()
     f.SetInputData(make_hex_ugrid(size, dtype))
     f.SetShrinkFactor(0.8)
@@ -1390,9 +1390,9 @@ def op_shrink_ugrid(dtype, size):
 def op_datasettriangle(dtype, size):
     # Divergence-ledger op: vtkDataSetTriangleFilter on a float64 hex grid.
     # Stock VTK 9.6.2 downcasts the tessellated output points to float32 (a bug
-    # -- DEFAULT_PRECISION should preserve the input precision); fvtk's
+    # -- DEFAULT_PRECISION should preserve the input precision); cvista's
     # OutputPointsPrecision fix preserves float64. Gated by `corrects_stock`: the
-    # comparator asserts fvtk's points are the input dtype AND that downcasting
+    # comparator asserts cvista's points are the input dtype AND that downcasting
     # them to stock's width reproduces stock's bytes exactly (no value changed),
     # while every other array stays byte-identical. See compare._compare_corrects_stock.
     t = vtkDataSetTriangleFilter()
@@ -1469,13 +1469,13 @@ def make_multiregion_ugrid(n, nblocks, dtype):
 
 def op_connectivity_fast(dtype, size):
     # vtkConnectivityFilter ALL_REGIONS over a multi-region hex UG via the OPT-IN
-    # parallel union-find region labeling (Filters/Core/fvtkFastConnectivity),
-    # reached when fvtk.EnableFast()/FVTK_FAST is set. The kernel reproduces stock's
+    # parallel union-find region labeling (Filters/Core/cvistaFastConnectivity),
+    # reached when cvista.EnableFast()/CVISTA_FAST is set. The kernel reproduces stock's
     # region ids exactly (both number regions by increasing minimum cell index) but
     # numbers OUTPUT POINTS in cell-index encounter order rather than BFS order, so
     # the case is compared POINTS-relaxed: same points (coords + RegionId point
     # scalar) and same cell multiset (carrying the RegionId cell scalar), point
-    # order negotiable. Stock VTK ignores FVTK_FAST and runs the wave-BFS.
+    # order negotiable. Stock VTK ignores CVISTA_FAST and runs the wave-BFS.
     c = vtkConnectivityFilter()
     c.SetInputData(make_multiregion_ugrid(size, 3, dtype))
     c.SetExtractionModeToAllRegions()
@@ -1487,14 +1487,14 @@ def op_connectivity_fast(dtype, size):
 
 def op_clippoly_fast(dtype, size):
     # vtkClipPolyData of a polys-only triangulated sphere by a plane, via the
-    # OPT-IN parallel polys-only clip (Filters/Core/fvtkFastClipPoly), reached when
-    # fvtk.EnableFast()/FVTK_FAST is set. Stock runs the serial per-cell vtkCell::
+    # OPT-IN parallel polys-only clip (Filters/Core/cvistaFastClipPoly), reached when
+    # cvista.EnableFast()/CVISTA_FAST is set. Stock runs the serial per-cell vtkCell::
     # Clip loop into one shared vtkMergePoints; the fast path threads the per-cell
     # clip into thread-local outputs and merges coincident points afterwards. The
     # clipped point SET (coords + interpolated point data) and the output triangle
     # multiset are identical to stock, but the points are renumbered in a
     # thread-/merge-dependent order -> compared POINTS-relaxed, point order
-    # negotiable. Stock VTK ignores FVTK_FAST and runs the reference serial loop.
+    # negotiable. Stock VTK ignores CVISTA_FAST and runs the reference serial loop.
     p = vtkPlane()
     p.SetOrigin(0.0, 0.0, 0.0)
     p.SetNormal(1, 0, 0)
@@ -1513,7 +1513,7 @@ def make_scrambled_winding_surface(size, dtype):
     2-manifold), with a deterministic subset of triangles per component reversed.
 
     This is the exact regime vtkOrientPolyData's Consistency pass is built to
-    repair (and the fvtk parallel orientation kernel accelerates): every edge is
+    repair (and the cvista parallel orientation kernel accelerates): every edge is
     shared by exactly two triangles, but neighbours disagree on winding until the
     pass runs. Point scalar is coordinate-derived so the points-relaxed
     canonicalization is unambiguous."""
@@ -1556,7 +1556,7 @@ def op_orient_fast(dtype, size):
     # Consistency=1, i.e. the default .compute_normals() pipeline) over a
     # multi-component manifold surface with deliberately inconsistent initial
     # winding, via the OPT-IN parallel orientation kernel (Filters/Core/
-    # fvtkFastOrient + pvaOrient.h), reached when fvtk.EnableFast()/FVTK_FAST is
+    # cvistaFastOrient + pvaOrient.h), reached when cvista.EnableFast()/CVISTA_FAST is
     # set. Stock runs the serial single-threaded BFS wave (TraverseAndOrder); the
     # fast path labels components with a parallel union-find, computes per-edge
     # winding-consistency bits in parallel, then resolves each component's
@@ -1568,14 +1568,14 @@ def op_orient_fast(dtype, size):
     # or deletes points/cells and keeps cells in slot order -> compared
     # ORDER-RELAXED: identical point set (coords + 'v' scalar) and identical cell
     # multiset; adjacent cells are always mutually consistent. Stock VTK ignores
-    # FVTK_FAST and runs the reference serial wave.
+    # CVISTA_FAST and runs the reference serial wave.
     #
-    # ENGAGEMENT CHECK: the relaxed gate also passes if fvtk silently fell back to
+    # ENGAGEMENT CHECK: the relaxed gate also passes if cvista silently fell back to
     # the stock serial path, so prove the parallel kernel actually ran. The kernel
-    # touches the file named by FVTK_FAST_ORIENT_SENTINEL the first time it
-    # executes; we point that at a fresh temp path, clear it, and (on the fvtk
+    # touches the file named by CVISTA_FAST_ORIENT_SENTINEL the first time it
+    # executes; we point that at a fresh temp path, clear it, and (on the cvista
     # backend only) assert it appears. Stock VTK has no such symbol and ignores the
-    # env var, so the assertion is scoped to the fvtk interpreter.
+    # env var, so the assertion is scoped to the cvista interpreter.
     inp = make_scrambled_winding_surface(size, dtype)
     f = vtkOrientPolyData()
     f.SetInputData(inp)
@@ -1585,28 +1585,28 @@ def op_orient_fast(dtype, size):
     f.SetFlipNormals(False)
 
     import vtkmodules as _vtkmodules
-    is_fvtk = "fvtk" in str(getattr(_vtkmodules, "__file__", "")).lower()
+    is_cvista = "cvista" in str(getattr(_vtkmodules, "__file__", "")).lower()
     with tempfile.NamedTemporaryFile(suffix=".orient", delete=False) as tf:
         sentinel = tf.name
     try:
         os.remove(sentinel)
     except OSError:
         pass
-    prev_sentinel = os.environ.get("FVTK_FAST_ORIENT_SENTINEL")
-    os.environ["FVTK_FAST_ORIENT_SENTINEL"] = sentinel
+    prev_sentinel = os.environ.get("CVISTA_FAST_ORIENT_SENTINEL")
+    os.environ["CVISTA_FAST_ORIENT_SENTINEL"] = sentinel
     try:
         with fast_mode():
             f.Update()
-        if is_fvtk and not os.path.exists(sentinel):
+        if is_cvista and not os.path.exists(sentinel):
             raise AssertionError(
-                "fvtk fast orientation kernel did not engage under FVTK_FAST "
+                "cvista fast orientation kernel did not engage under CVISTA_FAST "
                 "(sentinel not written) -- the relaxed gate would otherwise pass "
                 "on the stock serial fallback")
     finally:
         if prev_sentinel is None:
-            os.environ.pop("FVTK_FAST_ORIENT_SENTINEL", None)
+            os.environ.pop("CVISTA_FAST_ORIENT_SENTINEL", None)
         else:
-            os.environ["FVTK_FAST_ORIENT_SENTINEL"] = prev_sentinel
+            os.environ["CVISTA_FAST_ORIENT_SENTINEL"] = prev_sentinel
         try:
             os.remove(sentinel)
         except OSError:
@@ -2063,8 +2063,8 @@ def op_geometry_ugrid(dtype, size):
     # inline operator[] connectivity-read optimization in vtkCellArray.h).
     g = vtkGeometryFilter()
     g.SetInputData(make_hex_ugrid(size, dtype))
-    g.PassThroughPointIdsOn()  # fvtk: validate int32 vtkOriginalPointIds storage
-    g.PassThroughCellIdsOn()   # fvtk: validate int32 vtkOriginalCellIds storage
+    g.PassThroughPointIdsOn()  # cvista: validate int32 vtkOriginalPointIds storage
+    g.PassThroughCellIdsOn()   # cvista: validate int32 vtkOriginalCellIds storage
     g.Update()
     return g.GetOutput()
 
@@ -2079,8 +2079,8 @@ def op_geometry_ugrid_mixed(dtype, size):
     # Run on float32 AND float64 to cover both typed point-copy paths.
     g = vtkGeometryFilter()
     g.SetInputData(make_mixed_ugrid(size, dtype))
-    g.PassThroughPointIdsOn()  # fvtk: validate int32 vtkOriginalPointIds storage
-    g.PassThroughCellIdsOn()   # fvtk: validate int32 vtkOriginalCellIds storage
+    g.PassThroughPointIdsOn()  # cvista: validate int32 vtkOriginalPointIds storage
+    g.PassThroughCellIdsOn()   # cvista: validate int32 vtkOriginalCellIds storage
     g.Update()
     return g.GetOutput()
 
@@ -2278,10 +2278,10 @@ def op_cutter(dtype, size):
 def op_cutter_linear(dtype, size):
     # Plane cut of a LARGE linear hex unstructured grid with triangle generation
     # ON (the default). vtkCutter routes this to vtk3DLinearGridPlaneCutter -- the
-    # threaded fast path that fvtk runs under the OPT-IN non-exact fast mode.
+    # threaded fast path that cvista runs under the OPT-IN non-exact fast mode.
     #
-    # Fast mode is gated by the FVTK_FAST env var (the fvtk.EnableFast() Python
-    # API just sets this). We set it here so the fvtk side actually threads; stock
+    # Fast mode is gated by the CVISTA_FAST env var (the cvista.EnableFast() Python
+    # API just sets this). We set it here so the cvista side actually threads; stock
     # VTK ignores the variable, so it still produces the sequential reference. The
     # mesh is sized so the parallel vtkSMPTools::For batch-splits, so the threaded
     # triangle emission reorders cells relative to the sequential reference. Output
@@ -2297,7 +2297,7 @@ def op_cutter_linear(dtype, size):
     cut.SetInputData(make_hex_ugrid(size, dtype))
     cut.SetCutFunction(p)
     cut.SetValue(0, 0.0)  # GenerateTriangles ON (default) -> linear-grid fast path
-    with fast_mode():  # fvtk: opt in to the threaded cutter; stock: ignored
+    with fast_mode():  # cvista: opt in to the threaded cutter; stock: ignored
         cut.Update()
     return cut.GetOutput()
 
@@ -2305,10 +2305,10 @@ def op_cutter_linear(dtype, size):
 def op_datasetsurface_fast(dtype, size):
     # Boundary surface of a LARGE linear hex unstructured grid via the OPT-IN
     # vendored parallel OpenMP kernel (pyvista-algorithms extract_surface), reached
-    # when fvtk.EnableFast()/FVTK_FAST is set. The kernel emits surface POINTS and
+    # when cvista.EnableFast()/CVISTA_FAST is set. The kernel emits surface POINTS and
     # cells in its own hash/thread-dependent order, so this op is compared
     # POINTS-relaxed: same point set (coords + point-data) and same face multiset,
-    # both point and cell order negotiable. Stock VTK ignores FVTK_FAST and runs
+    # both point and cell order negotiable. Stock VTK ignores CVISTA_FAST and runs
     # the sequential vtkDataSetSurfaceFilter reference. Sizes 30/40 -> 24k/59k
     # cells, above the kernel's 16384 parallel threshold.
     f = vtkDataSetSurfaceFilter()
@@ -2372,13 +2372,13 @@ def make_exploded_hex_ugrid(n, dtype):
 
 def op_staticclean_fast(dtype, size):
     # Coincident-point merge of an exploded hex UG via the OPT-IN vendored parallel
-    # OpenMP kernel (pyvista-algorithms clean), reached when fvtk.EnableFast()/
-    # FVTK_FAST is set. vtkStaticCleanUnstructuredGrid keeps cells 1:1 in input
+    # OpenMP kernel (pyvista-algorithms clean), reached when cvista.EnableFast()/
+    # CVISTA_FAST is set. vtkStaticCleanUnstructuredGrid keeps cells 1:1 in input
     # order and copies (not averages) the canonical point's data; the kernel
     # renumbers merged points + connectivity in its own hash/thread-dependent
     # order, so the case is compared POINTS-relaxed: same merged point set
     # (coords + point-data) and same cell multiset, point order negotiable. Stock
-    # VTK ignores FVTK_FAST and runs the reference merge.
+    # VTK ignores CVISTA_FAST and runs the reference merge.
     f = vtkStaticCleanUnstructuredGrid()
     f.SetInputData(make_exploded_hex_ugrid(size, dtype))
     with fast_mode():
@@ -2389,8 +2389,8 @@ def op_staticclean_fast(dtype, size):
 def op_contour_linear(dtype, size):
     # Isocontour of a LARGE linear hex unstructured grid with ComputeNormals OFF.
     # vtkContourFilter routes a linear UG to vtkContour3DLinearGrid -- the threaded
-    # fast path fvtk runs under the OPT-IN non-exact fast mode (FVTK_FAST, set by
-    # fvtk.EnableFast()). With ComputeNormals OFF the merge path produces
+    # fast path cvista runs under the OPT-IN non-exact fast mode (CVISTA_FAST, set by
+    # cvista.EnableFast()). With ComputeNormals OFF the merge path produces
     # thread-INVARIANT points + interpolated point scalars; only triangle EMISSION
     # ORDER differs, so the case is compared ORDER-RELAXED. ComputeNormals ON is
     # NOT order-relaxable (normal averaging is reduction-order-dependent) and the
@@ -2399,7 +2399,7 @@ def op_contour_linear(dtype, size):
     c.SetInputData(make_hex_ugrid(size, dtype))
     c.SetComputeNormals(0)
     c.SetValue(0, 0.25 * (size ** 2))
-    with fast_mode():  # fvtk: opt in to the threaded contour; stock: ignored
+    with fast_mode():  # cvista: opt in to the threaded contour; stock: ignored
         c.Update()
     return c.GetOutput()
 
@@ -2480,7 +2480,7 @@ def op_common_points(dtype, size):
 def op_common_polydata_links(dtype, size):
     """BuildLinks + GetPointCells / GetCellPoints / GetCellEdgeNeighbors.
 
-    Walks the topology adjacency that fvtk's data-model compiles, capturing the
+    Walks the topology adjacency that cvista's data-model compiles, capturing the
     full neighbor structure as integer arrays for byte comparison."""
     poly = make_sphere(size, size)
     poly.BuildLinks()
@@ -2675,7 +2675,7 @@ def op_locator_mergepoints(dtype, size):
     assigned = np.empty(pts.shape[0], dtype=np.int64)
     for i in range(pts.shape[0]):
         # IsInsertedPoint returns the existing id, or -1 if new. The
-        # bit-exactness probe is that fvtk and stock agree on every dedup verdict
+        # bit-exactness probe is that cvista and stock agree on every dedup verdict
         # and on the resulting merged point coordinates.
         pid = mp.IsInsertedPoint(list(pts[i]))
         if pid < 0:
@@ -2737,7 +2737,7 @@ def _ply_roundtrip(dtype, size, file_type):
     """Write `mesh` to a temp .ply (binary or ascii) and read it back, returning
     the read-back vtkPolyData. capture_dataobject then proves the read-back
     points / normals / RGB scalars / face connectivity are byte-identical between
-    fvtk and stock VTK -- which only holds if the writer's per-point gather and
+    cvista and stock VTK -- which only holds if the writer's per-point gather and
     the reader's per-point scatter emit/store identical bytes."""
     mesh = _ply_roundtrip_mesh(dtype, size)
 
@@ -2863,7 +2863,7 @@ OPS = {
     "triangle": dict(fn=op_triangle, group="filter", dtypes=["float64"], sizes=[24, 40]),
     "geometry": dict(fn=op_geometry, group="filter", dtypes=["float64"], sizes=[18, 28]),
     "shrink": dict(fn=op_shrink, group="filter", dtypes=["float64"], sizes=[16, 24]),
-    # Divergence ledger: these exercise filters on float64 POINTSETS where fvtk
+    # Divergence ledger: these exercise filters on float64 POINTSETS where cvista
     # preserves the input precision (stock downcasts to float32). corrects_stock
     # => compared via the corrected-precision gate (dtype fixed + values preserved).
     "shrink_ugrid": dict(fn=op_shrink_ugrid, group="filter", dtypes=["float64"],
@@ -2909,7 +2909,7 @@ OPS = {
     # against the un-merged-duplicate regression. Heavier than the smoke cases
     # but kept to a single size since the bug is scale-dependent.
     "cleanpoly_dupstress": dict(fn=op_cleanpoly_dupstress, group="filter", dtypes=["float32", "float64"], sizes=[400], order_relaxed=True, points_relaxed=True),
-    # Parallel polys-only clip (Filters/Core/fvtkFastClipPoly) via EnableFast;
+    # Parallel polys-only clip (Filters/Core/cvistaFastClipPoly) via EnableFast;
     # POINTS-relaxed (same point set + triangle multiset, threaded point numbering).
     # Sizes chosen large enough to span multiple SMP batches across thread counts.
     # point_data_tol: clip interpolates point data (e.g. normals) at new edge
@@ -2918,7 +2918,7 @@ OPS = {
     # differs from the serial filter by denormal-scale (~1e-21) FP merge noise.
     # Tolerate it on interpolated point-DATA only (coords stay strict).
     "clippoly_fast": dict(fn=op_clippoly_fast, group="filter", dtypes=["float32", "float64"], sizes=[60, 100], order_relaxed=True, points_relaxed=True, point_data_tol=1e-12),
-    # Parallel polygon-orientation kernel (Filters/Core/fvtkFastOrient + pvaOrient.h)
+    # Parallel polygon-orientation kernel (Filters/Core/cvistaFastOrient + pvaOrient.h)
     # via EnableFast, replacing vtkOrientPolyData's serial BFS (the last serial,
     # order-locked stage in the default .compute_normals() pipeline). ORDER-RELAXED:
     # points byte-identical (never moved/reordered), cell multiset identical;

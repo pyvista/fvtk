@@ -13,15 +13,17 @@ DEPENDS
   VTK::CommonExecutionModel
   VTK::CommonMisc
   VTK::IOCore
+  VTK::IOGeometry
   VTK::RenderingCore
   VTK::vtksys
 PRIVATE_DEPENDS
   VTK::CommonDataModel
   VTK::CommonTransforms
   VTK::FiltersCore
+  VTK::FiltersGeneral
+  VTK::FiltersHybrid
   VTK::FiltersSources
   VTK::ImagingCore
-  VTK::IOGeometry
   VTK::IOImage
 TEST_DEPENDS
   VTK::CommonColor
